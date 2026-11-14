@@ -1,0 +1,16 @@
+.git
+docs
+documentation
+.superpowers
+.claude
+.codegraph
+**/node_modules
+**/dist
+**/.env*
+**/.dev.vars*
+**/*.log
+**/.DS_Store
+**/*.tsbuildinfo
+**/.private
+**/.nitro
+**/.vinxi

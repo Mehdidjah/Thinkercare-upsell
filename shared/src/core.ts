@@ -1,0 +1,237 @@
+export type Ingredient={name:string;inci:string;role:string};
+export type Product={id:string;name:string;short:string;category:string;price:number;image:string;source:string;description:string;concerns:string[];skins:string[];active:boolean;size:string;enabled:boolean;recommendable:boolean;review:string;priceSource?:string;domain?:'face'|'hair'|'body';components?:string[];ingredients?:Ingredient[];inciText?:string;formulaNote?:string;checkedAt?:string;pitch?:string;usage?:string;cautions?:string[];fragrance?:boolean;essentialOils?:boolean;gentle?:boolean;exfoliant?:boolean;verificationRequired?:string};
+export type Profile={concerns:string[];skin:string;sensitive:string;routine:string[];routineKnown:boolean;safety:string[];severity:string;marks:string;redState?:string;hairPattern?:string;allergens?:string[];age?:string;scalpProtocol?:boolean;verifiedProducts?:string[]};
+export type Candidate={product:Product;score:number;reason:string};
+export type Tier='catalogue'|'duo'|'final';
+export const FACE_CONCERNS=[['acne','Boutons','Imperfections légères ou occasionnelles'],['blackheads','Points noirs','Pores obstrués et comédons'],['oil','Brillance','Excès de sébum'],['marks','Marques brunes','Traces de couleur après les boutons'],['red','Rougeurs légères','Hors brûlure, gonflement ou douleur'],['dry','Tiraillements','Peau sèche, inconfort quotidien'],['dehydration','Déshydratation','Manque de confort hydrique'],['dull','Teint terne','Manque d’éclat'],['scars','Cicatrices en relief','Distinguer cicatrice et simple marque']];
+export const HAIR_CONCERNS=[['growth','Longueurs / pousse','Objectif de longueur et aspect des cheveux'],['breakage','Casse et démêlage','Cheveux cassants, pointes et nœuds'],['fall','Chute de cheveux','Distinguer perte à la racine et casse'],['hairdry','Longueurs sèches','Manque de souplesse, frisottis'],['scalpoil','Racines grasses','Besoin d’une étape lavante adaptée'],['flakes','Pellicules','Ne pas les assimiler au psoriasis'],['scalpcomfort','Confort du cuir chevelu','Sensibilité légère, hors lésion ou brûlure']];
+export const BODY_CONCERNS=[['bodyspots','Imperfections du corps','Dos, épaules ou torse : préciser la zone'],['bodydry','Sécheresse corporelle','Besoin de confort et d’hydratation']];
+export const CONCERNS=[...FACE_CONCERNS,...HAIR_CONCERNS,...BODY_CONCERNS];
+export const SKINS=[['oily','Grasse'],['mixed','Mixte'],['normal','Normale'],['dry','Sèche'],['unknown','Je ne sais pas']];
+export const HAIR_TYPES=[['oily','Racines grasses'],['mixed','Racines grasses, longueurs sèches'],['normal','Équilibrés'],['dry','Secs / très secs'],['unknown','À préciser']];
+export const ROUTINES=[['Nettoyant','Nettoyant'],['Soin ciblé','Sérum / actif'],['Hydratant','Crème hydratante'],['Protection solaire','Protection solaire']];
+export const HAIR_ROUTINES=[['Shampoing','Shampoing adapté'],['Après-shampoing','Après-shampoing / masque'],['Soin cuir chevelu','Soin du cuir chevelu']];
+export const BODY_ROUTINES=[['Nettoyant corps','Nettoyant du corps'],['Soin ciblé','Soin ciblé sur cette zone'],['Hydratant','Hydratant corporel']];
+export const SIGNALS=[['none','Aucun point particulier'],['irritation','Irritation active / brûlure'],['urgent','Gonflement important / réaction sévère'],['allergy','Allergie connue'],['treatment','Traitement dermatologique en cours'],['pregnancy','Grossesse / allaitement'],['minor','Produit destiné à un mineur'],['unknown','Information à préciser']];
+export const ALLERGENS=[['fragrance','Parfum'],['essential','Huiles essentielles'],['mi','MI / MCI (conservateurs)'],['nuts','Noisette / amande / sésame'],['salicylates','Salicylates'],['unknown','Autre / non identifié']];
+export const EMPTY_PROFILE:Profile={concerns:[],skin:'',sensitive:'',routine:[],routineKnown:false,safety:[],severity:'',marks:'',redState:'',hairPattern:'',allergens:[],age:''};
+export const money=(n:number)=>new Intl.NumberFormat('fr-DZ',{maximumFractionDigits:0}).format(n)+' DA';
+export const domainOf=(p?:Product)=>p?.domain||'face';
+export const concernsFor=(p?:Product)=>domainOf(p)==='hair'?HAIR_CONCERNS:domainOf(p)==='body'?BODY_CONCERNS:FACE_CONCERNS;
+export const routinesFor=(p?:Product)=>domainOf(p)==='hair'?HAIR_ROUTINES:domainOf(p)==='body'?BODY_ROUTINES:ROUTINES;
+export const labelConcern=(p:Profile)=>CONCERNS.find(c=>c[0]===p.concerns[0])?.[1]?.toLowerCase()||'votre besoin';
+export function priceOffer(total:number,tier:Tier,count=2):number{
+ if(!Number.isSafeInteger(total)||total<0)throw new Error('Montant invalide');
+ if(count<2||tier==='catalogue')return total;
+ return Math.min(total,Math.ceil((total*(tier==='duo'?10:9))/1100)*100);
+}
+export const isPack=(p:Product)=>p.category==='Pack';
+export function expand(p:Product,catalogue:Product[]):Product[]{
+ if(!isPack(p))return[p];
+ if(!p.components?.length)return[p];
+ return p.components.map(id=>catalogue.find(x=>x.id===id)).filter((x):x is Product=>!!x);
+}
+export function physicalCount(basket:Product[],catalogue:Product[]):number{return basket.reduce((s,p)=>s+expand(p,catalogue).length,0);}
+export function basketOffer(basket:Product[],tier:Tier):number{
+ const total=basket.reduce((s,p)=>s+p.price,0);
+ if(basket.length<2||tier==='catalogue')return total;
+ const packs=basket.filter(isPack).reduce((s,p)=>s+p.price,0);
+ if(!packs)return priceOffer(total,tier,basket.length);
+ // Existing pack tariff is protected. Discount only added singles, one final upward rounding.
+ return Math.min(total,Math.ceil((packs*11+(total-packs)*(tier==='duo'?10:9))/1100)*100);
+}
+export function basketProblem(basket:Product[],catalogue:Product[]):string|null{
+ const flat=basket.flatMap(p=>expand(p,catalogue));
+ if(basket.some(p=>isPack(p)&&(!p.components?.length||expand(p,catalogue).length!==p.components.length))&&basket.length>1)return'Le contenu exact de ce pack doit être confirmé avant tout ajout.';
+ if(flat.length>3)return'Trois soins physiques maximum, en comptant le contenu des packs.';
+ if(new Set(flat.map(p=>p.id)).size!==flat.length)return'Un produit est déjà inclus dans le pack ou la routine.';
+ return null;
+}
+export function questionsReady(p:Profile,base?:Product):boolean{
+ return p.concerns.length>0&&!!p.skin&&!!p.sensitive&&p.routineKnown&&p.safety.length>0&&(!p.concerns.includes('acne')||!!p.severity)&&(!p.concerns.includes('marks')||!!p.marks)&&(!p.concerns.includes('red')||!!p.redState)&&(!p.concerns.includes('fall')||!!p.hairPattern)&&(!p.safety.includes('allergy')||!!p.allergens?.length)&&(!p.safety.includes('minor')||!!p.age);
+}
+export function reviewReason(p:Profile):string|null{
+ if(p.safety.includes('urgent'))return'Réaction sévère ou gonflement important : arrêter la proposition commerciale et demander un avis médical rapidement. Difficulté à respirer, lèvres ou langue gonflées : aide médicale urgente.';
+ if(p.safety.includes('irritation')||p.redState==='severe')return'Ne pas ajouter de soin sur une zone actuellement brûlante, douloureuse, lésée ou très irritée. Faire vérifier la situation avant de poursuivre ; si elle est importante ou persiste, avis médical.';
+ if(p.severity==='severe')return'Boutons profonds, très douloureux ou laissant des cicatrices : ne pas traiter cette situation comme un simple upsell cosmétique. Orientation vers l’encadrement médical.';
+ if(p.hairPattern==='sudden'||p.hairPattern==='patchy')return'Une chute brusque, par plaques, ou associée à une douleur/plaie du cuir chevelu nécessite une évaluation professionnelle. Ne pas promettre une repousse avec un cosmétique.';
+ if(p.safety.includes('minor')&&p.age==='child')return'Produit pour un enfant : faire vérifier l’âge autorisé et la formule par votre encadrement avant de proposer la gamme adulte. Ce n’est pas une urgence médicale.';
+ if(p.safety.includes('allergy')&&p.allergens?.includes('unknown'))return'Allergène non identifié : vérifier l’étiquette et l’allergie avant de choisir un complément. Vérification interne, sans renvoi médical systématique.';
+ return null;
+}
+export function safetyNotes(p:Profile):string[]{
+ const n:string[]=[];
+ if(p.sensitive==='yes'||p.sensitive==='unknown'||p.concerns.includes('red')||p.concerns.includes('scalpcomfort'))n.push('Conseil prudent, pas de renvoi automatique : privilégier les formules douces documentées, sans parfum ni huiles essentielles listés. Introduire un produit à la fois et tester la tolérance.');
+ if(p.safety.includes('treatment'))n.push('Demander le nom du traitement oralement. Le moteur écarte les nouveaux actifs ciblés et garde des compléments simples ; vérifier leur compatibilité sans modifier la prescription.');
+ if(p.safety.includes('pregnancy'))n.push('Pas d’ajout automatique de soin ciblé ou de formule capillaire aux huiles essentielles. Des soins simples restent envisageables après vérification de l’étiquette et du protocole grossesse.');
+ if(p.safety.includes('minor'))n.push('Pour un adolescent, vérifier l’âge d’utilisation indiqué. Pas d’actif ciblé ajouté automatiquement.');
+ if(p.safety.includes('unknown'))n.push('Situation encore imprécise : terminer les questions avant d’introduire des actifs ; limiter les suggestions aux soins simples documentés.');
+ if(p.concerns.includes('scars')||p.marks==='relief')n.push('Un cosmétique ne supprime pas une cicatrice en creux ou en relief. Hydratation et protection peuvent compléter la routine, sans promettre de corriger le relief.');
+ if(p.concerns.includes('fall')&&p.hairPattern==='gradual')n.push('Chute progressive : conseil capillaire possible, sans diagnostic ni garantie de repousse. Une chute persistante ou qui s’aggrave mérite un avis professionnel.');
+ if(p.concerns.includes('flakes'))n.push('Ne pas appeler des pellicules « psoriasis ». Respecter le diagnostic existant et le protocole avant les produits spécifiques.');
+ if(p.safety.includes('allergy')&&!p.allergens?.includes('unknown'))n.push('Filtrage des allergènes déclarés à partir des listes publiées. Vérifier le flacon du lot avant accord ; le filtre n’est pas une garantie d’absence de réaction.');
+ return n;
+}
+export function group(p:Product){return p.category==='Sérum hydratant'?'Soin ciblé':p.category;}
+function restricted(p:Profile){return p.sensitive!=='no'||p.concerns.includes('red')||p.concerns.includes('scalpcomfort')||p.safety.some(s=>['treatment','pregnancy','minor','unknown'].includes(s))||p.concerns.includes('scars')||p.marks==='relief'||p.marks==='unknown';}
+function ingredientRisk(p:Product,profile:Profile):boolean{
+ const a=profile.allergens||[];const inci=(p.inciText||'').toLowerCase();
+ if(!profile.safety.includes('allergy'))return false;
+ if(!inci)return true;
+ if(a.includes('fragrance')&&(p.fragrance!==false||p.essentialOils!==false))return true;
+ if(a.includes('essential')&&p.essentialOils!==false)return true;
+ if(a.includes('mi')&&/methylisothiazolinone|methylchloroisothiazolinone|kathon/.test(inci))return true;
+ if(a.includes('nuts')&&/corylus|amygdalus|sesamum/.test(inci))return true;
+ if(a.includes('salicylates')&&/salicylic|salicylate|geogard ect/.test(inci))return true;
+ return false;
+}
+export function canCombine(base:Product,added:Product[],candidate:Product,profile:Profile,catalogue:Product[]=[base,...added,candidate]):boolean{
+ if(!candidate.enabled||(!candidate.recommendable&&!profile.verifiedProducts?.includes(candidate.id))||candidate.id===base.id||added.some(x=>x.id===candidate.id)||domainOf(candidate)!==domainOf(base))return false;
+ const basket=[base,...added];if(basketProblem([...basket,candidate],catalogue))return false;
+ const current=basket.flatMap(p=>expand(p,catalogue)),incoming=expand(candidate,catalogue);
+ if(incoming.some(p=>!p.enabled||(!p.recommendable&&!profile.verifiedProducts?.includes(p.id))))return false;
+ if(['shpso','serumpso','packpso'].includes(candidate.id)&&!profile.scalpProtocol)return false;
+ if(candidate.id==='sal10'&&!profile.verifiedProducts?.includes('sal10'))return false;
+ if(candidate.verificationRequired&&!profile.verifiedProducts?.includes(candidate.id))return false;
+ for(const p of incoming){
+  if(current.some(x=>group(x)===group(p)))return false;
+  if(profile.routine.includes(group(p)))return false;
+  if(ingredientRisk(p,profile))return false;
+  if(restricted(profile)&&!p.gentle)return false;
+  if(domainOf(p)==='face'){
+   if(p.active&&(current.some(x=>x.active)||profile.routine.includes('Soin ciblé')||profile.skin==='unknown'))return false;
+   if(p.category==='Hydratant'&&profile.skin!=='unknown'&&!p.skins.includes(profile.skin))return false;
+   if(p.active&&profile.skin!=='unknown'&&!p.skins.includes(profile.skin))return false;
+  }
+ }
+ return true;
+}
+function reasonFor(p:Product,base:Product,profile:Profile):string{
+ if(isPack(p))return(p.pitch||p.description)+' Son contenu est compté dans la routine pour éviter tout doublon.';
+ if(domainOf(base)==='hair'){
+  if(p.category==='Après-shampoing')return'Le shampoing couvre le lavage. Pour les longueurs sèches ou cassantes, l’après-shampoing ajoute le démêlage et le conditionnement qui manquent.';
+  if(p.category==='Shampoing')return'Le soin déjà commandé ne remplace pas le lavage. Ajouter un shampoing adapté seulement si cette étape n’est pas déjà couverte.';
+  return'Un soin de cuir chevelu est une étape différente du shampoing. Pertinent pour la demande exprimée, sans garantie de repousse et après vérification de la tolérance.';
+ }
+ if(p.category==='Hydratant')return'Complète le soin déjà choisi par une étape de confort et d’hydratation. '+p.description;
+ if(p.category==='Protection solaire')return'La protection solaire manque à la routine. Une étape complémentaire à l’hydratation ou au soin éclat, pas un deuxième sérum similaire.';
+ if(p.category==='Nettoyant')return'Une étape lavante adaptée manque. Le Total Cleanser est privilégié quand un soin ciblé est déjà présent, pour éviter de superposer les exfoliants.';
+ if(p.category==='Sérum hydratant')return'Complément d’hydratation quand une crème est déjà présente et que le besoin de confort persiste, sans dupliquer un autre sérum.';
+ return'Répond à la priorité « '+labelConcern(profile)+' ». Un seul soin ciblé, avec les ingrédients de la fiche et une tolérance à vérifier.';
+}
+export function recommend(catalogue:Product[],base:Product,profile:Profile,added:Product[]=[]):Candidate[]{
+ if(!questionsReady(profile,base)||reviewReason(profile))return[];
+ const primary=profile.concerns[0]==='acne'&&profile.severity==='blackheads'?'blackheads':profile.concerns[0]==='fall'&&profile.hairPattern==='breakage'?'breakage':profile.concerns[0];
+ const basket=[base,...added].flatMap(p=>expand(p,catalogue)),has=(g:string)=>basket.some(x=>group(x)===g)||profile.routine.includes(g);
+ const results:Candidate[]=[];
+ for(const p of catalogue){
+  if(!canCombine(base,added,p,profile,catalogue))continue;
+  let score=0;
+  if(domainOf(base)==='hair'){
+   if(p.category==='Après-shampoing'&&['growth','breakage','hairdry'].some(x=>profile.concerns.includes(x)||x===primary))score=110;
+   if(p.category==='Shampoing'){
+    if(p.id==='shanti'&&primary==='fall'&&profile.hairPattern==='gradual')score=105;
+    if(p.id==='shpousse'&&['growth','breakage','hairdry','scalpoil'].includes(primary))score=105;
+   }
+   if(p.id==='serumhair'&&primary==='fall'&&profile.hairPattern==='gradual')score=100;
+   if(profile.scalpProtocol&&primary==='flakes'&&['shpso','serumpso'].includes(p.id))score=85;
+   // Avoid a scalp serum solely for a length/cosmetic breakage concern.
+  }else if(domainOf(base)==='body'){
+   if(p.id==='bodywash'&&primary==='bodyspots')score=90;
+   if(p.id==='bodypack'&&primary==='bodyspots')score=80;
+  }else if(p.category==='Hydratant'){
+   score=basket.some(x=>x.active)?110:60;if(['dry','dehydration','red'].includes(primary))score+=40;
+   if(profile.skin==='unknown'&&p.id!=='wccream')continue;
+   if(p.id==='wcgel'&&['oily','mixed'].includes(profile.skin)&&profile.sensitive==='no')score+=20;
+   if(p.id==='wccream'&&['normal','mixed'].includes(profile.skin))score+=15;
+   if(p.id==='wcrich'&&profile.skin==='dry')score+=20;
+   if(p.id==='hcream')score-=18;
+  }else if(p.category==='Protection solaire'){
+   score=has('Hydratant')?85:45;if(['marks','dull'].includes(primary))score+=45;if(p.id==='wcspf')score+=12;
+  }else if(p.category==='Nettoyant'){
+   score=has('Hydratant')?60:40;if(p.id==='total')score+=8;if(p.id==='gelclean'&&['oil','blackheads'].includes(primary))score+=10;
+  }else if(p.category==='Soin ciblé'){
+   if(!p.concerns.includes(primary))continue;
+   score=base.category==='Hydratant'?115:80;
+   if(primary==='acne'&&p.id!=='antiacne'&&p.id!=='nia10')continue;
+   if(primary==='acne'&&p.id==='antiacne')score+=8;
+   if(primary==='blackheads'&&!['sal2','lotion'].includes(p.id))continue;
+   if(primary==='blackheads'&&p.id==='sal2')score+=15;
+   if(primary==='oil'&&!['nia10','nia12'].includes(p.id))continue;
+   if(primary==='oil'&&p.id==='nia10')score+=10;
+  }else if(p.category==='Soin local'){
+   if(primary==='acne'&&profile.severity==='mild')score=65;
+  }else if(p.category==='Sérum hydratant'){
+   if(!['dehydration','dry','red'].includes(primary)||!has('Hydratant'))continue;
+   score=primary==='dehydration'?100:70;if(p.id==='sensitive'&&profile.sensitive==='yes')score+=12;
+  }
+  if(score>0)results.push({product:p,score,reason:reasonFor(p,base,profile)});
+ }
+ return results.sort((a,b)=>b.score-a.score||a.product.price-b.product.price).slice(0,12);
+}
+export function packUpgrades(catalogue:Product[],base:Product,profile:Profile):Candidate[]{
+ if(isPack(base)||!questionsReady(profile,base)||reviewReason(profile))return[];
+ return catalogue.filter(p=>p.enabled&&(p.recommendable||profile.verifiedProducts?.includes(p.id))&&isPack(p)&&p.components?.includes(base.id)&&domainOf(p)===domainOf(base)).filter(p=>{
+  const extra=expand(p,catalogue).filter(x=>x.id!==base.id);
+  return extra.length>0&&extra.every(x=>canCombine(p.id==='bodypack'&&x.id==='nia10'?{...base,domain:'face'}:base,[],x,profile,catalogue))&&p.concerns.some(c=>profile.concerns.includes(c));
+ }).map(p=>({product:p,score:100,reason:p.pitch||p.description}));
+}
+export function summaryText(base:Product,basket:Product[],tier:Tier,delivery:number|null){
+ const total=basket.reduce((s,p)=>s+p.price,0),offer=basketOffer(basket,tier),pack=basket.some(isPack);
+ const fee=delivery===null?'Frais de livraison à confirmer.':`Livraison : ${money(delivery)}. Total avec livraison : ${money(offer+delivery)}.`;
+ const replacement=basket[0]?.id!==base.id?`Commande initiale : ${base.name} (${money(base.price)}). Remplacement par le pack ci-dessous, sans double facturation.\n`:'';
+ return `TOUCHÉ | Récapitulatif de l’offre\n${replacement}${basket.map(p=>`• ${p.name} : ${money(p.price)}`).join('\n')}\n\nTotal catalogue : ${money(total)}\nOffre produits : ${money(offer)}\nÉconomie : ${money(total-offer)}\nÉcart avec la commande initiale : ${money(offer-base.price)}\n${fee}\n${pack?'Tarif pack conservé, réduction uniquement sur les compléments éligibles. ':''}Offre liée à la commande en cours, sans cumul de remises. À valider avec la cliente. Aucun système de commande externe modifié.`;
+}
+export function goalPhrase(p:Profile):string{
+ const goals:Record<string,string>={acne:'mieux prendre soin de vos petites imperfections',blackheads:'cibler les points noirs sans surcharger votre routine',oil:'limiter l’apparence de la brillance',marks:'améliorer l’apparence des marques brunes',red:'retrouver davantage de confort',dry:'réduire les sensations de tiraillement',dehydration:'mieux hydrater votre peau',dull:'retrouver un teint plus lumineux',scars:'améliorer l’aspect de votre peau sans promesse sur le relief des cicatrices',growth:'prendre soin de vos longueurs',breakage:'faciliter le démêlage et limiter la casse',fall:'mieux accompagner votre routine capillaire',hairdry:'retrouver des longueurs plus souples',scalpoil:'adapter le lavage à vos racines grasses',flakes:'adapter votre routine aux pellicules',scalpcomfort:'préserver le confort de votre cuir chevelu',bodyspots:'prendre soin des imperfections de votre corps',bodydry:'retrouver davantage de confort sur votre corps'};
+ return goals[p.concerns[0]]||'compléter utilement votre routine';
+}
+export function customerBenefit(p:Product):string{
+ const lines:Record<string,string>={
+ wccream:'Cette crème complète l’hydratation avec de la glycérine, du panthénol et des céramides. Elle ne remplace pas votre sérum : elle apporte une étape de confort, dans une texture destinée aux peaux normales à mixtes.',
+ wcgel:'Ce gel hydratant est la texture Water Complex destinée aux peaux mixtes à grasses. La glycérine, la bétaïne et l’acide hyaluronique complètent l’hydratation ; c’est un geste différent de votre soin ciblé.',
+ wcrich:'Cette texture plus riche associe notamment huile de jojoba, squalane et glycérine. Elle est destinée aux peaux sèches : l’idée est d’apporter de la souplesse et du confort, plutôt que d’ajouter un deuxième sérum.',
+ total:'Le Total Cleanser apporte l’étape de nettoyage qui manque. Sa formule associe une base lavante, de la glycérine et des céramides ; on complète votre routine sans ajouter un nouvel exfoliant.',
+ ha35:'Ce sérum associe hyaluronate de sodium, glycérine et panthénol. Il apporte un complément d’hydratation à votre crème, si c’est bien le besoin que vous ressentez.',
+ sensitive:'Ce sérum réunit glycérine, acide hyaluronique, niacinamide et panthénol. Nous vérifions sa tolérance et votre routine : le nom « peaux sensibles » ne dispense pas de cette vérification.',
+ nia10:'Ce sérum associe niacinamide 10 % et Zinc PCA 1 % dans la liste publiée. C’est le soin ciblé proposé pour votre préoccupation de brillance, plutôt que d’empiler plusieurs sérums similaires.',
+ antiacne:'Vous avez déjà une étape d’hydratation. Ce soin ciblé complète la routine des imperfections avec une formule contenant notamment du jojoba et du tea tree ; nous vérifions d’abord que ces ingrédients vous conviennent.',
+ sal2:'L’acide salicylique 2 % est l’option ciblée proposée pour les points noirs. Nous gardons un seul exfoliant et préservons les autres gestes simples de la routine.',
+ vitc:'La formule contient de l’acide ascorbique 11 %, avec de l’acide férulique et de la vitamine E. C’est l’étape éclat de la routine, sans remplacer une protection solaire.',
+ wcspf:'Le SPF 50 ajoute la protection solaire qui manque à votre routine. Ce n’est pas un deuxième produit pour le même geste ; la quantité et la réapplication restent celles indiquées sur le flacon.',
+ serumspf:'Cette référence apporte une protection solaire SPF 50 dans une texture sérum selon le catalogue. C’est une étape de protection, à utiliser conformément à son étiquette.',
+ hcream:'La crème hydratante historique associe notamment glycérine, acide hyaluronique et huile de jojoba. C’est une option simple pour compléter l’hydratation si sa texture vous convient.',
+ conditioner:'Le shampoing lave ; l’après-shampoing apporte un autre geste, le soin des longueurs et le démêlage. Sa formule contient notamment glycérine, panthénol et agents conditionnants : c’est pertinent quand les longueurs sont sèches ou cassantes.',
+ shpousse:'Ce shampoing apporte l’étape de lavage, avec notamment glycérine, panthénol et kératine hydrolysée dans sa formule. L’après-shampoing s’occupe ensuite des longueurs : les deux ne font pas le même travail.',
+ shanti:'Ce shampoing apporte l’étape lavante de la routine capillaire, avec notamment glycérine et kératine hydrolysée. Il complète un soin du cuir chevelu sans le remplacer.',
+ serumhair:'Ce soin du cuir chevelu contient notamment des huiles de ricin et d’argan ainsi que du panthénol. Contrairement au shampoing, il prévoit un temps de pose puis un rinçage selon l’étiquette. Cela ne constitue pas une garantie de repousse.',
+ bodywash:'Ce nettoyant est destiné au corps et contient notamment niacinamide et acide salicylique. Nous le proposons pour la zone concernée, en tenant compte des actifs que vous utilisez déjà.'};
+ return lines[p.id]||p.pitch||p.description;
+}
+export function salesPitch(base:Product,basket:Product[],profile:Profile,tier:Tier,catalogue:Product[]){
+ const offer=basketOffer(basket,tier),total=basket.reduce((s,p)=>s+p.price,0),extra=offer-base.price;
+ const expanded=basket.flatMap(p=>expand(p,catalogue)),initialIds=new Set(expand(base,catalogue).map(p=>p.id));
+ const complements=expanded.filter(p=>!initialIds.has(p.id));
+ const facts=complements.flatMap(p=>(p.ingredients||[]).slice(0,2).map(i=>`${p.short} : ${i.name}. ${i.role}`));
+ const why=complements.map(customerBenefit).join(' ');
+ const opener=`Vous m’avez dit vouloir ${goalPhrase(profile)}. Vous avez déjà choisi ${base.short}. Je vous propose de compléter précisément ce qui manque, pas de multiplier les produits.`;
+ const value=complements.length?why:'Votre pack couvre déjà plusieurs gestes. Nous ne doublons pas ses composants.';
+ const price=`L’ensemble revient à ${money(offer)}${total>offer?' au lieu de '+money(total):''}, soit ${money(extra)} ${extra<0?'de différence':'supplémentaires'} par rapport à votre commande initiale. ${total>offer?'Vous économisez '+money(total-offer)+' sur le catalogue. ':''}Les frais de livraison restent séparés.`;
+ const close='Est-ce que je vous confirme cette composition et ce montant pour votre commande ?';
+ return{opener,value,facts,price,close,text:[opener,value,price,close].join('\n\n')};
+}
+export function objections(base:Product,basket:Product[],profile:Profile,tier:Tier,catalogue:Product[]){
+ const offer=basketOffer(basket,tier),final=basketOffer(basket,'final'),total=basket.reduce((s,p)=>s+p.price,0),extra=offer-base.price;
+ const items=basket.flatMap(p=>expand(p,catalogue)),baseIds=new Set(expand(base,catalogue).map(p=>p.id)),p=items.find(p=>!baseIds.has(p.id));
+ const proof=p?.ingredients?.slice(0,2).map(i=>`${i.name} : ${i.role}`).join(' ')||p?.pitch||'Chaque produit garde un rôle précis dans la routine.';
+ return[
+ {key:'budget',title:'« C’est trop cher. »',probe:'Est-ce le montant total qui vous freine, ou le supplément par rapport au produit commandé ?',answer:`Vous souhaitiez surtout ${goalPhrase(profile)}. ${p?customerBenefit(p):'L’objectif est de garder uniquement les gestes utiles.'} Votre commande de départ est à ${money(base.price)} ; avec cette composition, on passe à ${money(offer)}. Le supplément réel est donc ${money(extra)}, hors livraison.${offer>final?' Je peux aller jusqu’à l’offre finale autorisée de '+money(final)+' pour cette composition.':''}`,close:'On valide le duo prioritaire à ce montant, plutôt que d’ajouter un troisième produit ?',action:'Présenter le gain utile et le supplément, puis proposer duo plutôt que trio. Ne pas inventer de prix ni dévaloriser la cliente.'},
+ {key:'initial',title:'« Je voulais seulement mon produit. »',probe:'Tout à fait. Puis-je vous expliquer en une phrase pourquoi je vous propose ce complément ?',answer:`${p?customerBenefit(p):'La proposition complète un geste manquant, sans doubler vos produits.'} Votre commande initiale reste possible. Mon rôle est de vous proposer une routine cohérente avec ce que vous venez de me décrire.`,close:'Ce complément vous serait-il utile, ou cette étape est-elle déjà couverte chez vous ?',action:'Une justification concrète puis une question. Un refus clair clôt la proposition.'},
+ {key:'already',title:'« J’ai déjà une crème / un shampoing. »',probe:'Lequel utilisez-vous, pour quel besoin, et est-ce qu’il vous convient ?',answer:'S’il vous convient, gardons-le : acheter deux produits pour le même geste n’apporterait pas forcément plus. Je vérifie seulement l’étape manquante et la compatibilité avec votre commande.',close:'On complète uniquement ce qui manque réellement à votre routine ?',action:'Cocher le produit déjà utilisé et recalculer les suggestions ; ne pas remplacer par principe.'},
+ {key:'efficacy',title:'« Est-ce que ça fonctionne vraiment ? »',probe:'Quel résultat attendez-vous précisément : confort, brillance, marques, démêlage ou autre chose ?',answer:`Voici ce qui est concret dans la formule : ${proof} Cela explique le rôle cosmétique du complément. Une liste d’ingrédients ne permet pas de garantir un résultat sur chaque personne ; je préfère vous proposer un geste cohérent et une utilisation régulière conforme à l’étiquette plutôt qu’une promesse excessive.`,close:'Est-ce bien le bénéfice que vous recherchez en priorité ?',action:'Ne pas citer de pourcentage clinique, délai de guérison ou centimètres de repousse sans preuve produit validée.'},
+ {key:'reaction',title:'« J’ai peur que ma peau réagisse. »',probe:'Avez-vous une réaction actuellement, une allergie connue, ou seulement une peau qui réagit facilement ?',answer:'Une peau sensible ne signifie pas qu’il faut renoncer à toute routine. Nous pouvons privilégier une formule simple et documentée, introduire un seul nouveau produit et vérifier la tolérance. En revanche, on n’ajoute pas de soin sur une zone actuellement brûlée, gonflée ou très irritée.',close:'Je vérifie les ingrédients et vous présente l’option la plus sobre adaptée à vos réponses ?',action:'Mettre à jour sensibilité/allergènes. Pas de promesse « zéro réaction ».'},
+ {key:'later',title:'« Je vais réfléchir. »',probe:'Qu’est-ce qui vous manque pour décider : comprendre le produit, son utilisation ou le montant ?',answer:`Je peux reprendre le point qui vous fait hésiter. L’offre pour cette commande est de ${money(offer)} hors livraison ; le montant et la composition restent clairement indiqués. L’objectif est que vous sachiez pourquoi chaque produit est là.`,close:'Quel point souhaitez-vous que je clarifie avant de confirmer la commande ?',action:'Répondre au frein réel, sans fausse expiration ni menace de rupture. Respecter la décision finale.'},
+ {key:'many',title:'« Cela fait trop de produits. »',probe:'Préférez-vous commencer par une routine de deux gestes ?',answer:'Oui. Une routine complète n’a pas besoin d’être compliquée. Nous conservons votre produit et le complément le plus utile ; le troisième reste facultatif. Le système retire les doublons, y compris ceux contenus dans un pack.',close:'On part sur le duo essentiel plutôt que le trio ?',action:'Retirer le dernier ajout et recalculer l’offre avant de la faire accepter.'},
+ {key:'discount',title:'« Faites-moi encore une remise. »',probe:'Est-ce un budget maximum à respecter ?',answer:`La meilleure offre autorisée pour cette composition est de ${money(final)}, hors livraison.${total>final?' Cela représente '+money(total-final)+' d’économie.':''} Plutôt que vous annoncer une remise qui ne sera pas appliquée, nous pouvons adapter la composition à votre budget.`,close:'Je conserve le duo prioritaire, ou vous préférez rester sur votre commande initiale ?',action:'Pas de cumul improvisé. Tarif pack protégé ; remise seulement sur les compléments éligibles.'}
+ ];
+}
