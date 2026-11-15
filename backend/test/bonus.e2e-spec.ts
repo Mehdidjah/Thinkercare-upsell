@@ -1,5 +1,5 @@
 import { and, eq, sql } from 'drizzle-orm';
-import { algerDay } from '@touche/domain';
+import { algerDay, type ItemSnapshot } from '@touche/domain';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { tcAudit, tcBonusRules } from '../src/db/schema.js';
 import type { DeskUser } from '../src/desk/desk.types.js';
@@ -40,9 +40,47 @@ beforeEach(async () => {
 const now = () => new Date();
 const progress = async (query = '', cookie = lina) =>
   (await deskGet(ctx, `?action=my-progress${query}`, cookie)).body;
+const lineFor = async (id: string) =>
+  (await deskGet(ctx, '?action=contributions', admin)).body.people.find(
+    (x: { id: string }) => x.id === id,
+  );
+
+/** Item snapshots shaped like the desk saves them (catalogue.ts `snapshot`). */
+const item = (id: string, price: number, category: string): ItemSnapshot => ({
+  id,
+  name: id,
+  price,
+  quantity: 1,
+  category,
+  components: [],
+});
+const packPousse = (): ItemSnapshot => ({
+  id: 'packpousse',
+  name: 'Pack Pousse et Croissance',
+  price: 3250,
+  quantity: 1,
+  category: 'Pack',
+  components: [
+    {
+      id: 'shpousse',
+      name: 'Shampooing Pousse et Croissance',
+      price: 1900,
+      quantity: 1,
+      category: 'Shampoing',
+    },
+    {
+      id: 'conditioner',
+      name: 'Après-Shampooing Densité',
+      price: 1700,
+      quantity: 1,
+      category: 'Après-shampoing',
+    },
+  ],
+});
+const serumHair = () => item('serumhair', 1900, 'Soin cuir chevelu');
 
 describe('commission progress', () => {
-  it('my-progress counts one upsell per accepted duo or trio with a positive extra', async () => {
+  it('my-progress counts one upsell per added product: an accepted duo counts 1, a trio 2', async () => {
     const u = linaUser.id;
     await insertCall(ctx.db, { user_id: u, created_at: now(), order_ref: 'A' });
     await insertCall(ctx.db, {
@@ -70,7 +108,135 @@ describe('commission progress', () => {
       order_ref: 'D',
     });
     const body = await progress();
+    expect(body.progress.count).toBe(3);
+  });
+
+  it('a trio adds two products: two upsells, one confirmation', async () => {
+    await insertCall(ctx.db, {
+      user_id: linaUser.id,
+      created_at: now(),
+      outcome: 'trio',
+      tier: 'trio',
+      base_id: 'antiacne',
+      base_total: 1800,
+      catalogue_total: 5200,
+      offered_total: 4400,
+      extra: 2600,
+      order_ref: 'T-1',
+      products: [
+        item('antiacne', 1800, 'Soin ciblé'),
+        item('nia10', 1900, 'Soin ciblé'),
+        item('wcgel', 1500, 'Hydratant'),
+      ],
+    });
+    const body = await progress();
     expect(body.progress.count).toBe(2);
+    expect(body.todayUpsells).toBe(2);
+    expect(body.daily).toEqual([{ day: algerDay(), upsells: 2 }]);
+    const p = await lineFor(linaUser.id);
+    expect(p.period).toMatchObject({ upsells: 2, confirmations: 1 });
+    expect(p.monthly).toMatchObject({ upsells: 2, confirmations: 1 });
+  });
+
+  it('a pack upgrade (one product replaced by its pack of 2) counts one upsell', async () => {
+    await insertCall(ctx.db, {
+      user_id: linaUser.id,
+      created_at: now(),
+      outcome: 'duo',
+      tier: 'duo',
+      base_id: 'shpousse',
+      base_total: 1900,
+      catalogue_total: 3250,
+      offered_total: 3250,
+      extra: 1350,
+      order_ref: 'PK-1',
+      products: [packPousse()],
+    });
+    expect((await progress()).progress.count).toBe(1);
+  });
+
+  it('a pack upgrade plus one more product counts two upsells', async () => {
+    await insertCall(ctx.db, {
+      user_id: linaUser.id,
+      created_at: now(),
+      outcome: 'trio',
+      tier: 'trio',
+      base_id: 'shpousse',
+      base_total: 1900,
+      catalogue_total: 5150,
+      offered_total: 4900,
+      extra: 3000,
+      order_ref: 'PK-2',
+      products: [packPousse(), serumHair()],
+    });
+    expect((await progress()).progress.count).toBe(2);
+  });
+
+  it('an initial pack of 2 plus one product counts one upsell', async () => {
+    await insertCall(ctx.db, {
+      user_id: linaUser.id,
+      created_at: now(),
+      outcome: 'trio',
+      tier: 'trio',
+      base_id: 'packpousse',
+      base_total: 3250,
+      catalogue_total: 5150,
+      offered_total: 4900,
+      extra: 1650,
+      order_ref: 'PK-3',
+      products: [packPousse(), serumHair()],
+    });
+    const body = await progress();
+    expect(body.progress.count).toBe(1);
+    expect(body.withoutReference).toBe(0);
+    expect(body.duplicateExcluded).toBe(0);
+  });
+
+  it('calls that add nothing payable never count, whatever their size', async () => {
+    const u = linaUser.id;
+    for (const outcome of [
+      'initial',
+      'refused',
+      'review',
+      'noanswer',
+      'callback',
+    ]) {
+      await insertCall(ctx.db, {
+        user_id: u,
+        created_at: now(),
+        outcome,
+        offered_total:
+          outcome === 'initial' || outcome === 'refused' ? 1800 : 0,
+        extra: 0,
+        order_ref: `X-${outcome}`,
+      });
+    }
+    // An accepted trio without a positive extra, and one whose offer does not exceed the order.
+    // Both have no dossier reference (empty, then no metadata row), so "sans référence" must
+    // apply the same eligibility gates as the upsell count.
+    await insertCall(ctx.db, {
+      user_id: u,
+      created_at: now(),
+      outcome: 'trio',
+      extra: 0,
+      order_ref: '',
+    });
+    await insertCall(ctx.db, {
+      user_id: u,
+      created_at: now(),
+      outcome: 'trio',
+      base_total: 1800,
+      offered_total: 1800,
+      extra: 600,
+      order_ref: null,
+    });
+    const body = await progress();
+    expect(body.progress.count).toBe(0);
+    expect(body.withoutReference).toBe(0);
+    expect((await lineFor(u)).period).toMatchObject({
+      upsells: 0,
+      withoutRef: 0,
+    });
   });
 
   it('a dossier reference is counted once, the accepted addition wins', async () => {
@@ -88,6 +254,65 @@ describe('commission progress', () => {
     const body = await progress();
     expect(body.progress.count).toBe(1);
     expect(body.duplicateExcluded).toBe(1);
+  });
+
+  it('a duplicated trio dossier counts its two products once and excludes the other two', async () => {
+    const u = linaUser.id;
+    await insertCall(ctx.db, {
+      user_id: u,
+      created_at: new Date(Date.now() - 60_000),
+      outcome: 'trio',
+      tier: 'trio',
+      offered_total: 4400,
+      extra: 2600,
+      order_ref: 'DOS-T',
+    });
+    await insertCall(ctx.db, {
+      user_id: u,
+      created_at: now(),
+      outcome: 'trio',
+      tier: 'trio',
+      offered_total: 4400,
+      extra: 2600,
+      order_ref: ' dos-t ',
+    });
+    const body = await progress();
+    expect(body.progress.count).toBe(2);
+    expect(body.duplicateExcluded).toBe(2);
+    expect((await lineFor(u)).period).toMatchObject({
+      upsells: 2,
+      duplicates: 2,
+      confirmations: 1,
+    });
+  });
+
+  it('upsells without a reference are counted in added products', async () => {
+    const u = linaUser.id;
+    await insertCall(ctx.db, {
+      user_id: u,
+      created_at: now(),
+      outcome: 'trio',
+      tier: 'trio',
+      offered_total: 4400,
+      extra: 2600,
+      order_ref: '',
+    });
+    let body = await progress();
+    expect(body.progress.count).toBe(2);
+    expect(body.withoutReference).toBe(2);
+    // A call with no dossier metadata at all is also without reference.
+    await insertCall(ctx.db, {
+      user_id: u,
+      created_at: now(),
+      order_ref: null,
+    });
+    body = await progress();
+    expect(body.progress.count).toBe(3);
+    expect(body.withoutReference).toBe(3);
+    expect((await lineFor(u)).period).toMatchObject({
+      upsells: 3,
+      withoutRef: 3,
+    });
   });
 
   it('upsells without a reference are flagged', async () => {
@@ -204,6 +429,109 @@ describe('commission progress', () => {
     expect(person(linaUser.id).monthly).toMatchObject({
       upsells: 1,
       confirmations: 1,
+    });
+  });
+
+  it('cross-adviser ranking gives each dossier and all its added products to the rank-1 call only', async () => {
+    const sara = await createUser(ctx.db, {
+      username: 'conseil.sara',
+      password: PASSWORD,
+      role: 'advisor',
+    });
+    const saraCookie = await loginCookie(ctx, 'conseil.sara', PASSWORD);
+    const t0 = new Date(Date.now() - 60_000);
+    // DOS-A: Sara's earlier trio wins over Lina's later duo.
+    await insertCall(ctx.db, {
+      user_id: sara.id,
+      created_at: t0,
+      outcome: 'trio',
+      tier: 'trio',
+      offered_total: 4400,
+      extra: 2600,
+      order_ref: 'DOS-A',
+    });
+    await insertCall(ctx.db, {
+      user_id: linaUser.id,
+      created_at: now(),
+      order_ref: 'DOS-A',
+    });
+    // DOS-B: Lina's accepted trio wins over Sara's earlier confirmed initial order.
+    await insertCall(ctx.db, {
+      user_id: sara.id,
+      created_at: t0,
+      outcome: 'initial',
+      offered_total: 1800,
+      extra: 0,
+      order_ref: 'DOS-B',
+    });
+    await insertCall(ctx.db, {
+      user_id: linaUser.id,
+      created_at: now(),
+      outcome: 'trio',
+      tier: 'trio',
+      offered_total: 4400,
+      extra: 2600,
+      order_ref: 'DOS-B',
+    });
+    const s = await progress('', saraCookie);
+    expect(s.progress.count).toBe(2);
+    expect(s.duplicateExcluded).toBe(0);
+    const l = await progress();
+    expect(l.progress.count).toBe(2);
+    expect(l.duplicateExcluded).toBe(1);
+    expect((await lineFor(sara.id)).monthly).toMatchObject({
+      upsells: 2,
+      confirmations: 1,
+      duplicates: 0,
+    });
+    expect((await lineFor(linaUser.id)).monthly).toMatchObject({
+      upsells: 2,
+      confirmations: 1,
+      duplicates: 1,
+    });
+  });
+
+  it('between two accepted add-ons on one dossier, the earliest wins even when a later one adds more products', async () => {
+    const sara = await createUser(ctx.db, {
+      username: 'conseil.sara',
+      password: PASSWORD,
+      role: 'advisor',
+    });
+    const saraCookie = await loginCookie(ctx, 'conseil.sara', PASSWORD);
+    // Lina's accepted duo comes first; Sara's later accepted trio is a duplicate of the dossier.
+    await insertCall(ctx.db, {
+      user_id: linaUser.id,
+      created_at: new Date(Date.now() - 60_000),
+      outcome: 'duo',
+      tier: 'duo',
+      offered_total: 3000,
+      extra: 1200,
+      order_ref: 'DOS-X',
+    });
+    await insertCall(ctx.db, {
+      user_id: sara.id,
+      created_at: now(),
+      outcome: 'trio',
+      tier: 'trio',
+      offered_total: 4400,
+      extra: 2600,
+      order_ref: 'dos-x',
+    });
+    const l = await progress();
+    expect(l.progress.count).toBe(1);
+    expect(l.duplicateExcluded).toBe(0);
+    const s = await progress('', saraCookie);
+    expect(s.progress.count).toBe(0);
+    expect(s.duplicateExcluded).toBe(2);
+    expect((await lineFor(linaUser.id)).monthly).toMatchObject({
+      upsells: 1,
+      confirmations: 1,
+      duplicates: 0,
+    });
+    expect((await lineFor(sara.id)).monthly).toMatchObject({
+      upsells: 0,
+      confirmations: 0,
+      duplicates: 2,
     });
   });
 
@@ -344,6 +672,35 @@ describe('commission progress', () => {
     }
     const body = await progress();
     expect(body.progress.estimatedDzd).toBe(2700);
+  });
+
+  it('the bonus is computed on added products: 30 trios reach the 60-upsell threshold', async () => {
+    const month = thisMonth();
+    await ctx.db
+      .execute(sql`INSERT INTO tc_bonus_rules (month, threshold, rate_dzd, mode, version, updated_by, updated_at)
+      VALUES (${month}, 60, 45, 'all_month', 1, '', now()) ON CONFLICT (month) DO UPDATE SET mode = 'all_month', threshold = 60, rate_dzd = 45`);
+    for (let i = 0; i < 30; i++) {
+      await insertCall(ctx.db, {
+        user_id: linaUser.id,
+        created_at: now(),
+        outcome: 'trio',
+        tier: 'trio',
+        offered_total: 4400,
+        extra: 2600,
+        order_ref: `TR${i}`,
+      });
+    }
+    const body = await progress();
+    expect(body.progress).toMatchObject({
+      count: 60,
+      reached: true,
+      payableCount: 60,
+      estimatedDzd: 2700,
+    });
+    expect((await lineFor(linaUser.id)).monthly.bonus).toMatchObject({
+      count: 60,
+      estimatedDzd: 2700,
+    });
   });
 
   it('closed months are read-only', async () => {

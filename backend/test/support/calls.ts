@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { ItemSnapshot } from '@touche/domain';
 import type { Db } from '../../src/db/schema.js';
 import { tcCallMeta, tcCalls } from '../../src/db/schema.js';
 
@@ -17,6 +18,8 @@ export async function insertCall(
     catalogue_total?: number;
     tier?: string;
     order_ref?: string | null;
+    /** Item snapshots as saved by the desk (pack components included); defaults to []. */
+    products?: ItemSnapshot[];
   },
 ): Promise<string> {
   const id = c.id ?? randomUUID();
@@ -27,7 +30,7 @@ export async function insertCall(
     created_at: c.created_at,
     outcome: c.outcome ?? 'duo',
     base_id: c.base_id ?? 'antiacne',
-    products: [],
+    products: c.products ?? [],
     catalogue_total: c.catalogue_total ?? 3300,
     base_total: c.base_total ?? 1800,
     offered_total: c.offered_total ?? 3000,
