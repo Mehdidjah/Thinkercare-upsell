@@ -50,6 +50,23 @@ export function basketProblem(basket:Product[],catalogue:Product[]):string|null{
 export function questionsReady(p:Profile,base?:Product):boolean{
  return p.concerns.length>0&&!!p.skin&&!!p.sensitive&&p.routineKnown&&p.safety.length>0&&(!p.concerns.includes('acne')||!!p.severity)&&(!p.concerns.includes('marks')||!!p.marks)&&(!p.concerns.includes('red')||!!p.redState)&&(!p.concerns.includes('fall')||!!p.hairPattern)&&(!p.safety.includes('allergy')||!!p.allergens?.length)&&(!p.safety.includes('minor')||!!p.age);
 }
+export type MissingAnswer={question:'01'|'02'|'03'|'04';label:string};
+// The answers questionsReady still waits for, in screen order. Empty exactly when questionsReady is true.
+export function missingAnswers(p:Profile,base?:Product):MissingAnswer[]{
+ const hair=domainOf(base)==='hair',m:MissingAnswer[]=[];
+ if(!p.concerns.length)m.push({question:'01',label:'la priorité de la cliente'});
+ if(p.concerns.includes('acne')&&!p.severity)m.push({question:'01',label:'le type de boutons'});
+ if(p.concerns.includes('marks')&&!p.marks)m.push({question:'01',label:'le type de marque'});
+ if(p.concerns.includes('red')&&!p.redState)m.push({question:'01',label:'le type de rougeurs'});
+ if(p.concerns.includes('fall')&&!p.hairPattern)m.push({question:'01',label:'le type de chute'});
+ if(!p.skin)m.push({question:'02',label:hair?'le profil capillaire':'le type de peau'});
+ if(!p.sensitive)m.push({question:'02',label:hair?'la sensibilité du cuir chevelu':'la sensibilité habituelle'});
+ if(!p.routineKnown)m.push({question:'03',label:'les soins déjà utilisés'});
+ if(!p.safety.length)m.push({question:'04',label:'les précautions utiles'});
+ if(p.safety.includes('allergy')&&!p.allergens?.length)m.push({question:'04',label:'l’allergène concerné'});
+ if(p.safety.includes('minor')&&!p.age)m.push({question:'04',label:'l’âge d’utilisation'});
+ return m;
+}
 export function reviewReason(p:Profile):string|null{
  if(p.safety.includes('urgent'))return'Réaction sévère ou gonflement important : arrêter la proposition commerciale et demander un avis médical rapidement. Difficulté à respirer, lèvres ou langue gonflées : aide médicale urgente.';
  if(p.safety.includes('irritation')||p.redState==='severe')return'Ne pas ajouter de soin sur une zone actuellement brûlante, douloureuse, lésée ou très irritée. Faire vérifier la situation avant de poursuivre ; si elle est importante ou persiste, avis médical.';
@@ -105,6 +122,28 @@ export function canCombine(base:Product,added:Product[],candidate:Product,profil
   }
  }
  return true;
+}
+export type ManualAddCheck={blocked:string|null;warnings:string[];verifyIds:string[]};
+// A product the customer asks for by name, outside the suggestions. Hard rules block it (no verification overrides them);
+// softer mismatches become warnings the adviser confirms. verifyIds are the references the server needs in verifiedProducts.
+export function manualAddCheck(base:Product,added:Product[],candidate:Product,profile:Profile,catalogue:Product[]):ManualAddCheck{
+ const stop=(blocked:string):ManualAddCheck=>({blocked,warnings:[],verifyIds:[]});
+ if(!candidate.enabled)return stop('Référence désactivée.');
+ if(expand(candidate,catalogue).some(p=>!p.enabled))return stop('Référence désactivée.');
+ if(candidate.id===base.id||added.some(x=>x.id===candidate.id))return stop('Déjà dans la routine.');
+ const problem=basketProblem([base,...added,candidate],catalogue);if(problem)return stop(problem);
+ const current=[base,...added].flatMap(p=>expand(p,catalogue)),incoming=expand(candidate,catalogue);
+ if(incoming.some(p=>ingredientRisk(p,profile)))return stop('Allergie déclarée : ingrédient à risque ou liste INCI non publiée.');
+ if(['shpso','serumpso','packpso'].includes(candidate.id)&&!profile.scalpProtocol)return stop('Routine spécifique : à valider d’abord par le référent de l’équipe.');
+ const warnings:string[]=[],face=incoming.filter(p=>domainOf(p)==='face');
+ if(domainOf(candidate)!==domainOf(base))warnings.push('Autre zone que la commande initiale : besoin non évalué par le questionnaire.');
+ if(incoming.some(p=>current.some(x=>group(x)===group(p))||profile.routine.includes(group(p))))warnings.push('Étape déjà couverte (routine actuelle ou panier).');
+ if(restricted(profile)&&incoming.some(p=>!p.gentle))warnings.push('Profil prudent : formule non signalée comme douce.');
+ if(face.some(p=>p.active)&&(current.some(x=>x.active)||profile.routine.includes('Soin ciblé')))warnings.push('Un soin ciblé actif est déjà présent : éviter de superposer les actifs.');
+ if(profile.skin&&profile.skin!=='unknown'&&face.some(p=>(p.category==='Hydratant'||p.active)&&!p.skins.includes(profile.skin)))warnings.push('Non indiqué pour le type de peau renseigné.');
+ const unverified=[candidate,...incoming.filter(p=>p.id!==candidate.id)].filter(p=>!p.recommendable||!!p.verificationRequired);
+ if(unverified.length)warnings.push('Vérification spécifique requise : '+(unverified.find(p=>p.verificationRequired)?.verificationRequired||'fiche à vérifier avant ajout.'));
+ return{blocked:null,warnings,verifyIds:[...new Set(unverified.map(p=>p.id))]};
 }
 function reasonFor(p:Product,base:Product,profile:Profile):string{
  if(isPack(p))return(p.pitch||p.description)+' Son contenu est compté dans la routine pour éviter tout doublon.';

@@ -38,3 +38,41 @@
 .bonus-personal{border:1px solid var(--line);border-radius:14px;background:#fff;padding:26px;margin-bottom:24px}.bonus-personal-top{display:flex;justify-content:space-between;gap:18px;align-items:center}.bonus-personal-top h2{text-transform:capitalize;margin-top:7px}.bonus-progress-layout{display:grid;grid-template-columns:minmax(200px,1.3fr) minmax(180px,1fr);gap:32px;margin-top:23px;align-items:center}.bonus-number{display:flex;gap:12px;align-items:baseline;font-variant-numeric:tabular-nums}.bonus-number strong{font-size:54px;letter-spacing:-2px;line-height:1.15}.bonus-number span{font-size:15px;color:var(--muted)}.bonus-track{height:10px;background:#ececea;border-radius:99px;margin:14px 0;overflow:hidden}.bonus-track>span{display:block;height:100%;background:#242624;border-radius:99px;transition:width .35s ease}.bonus-motivation{font-weight:600;font-size:13px}.bonus-estimate{background:#f3f4f1;padding:20px 22px;border-radius:11px;display:flex;flex-direction:column;gap:7px}.bonus-estimate>span{font-size:12px}.bonus-estimate strong{font-size:29px;line-height:1.25;letter-spacing:-.7px;font-variant-numeric:tabular-nums}.bonus-estimate small{font-size:11px;color:#666;max-width:40ch}.bonus-personal-footer{border-top:1px solid var(--line);margin-top:22px;padding-top:15px;display:flex;justify-content:space-between;gap:16px;font-size:12px}.bonus-personal-footer>span{color:#666}.bonus-inline{margin:0 0 20px}.bonus-personal.compact{padding:18px 22px;margin:0}.bonus-personal.compact .bonus-number strong{font-size:36px}.bonus-personal.compact .bonus-progress-layout{margin-top:12px;gap:25px}.bonus-personal.compact .bonus-estimate{padding:14px 18px}.bonus-personal.compact .bonus-estimate strong{font-size:23px}.bonus-personal.compact .bonus-personal-footer{margin-top:13px;padding-top:11px}.bonus-personal.compact h2{font-size:16px}.bonus-daily{margin-top:20px;display:grid;gap:10px}.bonus-daily>div{display:grid;grid-template-columns:65px 1fr 40px;gap:14px;align-items:center;font-size:12px}.bonus-daily>div>div{height:12px;background:#f0f0ee;overflow:hidden;border-radius:5px}.bonus-daily i{height:100%;display:block;background:#373a36}.contribution-table{min-width:1040px}.contribution-dashboard .pilot-metrics{margin-bottom:22px}.bonus-settings h2{margin-bottom:10px}.bonus-settings .form-grid{margin:20px 0}.bonus-settings .check-row{margin:18px 0}.bonus-settings .primary{margin-bottom:12px}.personal-dashboard .toolbar label{font-size:12px}.personal-dashboard .pilot-panel{margin-top:24px}.contribution-dashboard .alert,.personal-dashboard .alert{margin:14px 0}.bonus-settings .notice{margin:14px 0}.private-account-note{font-size:12px;color:#555;background:#f3f3f1;padding:12px;border-radius:8px}
 @media(max-width:760px){.bonus-personal{padding:19px}.bonus-progress-layout{grid-template-columns:1fr;gap:17px}.bonus-personal-top{align-items:flex-start;flex-wrap:wrap}.bonus-personal-footer{flex-direction:column;gap:7px}.bonus-personal.compact .bonus-progress-layout{grid-template-columns:1fr}.bonus-personal.compact .bonus-estimate{display:grid;grid-template-columns:1fr auto;gap:5px 10px}.bonus-personal.compact .bonus-estimate small{grid-column:1/-1;max-width:none}.contribution-dashboard .page-heading h1{font-size:28px}.personal-dashboard .toolbar{flex-wrap:wrap}.personal-dashboard .page-heading{align-items:flex-start}.bonus-personal-top .small-badge{white-space:normal}}
 @media(prefers-reduced-motion:reduce){.bonus-track>span{transition:none}}
+/* Questionnaire: name the answers that still keep "Construire la routine" disabled. Own row above the buttons so they keep their layout at every width. */
+.step-actions:has(>.missing-answers){flex-wrap:wrap}
+.missing-answers{order:-1;flex:1 1 100%;margin:0;font-size:11px;line-height:1.6;color:#6b6b6b;text-align:right;text-wrap:balance}
+.missing-link{display:inline;padding:0;font-size:inherit;line-height:inherit;font-weight:650;color:var(--ink);text-align:inherit;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.missing-link:hover{color:#727272}
+.missing-link:focus-visible{outline:2px solid #555;outline-offset:2px;border-radius:2px}
+@media(max-width:760px){.missing-answers{text-align:left}}
+/* Step 3: a product the customer asks for by name, outside the suggestions. Same safety rules; mismatches need an explicit confirmation. */
+.customer-request{margin:24px 0;padding:20px;border:1px solid #e2e2e2;border-radius:12px;background:#fff}
+.customer-request .section-head{margin-bottom:14px}
+.customer-request h2{font-size:18px}
+.customer-request .section-head p{font-size:12px;max-width:64ch}
+.customer-request .search-field{margin-bottom:12px}
+.request-scroll{max-height:min(520px,62vh);overflow-y:auto;overscroll-behavior:contain;border-radius:9px}
+.request-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.request-row{display:grid;grid-template-columns:48px minmax(0,1fr) auto auto;grid-template-areas:"photo info price action";align-items:center;gap:6px 14px;padding:10px 14px 10px 10px;border:1px solid #e2e2e2;border-radius:9px;background:#fff}
+.request-row>.product-photo.small{grid-area:photo;width:48px;height:56px;align-self:start}
+.request-info{grid-area:info;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:3px}
+.request-info b{font-size:13px;line-height:1.4;font-weight:700;letter-spacing:-.2px}
+.request-info small{font-size:11px;color:#6b6b6b}
+.request-price{grid-area:price;font-size:12px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}
+.request-row .add-product{grid-area:action;font-size:11px;white-space:nowrap}
+.request-tag{display:inline-flex;margin-top:2px;padding:2px 7px;border:1px solid #242524;border-radius:5px;background:#fff;color:#242524;font-size:9px;font-weight:750;letter-spacing:.4px;line-height:1.5}
+.request-reason{margin-top:2px;font-size:11px;line-height:1.6;color:#6b5140}
+.request-row.blocked{background:#f7f7f6;border-style:dashed}
+.request-row.blocked>.product-photo{opacity:.55}
+.request-row.blocked .request-info b,.request-row.blocked .request-price{color:#6b6b6b}
+.request-confirm{grid-column:1/-1;margin-top:6px;padding:14px 16px;background:#f4eee9;border:1px solid #e6dcd2;border-radius:8px;color:#6b5140}
+.request-confirm>b{font-size:12px}
+.request-confirm ul{margin:8px 0 0;padding-left:18px;list-style:disc}
+.request-confirm li{font-size:12px;line-height:1.65;margin:3px 0}
+.request-confirm-actions{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:14px}
+.request-confirm-actions .primary{min-height:42px;padding:10px 16px;font-size:12px}
+.request-empty{padding:18px 4px;font-size:12px;color:#6b6b6b}
+.customer-request button:focus-visible,.customer-request .request-scroll:focus-visible{outline:2px solid #555;outline-offset:2px}
+@media(max-width:760px){.customer-request{padding:16px 14px}.customer-request h2{font-size:17px}.request-row{grid-template-columns:40px minmax(0,1fr) auto;grid-template-areas:"photo info action" "photo price action";gap:4px 10px;padding:10px}.request-row>.product-photo.small{width:40px;height:48px}.request-info b{font-size:12px}.request-row .add-product{padding:7px 9px}.request-confirm{padding:12px}.request-confirm-actions{gap:8px}.request-confirm-actions .primary{width:100%}}
+.request-row .add-product:hover,.request-row .add-product[aria-expanded="true"]{background:#242524;border-color:#242524;color:#fff}
+.request-row .add-product:hover svg,.request-row .add-product[aria-expanded="true"] svg{color:#fff;stroke:#fff}

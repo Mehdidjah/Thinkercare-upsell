@@ -10,6 +10,7 @@ import {
   tcCalls,
   tcProposals,
 } from '../src/db/schema.js';
+import { EMPTY_PROFILE, type Product, basketOffer, recommend } from '@touche/domain';
 import type { DeskUser } from '../src/desk/desk.types.js';
 import { type TestContext, createTestApp } from './support/context.js';
 import { resetDatabase } from './support/database.js';
@@ -514,6 +515,51 @@ describe('save-call', () => {
       extra: 1350,
       tier: 'catalogue',
     });
+  });
+
+  it('a product the customer asks for, outside the suggestions, can be presented and saved', async () => {
+    const profile = {
+      ...EMPTY_PROFILE,
+      concerns: ['acne'],
+      severity: 'mild',
+      skin: 'mixed',
+      sensitive: 'no',
+      routineKnown: true,
+      routine: [],
+      safety: ['none'],
+    };
+    const fixtures = fixtureAll as unknown as Product[];
+    const suggested = recommend(fixtures, fixture('antiacne') as unknown as Product, profile);
+    expect(suggested.length).toBeGreaterThan(0);
+    expect(suggested.map((r) => r.product.id)).not.toContain('shpousse');
+    const agreedTotal = basketOffer(
+      [fixture('antiacne'), fixture('shpousse')] as unknown as Product[],
+      'duo',
+    );
+    expect(agreedTotal).toBe(3400);
+    const requested = { productIds: ['antiacne', 'shpousse'], agreedTotal };
+    const body = present(requested);
+    const shown = await post(body);
+    expect(shown.status).toBe(200);
+    expect(shown.body.proposal).toMatchObject({
+      offerTotal: 3400,
+      catalogueTotal: 3700,
+      extra: 1600,
+    });
+    const res = await post(
+      save({ id: body.callId, ...requested, meta: { acceptedProposalId: body.id } }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, body.callId));
+    expect(call).toMatchObject({
+      outcome: 'duo',
+      offered_total: 3400,
+      catalogue_total: 3700,
+      base_total: 1800,
+      extra: 1600,
+    });
+    expect(call!.products.map((x) => x.id)).toEqual(['antiacne', 'shpousse']);
   });
 });
 
