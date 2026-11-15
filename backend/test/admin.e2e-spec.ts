@@ -313,6 +313,7 @@ describe('audit log', () => {
     expect(res.body.events).toHaveLength(200);
     expect(res.body.events[0].target).toBe('t204');
     expect(res.body.events[0].label).toBe('conseil.lina');
+    expect(res.body.events[0].user_id).toBe(adviserUser.id);
     expect(res.body.events[0].detail).toEqual({ i: 204 });
     expect(Object.keys(res.body.events[0]).sort()).toEqual([
       'action',
@@ -321,10 +322,29 @@ describe('audit log', () => {
       'id',
       'label',
       'target',
+      'user_id',
     ]);
     expect(res.body.events[0].at).toBe('2026-01-01T00:03:24.000Z');
     const denied = await deskGet(ctx, '?action=audit', adviser);
     expect(denied.status).toBe(403);
     expect(denied.body).toEqual({ error: 'Accès direction requis.' });
+  });
+
+  it('shows the actor id when it is not an account (password reset from the command line)', async () => {
+    await ctx.db.insert(tcAudit).values({
+      id: randomUUID(),
+      user_id: 'cli',
+      action: 'account.password_reset',
+      target: adviserUser.id,
+      at: new Date(),
+      detail: { via: 'cli' },
+    });
+    const res = await deskGet(ctx, '?action=audit', admin);
+    expect(res.status).toBe(200);
+    expect(res.body.events[0]).toMatchObject({
+      user_id: 'cli',
+      label: null,
+      action: 'account.password_reset',
+    });
   });
 });

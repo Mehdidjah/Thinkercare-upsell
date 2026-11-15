@@ -9,6 +9,7 @@
     "test": "npm test -w shared && npm test -w frontend && npm test -w backend && npm run test:e2e -w backend",
     "start": "node backend/dist/main.js",
     "db:migrate": "node backend/dist/db/migrate.js",
-    "create-admin": "node backend/dist/cli/create-admin.js"
+    "create-admin": "node backend/dist/cli/create-admin.js",
+    "reset-password": "node backend/dist/cli/reset-password.js"
   }
 }

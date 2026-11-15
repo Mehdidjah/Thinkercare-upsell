@@ -39,6 +39,7 @@ export class ReportingService {
         action: tcAudit.action,
         target: tcAudit.target,
         detail: tcAudit.detail,
+        user_id: tcAudit.user_id,
         label: tcUsers.label,
       })
       .from(tcAudit)
