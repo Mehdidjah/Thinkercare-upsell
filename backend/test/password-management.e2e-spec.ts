@@ -11,9 +11,10 @@ import { deskGet, deskPost } from './support/desk.js';
 import { createUser, loginCookie } from './support/users.js';
 
 const ADMIN = 'test-admin-password-2026';
-const INITIAL = 'test-initial-password-2026';
-const PERSONAL = 'test-personal-password-2026';
-const REPLACEMENT = 'test-replacement-password-2026';
+// Exercise creation, personal changes, encrypted viewing and resets below the old 14-character limit.
+const INITIAL = 'initial-123';
+const PERSONAL = 'personal-123';
+const REPLACEMENT = 'reset-123';
 const key = randomBytes(32).toString('hex');
 let ctx: TestContext;
 let admin: string;
@@ -39,6 +40,15 @@ const reset = () => deskPost(ctx, { action: 'reset-user', id: advisorId, passwor
 const login = (password: string) => deskPost(ctx, { action: 'login', username: 'conseil.test', password });
 
 describe('saved advisor passwords', () => {
+  it.each(['', 'x'.repeat(201)])('creation and admin reset reject empty or oversized passwords', async password => {
+    const created = await deskPost(ctx, { action: 'user', username: 'invalid.password', label: 'Invalid password', password }, { cookie: admin });
+    expect(created.status).toBe(400);
+    expect(await ctx.db.select().from(tcUsers).where(eq(tcUsers.username, 'invalid.password'))).toHaveLength(0);
+    const replaced = await deskPost(ctx, { action: 'reset-user', id: advisorId, password }, { cookie: admin });
+    expect(replaced.status).toBe(400);
+    expect((await login(INITIAL)).status).toBe(200);
+    expect((await reveal()).body).toEqual({ password: INITIAL });
+  });
   it('stores encrypted credentials and exposes only availability in the ordinary dashboard', async () => {
     const [row] = await ctx.db.select().from(tcUsers).where(eq(tcUsers.id, advisorId));
     expect(row!.password_hash).toBe(await hashPassword(INITIAL, row!.salt));

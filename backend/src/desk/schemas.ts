@@ -14,7 +14,7 @@ export const passwordSchema = z
   .object({
     action: z.literal('password'),
     current: z.string().min(1).max(200),
-    next: z.string().min(14).max(200),
+    next: z.string().min(1).max(200),
   })
   .strict();
 
@@ -135,7 +135,7 @@ export const userSchema = z
       .toLowerCase()
       .regex(/^[a-z0-9._-]{3,40}$/),
     label: z.string().trim().min(2).max(80),
-    password: z.string().min(14).max(200),
+    password: z.string().min(1).max(200),
   })
   .strict();
 
@@ -143,7 +143,7 @@ export const resetUserSchema = z
   .object({
     action: z.literal('reset-user'),
     id: z.string().max(64),
-    password: z.string().min(14).max(200),
+    password: z.string().min(1).max(200),
   })
   .strict();
 

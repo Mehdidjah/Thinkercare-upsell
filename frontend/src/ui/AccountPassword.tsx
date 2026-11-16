@@ -12,8 +12,8 @@ export function NewPasswordField({ value, onChange, disabled = false, label = 'N
   }
   return <div className="password-field">
     <label htmlFor={id}>{label}<input id={id} type={visible ? 'text' : 'password'} autoComplete="new-password"
-      value={value} onChange={e => onChange(e.target.value)} minLength={14} maxLength={200}
-      placeholder="14 caractères minimum" required disabled={disabled}/></label>
+      value={value} onChange={e => onChange(e.target.value)} maxLength={200}
+      placeholder="Votre nouveau mot de passe" required disabled={disabled}/></label>
     <div className="password-actions">
       <button type="button" className="text-button" onClick={generate} disabled={disabled}>Générer</button>
       <button type="button" className="text-button" aria-controls={id} aria-pressed={visible}

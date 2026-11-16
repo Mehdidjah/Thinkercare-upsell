@@ -121,11 +121,19 @@ describe('logout and password', () => {
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: 'Mot de passe actuel incorrect.' });
   });
-  it('new password needs 14 characters', async () => {
+  it('a one-character password can be saved and used to log in', async () => {
     const cookie = await loginCookie(ctx, USER, PASSWORD);
-    const res = await deskPost(ctx, { action: 'password', current: PASSWORD, next: 'court' }, { cookie });
+    const res = await deskPost(ctx, { action: 'password', current: PASSWORD, next: 'x' }, { cookie });
+    expect(res.status).toBe(200);
+    expect((await login(USER, 'x')).status).toBe(200);
+    expect((await login(USER, PASSWORD)).status).toBe(401);
+  });
+  it.each(['', 'x'.repeat(201)])('rejects an empty or oversized new password', async next => {
+    const cookie = await loginCookie(ctx, USER, PASSWORD);
+    const res = await deskPost(ctx, { action: 'password', current: PASSWORD, next }, { cookie });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/^Vérifiez les champs du formulaire : /);
+    expect((await login(USER, PASSWORD)).status).toBe(200);
   });
   it('password change revokes other sessions only', async () => {
     const a = await loginCookie(ctx, USER, PASSWORD);
