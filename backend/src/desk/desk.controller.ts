@@ -54,7 +54,7 @@ export class DeskController {
       return sendJson(res, await this.reporting.audit(user));
     if (action === 'reminders')
       return sendJson(res, await this.reporting.reminders(user));
-    return sendJson(res, await this.bootstrap.get(user));
+    return sendJson(res, await this.bootstrap.get(user, params.get('compact') !== '1'));
   }
 
   @Post()
@@ -77,6 +77,13 @@ export class DeskController {
     }
     if (body.action === 'login') {
       const cookie = await this.auth.login(body, req.ip ?? 'unknown');
+      // Deliver the workspace with the login response, avoiding another browser round trip.
+      // Keep the original response for existing clients that do not request bootstrap.
+      if (body.bootstrap === true) {
+        const user = await this.auth.resolveUser(cookie);
+        if (!user) throw new DeskError(401, 'Votre session a expiré. Reconnectez-vous.');
+        return sendJson(res, { ok: true, bootstrap: await this.bootstrap.get(user, false) }, 200, { 'Set-Cookie': cookie });
+      }
       return sendJson(res, { ok: true }, 200, { 'Set-Cookie': cookie });
     }
     const user = await this.auth.resolveUser(req.headers.cookie);
@@ -106,6 +113,8 @@ export class DeskController {
     }
     if (user.role !== 'admin')
       throw new DeskError(403, 'Cette action est réservée à la direction.');
+    if (body.action === 'user-password')
+      return sendJson(res, await this.auth.revealPassword(user, body, req.headers.cookie));
     if (body.action === 'product')
       return sendJson(res, await this.admin.upsertProduct(user, body));
     if (body.action === 'clinical')

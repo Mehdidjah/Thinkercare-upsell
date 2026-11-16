@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import { eq, sql } from 'drizzle-orm';
 import { hashPassword, newSaltHex } from '../auth/crypto.js';
+import { sealPassword } from '../auth/password-vault.js';
+import { ENV, type Env } from '../config/env.js';
 import { DeskError } from '../common/http.js';
 import type { Db } from '../db/schema.js';
 import { tcAudit, tcProducts, tcSessions, tcSettings, tcUsers } from '../db/schema.js';
@@ -18,7 +20,7 @@ import {
 
 @Injectable()
 export class AdminService {
-  constructor(@InjectDrizzle() private readonly db: Db) {}
+  constructor(@InjectDrizzle() private readonly db: Db, @Inject(ENV) private readonly env: Env) {}
 
   async upsertProduct(user: DeskUser, body: unknown): Promise<{ ok: true }> {
     const { product } = productActionSchema.parse(body);
@@ -76,14 +78,17 @@ export class AdminService {
     if (existing.length) throw new DeskError(400, 'Cet identifiant existe déjà.');
     const salt = newSaltHex();
     const password_hash = await hashPassword(v.password, salt);
+    const id = randomUUID();
     await this.db.transaction(async (tx) => {
       await tx.insert(tcUsers).values({
-        id: randomUUID(),
+        id,
         username: v.username,
         label: v.label,
         role: 'advisor',
         salt,
         password_hash,
+        password_ciphertext: sealPassword(id, v.password, this.env.accountPasswordKey),
+        password_updated_at: new Date(),
       });
       await tx.insert(tcAudit).values(auditRow(user, 'account.created', v.username));
     });
@@ -106,7 +111,11 @@ export class AdminService {
     const salt = newSaltHex();
     const password_hash = await hashPassword(v.password, salt);
     await this.db.transaction(async (tx) => {
-      await tx.update(tcUsers).set({ salt, password_hash }).where(eq(tcUsers.id, v.id));
+      await tx.update(tcUsers).set({
+        salt, password_hash,
+        password_ciphertext: sealPassword(v.id, v.password, this.env.accountPasswordKey),
+        password_updated_at: new Date(),
+      }).where(eq(tcUsers.id, v.id));
       await tx.insert(tcAudit).values(auditRow(user, 'account.password_reset', v.id));
       await tx.delete(tcSessions).where(eq(tcSessions.user_id, v.id));
     });

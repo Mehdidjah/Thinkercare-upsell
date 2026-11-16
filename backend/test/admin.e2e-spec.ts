@@ -60,6 +60,43 @@ const insertCall = (id: string, createdAt: string) =>
   });
 
 describe('bootstrap', () => {
+  it('compact workspace omits call history while analytics still returns it', async () => {
+    const id = randomUUID();
+    await insertCall(id, '2026-11-01T10:00:00Z');
+    const res = await deskGet(ctx, '?compact=1', admin);
+    expect(res.status).toBe(200);
+    expect(res.body.calls).toEqual([]);
+    expect(res.body.products).toHaveLength(32);
+    expect(res.body.users).toHaveLength(2);
+    const report = await deskGet(ctx, '?action=analytics&from=2026-11-01&to=2026-11-01', admin);
+    expect(report.body.calls.map((c: { id: string }) => c.id)).toEqual([id]);
+  });
+
+  it.each(['direction', 'conseil.lina'])('login can return the authenticated workspace for %s in one response', async username => {
+    await insertCall(randomUUID(), '2026-11-01T10:00:00Z');
+    const res = await post({ action: 'login', username, password: PASSWORD, bootstrap: true }, '');
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.headers['cache-control']).toBe('no-store');
+    const cookie = res.headers['set-cookie']![0].split(';')[0];
+    const workspace = await deskGet(ctx, '?compact=1', cookie);
+    expect(res.body.bootstrap).toEqual(workspace.body);
+    expect(res.body.bootstrap.calls).toEqual([]);
+    expect(res.body.bootstrap.users).toHaveLength(username === 'direction' ? 2 : 0);
+    for (const account of [res.body.bootstrap.user, ...res.body.bootstrap.users]) {
+      expect(account).not.toHaveProperty('password_hash');
+      expect(account).not.toHaveProperty('password_ciphertext');
+      expect(account).not.toHaveProperty('salt');
+    }
+  });
+
+  it('a rejected login never includes workspace data', async () => {
+    const res = await post({ action: 'login', username: 'direction', password: 'wrong', bootstrap: true }, '');
+    expect(res.status).toBe(401);
+    expect(res.body).not.toHaveProperty('bootstrap');
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
   it('admin bootstrap returns the 32 products in catalogue order, calls, clinical and accounts', async () => {
     const res = await deskGet(ctx, '', admin);
     expect(res.status).toBe(200);

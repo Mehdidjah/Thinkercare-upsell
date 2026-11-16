@@ -6,6 +6,7 @@ export const loginSchema = z
     action: z.literal('login'),
     username: z.string().trim().toLowerCase().min(1).max(64),
     password: z.string().min(1).max(200),
+    bootstrap: z.boolean().optional(),
   })
   .strict();
 
@@ -145,6 +146,12 @@ export const resetUserSchema = z
     password: z.string().min(14).max(200),
   })
   .strict();
+
+export const revealPasswordSchema = z.object({
+  action: z.literal('user-password'),
+  id: z.string().min(1).max(64),
+  adminPassword: z.string().min(1).max(200),
+}).strict();
 
 export const userSettingsSchema = z
   .object({

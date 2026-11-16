@@ -1,8 +1,10 @@
-import {useEffect,useMemo,useState} from 'react';
+import {useEffect,useMemo,useState,useRef} from 'react';
+import {requestJson} from '../data/api';
+import {reportCache} from '../data/report-cache';
 import {money,type Product,summary,byDay,byOperator,productStats,initialProductStats,combinationStats,tierStats,refusalStats,accepted,localDay,shiftDay,pct,csv,extras,selectedProposal,OUTCOMES,STAGES,REASONS,TIERS,type ActivityCall} from '@touche/domain';
 type User={id:string;label:string;role:string;team?:string;reporting_scope?:string;active?:number};
 type Props={user:User;users:User[];products:Product[];resume:(call:any)=>void;initialOperator?:string};
-async function request(query:string,body?:unknown){const r=await fetch('/api/desk'+query,{method:body?'POST':'GET',credentials:'same-origin',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok)throw new Error(d.error||'Chargement impossible.');return d;}
+function request(query:string,body?:unknown,signal?:AbortSignal){return requestJson(query,body,signal);}
 function download(name:string,body:string,mime='text/csv;charset=utf-8'){const u=URL.createObjectURL(new Blob([body],{type:mime})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
 const rate=(x:number|null)=>x===null?'Non mesuré':x.toFixed(1).replace('.',',')+' %';
 const dt=(x:string)=>new Date(x).toLocaleString('fr-FR',{timeZone:'Africa/Algiers',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
@@ -14,12 +16,32 @@ export default function Analytics({user,users,products,resume,initialOperator=''
  const [tab,setTab]=useState('overview'),[operator,setOperator]=useState(initialOperator),[team,setTeam]=useState(''),[base,setBase]=useState(''),[addon,setAddon]=useState(''),[stage,setStage]=useState(''),[outcome,setOutcome]=useState(''),[selectedDay,setSelectedDay]=useState(''),[search,setSearch]=useState(''),[detail,setDetail]=useState<ActivityCall|null>(null),[page,setPage]=useState(0),[reminders,setReminders]=useState<any[]>([]),[audit,setAudit]=useState<any[]>([]);
  const [objection,setObjection]=useState('');
  useEffect(()=>{setOperator(initialOperator)},[initialOperator]);
- useEffect(()=>{let cancelled=false;const controller=new AbortController();setBusy(true);setError('');setLoaded(0);setRows([]);(async()=>{try{let cursor:string|null=null,all:ActivityCall[]=[];let pages=0;do{const q=new URLSearchParams({action:'analytics',from,to});if(cursor)q.set('cursor',cursor);const r=await fetch('/api/desk?'+q,{credentials:'same-origin',signal:controller.signal});const d=await r.json();if(!r.ok)throw new Error(d.error||'Chargement impossible');all.push(...d.calls);cursor=d.nextCursor;pages++;if(cancelled)return;setLoaded(all.length);if(pages>=200&&cursor)throw new Error('Plus de 100 000 appels. Réduisez la période pour charger un rapport complet.');}while(cursor);if(!cancelled)setRows(all);}catch(e){if(!cancelled)setError((e as Error).message);}finally{if(!cancelled)setBusy(false);}})();return()=>{cancelled=true;controller.abort()};},[from,to,refresh]);
- useEffect(()=>{if(tab==='reminders')request('?action=reminders').then(d=>setReminders(d.reminders)).catch(e=>setError(e.message));if(tab==='audit'&&user.role==='admin')request('?action=audit').then(d=>setAudit(d.events)).catch(e=>setError(e.message));},[tab,refresh,user.role]);
+ const lastRefresh=useRef(refresh),lastSideRefresh=useRef(refresh);
+ useEffect(()=>{
+  let active=true;const key='analytics:'+from+':'+to,force=lastRefresh.current!==refresh;lastRefresh.current=refresh;
+  const cached=reportCache.peek<ActivityCall[]>(key);setRows(cached??[]);setLoaded(cached?.length??0);setBusy(!cached||force);setError('');
+  reportCache.load<ActivityCall[]>(key,async signal=>{
+   let cursor:string|null=null;const all:ActivityCall[]=[];let pages=0;
+   do{
+    const q=new URLSearchParams({action:'analytics',from,to});if(cursor)q.set('cursor',cursor);
+    const d=await request('?'+q,undefined,signal);all.push(...d.calls);cursor=d.nextCursor;pages++;
+    if(active)setLoaded(all.length);
+    if(pages>=200&&cursor)throw new Error('Plus de 100 000 appels. Réduisez la période pour charger un rapport complet.');
+   }while(cursor);
+   return all;
+  },force).then(all=>{if(active){setRows(all);setLoaded(all.length)}}).catch(e=>{if(active&&e.name!=='AbortError')setError(e.message)}).finally(()=>{if(active)setBusy(false)});
+  return()=>{active=false};
+ },[from,to,refresh]);
+ useEffect(()=>{
+  if(tab!=='reminders'&&(tab!=='audit'||user.role!=='admin'))return;
+  let active=true;const key='action='+tab,force=lastSideRefresh.current!==refresh;lastSideRefresh.current=refresh;
+  reportCache.load<any>(key,signal=>request('?'+key,undefined,signal),force).then(d=>{if(active){if(tab==='reminders')setReminders(d.reminders);else setAudit(d.events)}}).catch(e=>{if(active&&e.name!=='AbortError')setError(e.message)});
+  return()=>{active=false};
+ },[tab,refresh,user.role]);
  useEffect(()=>{setPage(0)},[operator,team,base,addon,stage,outcome,selectedDay,search,objection,from,to]);
  useEffect(()=>{const listener=(e:KeyboardEvent)=>{if(e.key==='Escape')setDetail(null)};window.addEventListener('keydown',listener);return()=>window.removeEventListener('keydown',listener)},[]);
  const filtered=useMemo(()=>rows.filter(c=>(!operator||c.user_id===operator)&&(!team||c.meta.team===team)&&(!base||c.base_id===base)&&(!stage||c.meta.customerStage===stage)&&(!outcome||c.outcome===outcome)&&(!objection||c.meta.objections?.includes(objection))&&(!addon||c.proposals.some(p=>extras(p).some(x=>x.id===addon)))&&(!selectedDay||localDay(c.created_at)===selectedDay)&&(!search||(c.meta.orderRef||c.id).toLowerCase().includes(search.toLowerCase()))),[rows,operator,team,base,addon,stage,outcome,selectedDay,search,objection]);
- const total=summary(filtered),operators=byOperator(filtered),daily=byDay(filtered,from,to),prod=productStats(filtered),combos=combinationStats(filtered),tiers=tierStats(filtered),refusals=refusalStats(filtered);
+ const {total,operators,daily,prod,combos,tiers,refusals}=useMemo(()=>({total:summary(filtered),operators:byOperator(filtered),daily:byDay(filtered,from,to),prod:productStats(filtered),combos:combinationStats(filtered),tiers:tierStats(filtered),refusals:refusalStats(filtered)}),[filtered,from,to]);
  const allPeople=[...new Map([...users,...rows.map(c=>({id:c.user_id,label:c.operator,role:'advisor'}))].map(u=>[u.id,u])).values()];
  const teams=[...new Set([...users.map(u=>u.team),...rows.map(c=>c.meta.team)].filter((x):x is string=>!!x))];
  const comparisonDays=Math.round((Date.parse(to)-Date.parse(from))/86400000)+1;

@@ -15,6 +15,13 @@
       "when": 1794677478007,
       "tag": "0001_seed_catalogue",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794825555889,
+      "tag": "0002_account_passwords",
+      "breakpoints": true
     }
   ]
 }

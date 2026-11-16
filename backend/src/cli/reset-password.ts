@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { hashPassword, newSaltHex } from '../auth/crypto.js';
+import { sealPassword } from '../auth/password-vault.js';
 import { tcAudit, tcSessions, tcUsers } from '../db/schema.js';
 
 const USAGE =
@@ -32,14 +33,17 @@ export async function resetPassword(
   try {
     const active = await db.transaction(async (tx) => {
       const [row] = await tx
-        .select({ id: tcUsers.id, active: tcUsers.active })
+        .select({ id: tcUsers.id, active: tcUsers.active, role: tcUsers.role })
         .from(tcUsers)
         .where(eq(tcUsers.username, name))
         .limit(1);
       if (!row) throw new Error('Compte introuvable : ' + name);
       await tx
         .update(tcUsers)
-        .set({ salt, password_hash: passwordHash })
+        .set({ salt, password_hash: passwordHash,
+          password_ciphertext: row.role === 'advisor' ? sealPassword(row.id, password, process.env.ACCOUNT_PASSWORD_KEY?.trim()) : null,
+          password_updated_at: new Date(),
+        })
         .where(eq(tcUsers.id, row.id));
       await tx.delete(tcSessions).where(eq(tcSessions.user_id, row.id));
       await tx.insert(tcAudit).values({

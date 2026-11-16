@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { asc, desc, eq } from 'drizzle-orm';
+import { asc, desc, eq, sql } from 'drizzle-orm';
+import { ENV, type Env } from '../config/env.js';
 import type { Db } from '../db/schema.js';
 import { tcCalls, tcSettings, tcUsers } from '../db/schema.js';
 import { loadProducts } from './catalogue.js';
@@ -8,13 +9,13 @@ import type { DeskUser } from './desk.types.js';
 
 @Injectable()
 export class BootstrapService {
-  constructor(@InjectDrizzle() private readonly db: Db) {}
+  constructor(@InjectDrizzle() private readonly db: Db, @Inject(ENV) private readonly env: Env) {}
 
-  async get(user: DeskUser) {
+  async get(user: DeskUser, includeCalls = true) {
     const admin = user.role === 'admin';
     const [products, calls, settings, users] = await Promise.all([
       loadProducts(this.db),
-      admin
+      admin && includeCalls
         ? this.db.select().from(tcCalls).orderBy(desc(tcCalls.created_at)).limit(1000)
         : Promise.resolve([]),
       this.db
@@ -32,6 +33,8 @@ export class BootstrapService {
               active: tcUsers.active,
               team: tcUsers.team,
               reporting_scope: tcUsers.reporting_scope,
+              password_available: sql<boolean>`${tcUsers.password_ciphertext} IS NOT NULL`,
+              password_updated_at: tcUsers.password_updated_at,
             })
             .from(tcUsers)
             .orderBy(asc(tcUsers.created_at))
@@ -41,6 +44,6 @@ export class BootstrapService {
     const clinical = data
       ? { ...data, validated: data.version === 3 && !!data.validated }
       : { validated: false, by: '', at: '' };
-    return { user, products, calls, clinical, users };
+    return { user, products, calls, clinical, users, password_viewing_enabled: admin && !!this.env.accountPasswordKey };
   }
 }

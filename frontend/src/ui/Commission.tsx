@@ -1,11 +1,13 @@
 import {useEffect,useMemo,useState,useRef} from 'react';
+import {requestJson} from '../data/api';
+import {reportCache} from '../data/report-cache';
 import {money,csv,shiftDay,algerDay,validMonth,monthBounds,bonusEstimate,type BonusRule,type ContributionRow} from '@touche/domain';
 type ProgressData={month:string;today:string;user:{id:string;label:string};rule:BonusRule;progress:ReturnType<typeof bonusEstimate>;todayUpsells:number;daily:{day:string;upsells:number}[];withoutReference:number;duplicateExcluded:number;updatedAt:string};
 type Totals={calls:number;confirmations:number;upsells:number;initialDzd:number;confirmedDzd:number;upliftDzd:number;withoutRef:number;duplicates:number};
 type Person={id:string;label:string;role:string;active:number;team:string;period:Totals;monthly:Totals&{bonus:ReturnType<typeof bonusEstimate>};daily:ContributionRow[]};
 type ContributionData={month:string;from:string;to:string;today:string;rule:BonusRule;monthRuleVersion:number;people:Person[];updatedAt:string};
-async function read(query:string,signal?:AbortSignal){const r=await fetch('/api/desk?'+query,{credentials:'same-origin',signal});const d=await r.json();if(!r.ok)throw new Error(d.error||'Chargement impossible.');return d;}
-async function write(body:unknown){const r=await fetch('/api/desk',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw new Error(d.error||'Enregistrement impossible.');return d;}
+function read(query:string,signal?:AbortSignal){return requestJson('?'+query,undefined,signal);}
+function write(body:unknown){return requestJson('',body);}
 const monthLabel=(m:string)=>validMonth(m)?new Date(m+'-15T12:00:00Z').toLocaleDateString('fr-FR',{month:'long',year:'numeric',timeZone:'Africa/Algiers'}):'le mois sélectionné';
 const modeLabel=(r:Pick<BonusRule,'mode'|'threshold'>)=>r.mode==='all_month'?`Tous les upsells du mois dès ${r.threshold} atteints`:r.mode==='from_threshold'?`À partir du ${r.threshold}ᵉ upsell inclus`:'Modalité de déclenchement à confirmer';
 const stamp=(s:string)=>new Date(s).toLocaleTimeString('fr-FR',{timeZone:'Africa/Algiers',hour:'2-digit',minute:'2-digit'});
@@ -15,16 +17,34 @@ export function ProgressCard({data,compact=false}:{data:ProgressData;compact?:bo
 }
 export function PersonalProgress({refreshKey=0,compact=false,resume}:{refreshKey?:number;compact?:boolean;resume?:(r:any)=>void}){
  const [month,setMonth]=useState(()=>algerDay().slice(0,7)),[data,setData]=useState<ProgressData|null>(null),[error,setError]=useState(''),[tick,setTick]=useState(0),[busy,setBusy]=useState(false),[reminders,setReminders]=useState<any[]>([]);
- const lastCurrentMonth=useRef(algerDay().slice(0,7));
+ const lastCurrentMonth=useRef(algerDay().slice(0,7)),lastRefresh=useRef(tick),lastReminderRefresh=useRef(tick);
  useEffect(()=>{const f=()=>{const next=algerDay().slice(0,7),previous=lastCurrentMonth.current;if(next!==previous){lastCurrentMonth.current=next;setMonth(m=>compact||m===previous?next:m)}setTick(x=>x+1)},timer=setInterval(f,60000);window.addEventListener('focus',f);return()=>{clearInterval(timer);window.removeEventListener('focus',f)}},[compact]);
- useEffect(()=>{const ctl=new AbortController();setBusy(true);setError('');read(new URLSearchParams({action:'my-progress',month}).toString(),ctl.signal).then(setData).catch(e=>{if(!ctl.signal.aborted)setError(e.message)}).finally(()=>{if(!ctl.signal.aborted)setBusy(false)});return()=>ctl.abort()},[month,tick,refreshKey]);
- useEffect(()=>{if(compact)return;const ctl=new AbortController();read('action=reminders',ctl.signal).then(d=>setReminders(d.reminders)).catch(e=>{if(!ctl.signal.aborted)setError(e.message)});return()=>ctl.abort()},[compact,tick,refreshKey]);
+ useEffect(()=>{
+  let active=true;const key=new URLSearchParams({action:'my-progress',month}).toString(),force=lastRefresh.current!==tick;lastRefresh.current=tick;
+  const cached=reportCache.peek<ProgressData>(key);setData(cached??null);setBusy(!cached||force);setError('');
+  reportCache.load<ProgressData>(key,signal=>read(key,signal),force).then(d=>{if(active)setData(d)}).catch(e=>{if(active&&e.name!=='AbortError')setError(e.message)}).finally(()=>{if(active)setBusy(false)});
+  return()=>{active=false};
+ },[month,tick,refreshKey]);
+ useEffect(()=>{
+  if(compact)return;let active=true;const key='action=reminders',force=lastReminderRefresh.current!==tick;lastReminderRefresh.current=tick;
+  setReminders(reportCache.peek<{reminders:any[]}>(key)?.reminders??[]);
+  reportCache.load<{reminders:any[]}>(key,signal=>read(key,signal),force).then(d=>{if(active)setReminders(d.reminders)}).catch(e=>{if(active&&e.name!=='AbortError')setError(e.message)});
+  return()=>{active=false};
+ },[compact,tick,refreshKey]);
  const max=Math.max(1,...(data?.daily||[]).map(x=>x.upsells));
  return <div className={compact?'bonus-inline':'personal-dashboard'}>{!compact&&<div className="page-heading"><div><div className="micro">MON ESPACE PERSONNEL</div><h1>Chaque upsell compte.</h1><p>Votre progression, votre objectif et votre prime. Vos données uniquement.</p></div><div className="toolbar"><label>Mois<input aria-label="Mois de ma progression" type="month" value={month} onChange={e=>setMonth(e.target.value)}/></label><button className="outline" disabled={busy} onClick={()=>setTick(x=>x+1)}>Actualiser</button></div></div>}{error&&<div className="alert" role="alert">{error}</div>}{data&&!error?<ProgressCard data={data} compact={compact}/>:<p className="muted">{busy?'Chargement de votre progression…':'Progression indisponible.'}</p>}{!compact&&data&&!error&&<><section className="pilot-panel"><h2>Mes upsells au fil du mois</h2>{data.daily.some(x=>x.upsells>0)?<div className="bonus-daily">{data.daily.map(x=><div key={x.day}><span>{x.day.slice(8,10)}/{x.day.slice(5,7)}</span><div><i style={{width:x.upsells/max*100+'%'}}/></div><b>{x.upsells}</b></div>)}</div>:<div className="empty-state compact"><h3>Votre prochain upsell peut lancer la progression.</h3><p>Confirmez un ajout utile avec la cliente, puis enregistrez l’appel. Les exemples ne sont jamais comptabilisés.</p></div>}</section><section className="pilot-panel"><h2>Mes rappels</h2>{reminders.length?<div className="table-wrap"><table><thead><tr><th>Prévu (Alger)</th><th>Dossier</th><th>Action</th></tr></thead><tbody>{reminders.map(r=><tr key={r.id}><td>{new Date(r.callback_at).toLocaleString('fr-FR',{timeZone:'Africa/Algiers'})}</td><td>{r.order_ref||r.id.slice(0,8)}</td><td>{resume&&<button className="text-button" onClick={()=>resume(r)}>Préparer le rappel</button>}<button className="text-button" onClick={async()=>{try{await write({action:'complete-reminder',callId:r.id});setTick(x=>x+1)}catch(e){setError((e as Error).message)}}}>Marquer traité</button></td></tr>)}</tbody></table></div>:<p className="muted">Aucun rappel ouvert.</p>}</section><p className="footnote">Actualisé à {stamp(data.updatedAt)} (Alger). Les statistiques de direction et les résultats des autres conseillères ne sont pas accessibles depuis cet espace.</p></>}</div>;
 }
 export function ContributionDashboard({openOperator}:{openOperator:(id:string)=>void}){
  const today=algerDay(),[month,setMonth]=useState(today.slice(0,7)),[from,setFrom]=useState(today.slice(0,7)+'-01'),[to,setTo]=useState(today),[data,setData]=useState<ContributionData|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[tick,setTick]=useState(0),[team,setTeam]=useState(''),[person,setPerson]=useState(''),[sort,setSort]=useState<'upliftDzd'|'confirmedDzd'|'upsells'>('upliftDzd'),[mode,setMode]=useState<BonusRule['mode']>('pending'),[threshold,setThreshold]=useState(60),[rate,setRate]=useState(45),[attest,setAttest]=useState(false),[notice,setNotice]=useState('');
- useEffect(()=>{const ctl=new AbortController();setBusy(true);setError('');setData(null);read(new URLSearchParams({action:'contributions',month,from,to}).toString(),ctl.signal).then(d=>{setData(d);setMode(d.rule.mode);setThreshold(d.rule.threshold);setRate(d.rule.rateDzd);setAttest(false)}).catch(e=>{if(!ctl.signal.aborted)setError(e.message)}).finally(()=>{if(!ctl.signal.aborted)setBusy(false)});return()=>ctl.abort()},[month,from,to,tick]);
+ const lastRefresh=useRef(tick);
+ useEffect(()=>{
+  let active=true;const key=new URLSearchParams({action:'contributions',month,from,to}).toString(),force=lastRefresh.current!==tick;lastRefresh.current=tick;
+  const cached=reportCache.peek<ContributionData>(key);setData(cached??null);setBusy(!cached||force);setError('');
+  function apply(d:ContributionData){setData(d);setMode(d.rule.mode);setThreshold(d.rule.threshold);setRate(d.rule.rateDzd);setAttest(false)}
+  if(cached)apply(cached);
+  reportCache.load<ContributionData>(key,signal=>read(key,signal),force).then(d=>{if(active)apply(d)}).catch(e=>{if(active&&e.name!=='AbortError')setError(e.message)}).finally(()=>{if(active)setBusy(false)});
+  return()=>{active=false};
+ },[month,from,to,tick]);
  const selected=useMemo(()=>[...(data?.people||[])].filter(p=>(!team||p.team===team)&&(!person||p.id===person)).sort((a,b)=>b.period[sort]-a.period[sort]||a.label.localeCompare(b.label)),[data,team,person,sort]);
  const totals=selected.reduce((a,p)=>({initial:a.initial+p.period.initialDzd,confirmed:a.confirmed+p.period.confirmedDzd,extra:a.extra+p.period.upliftDzd,upsells:a.upsells+p.period.upsells,confirmations:a.confirmations+p.period.confirmations}),{initial:0,confirmed:0,extra:0,upsells:0,confirmations:0});
  const estimated=selected.reduce((s,p)=>s+(p.role==='advisor'?(p.monthly.bonus.estimatedDzd||0):0),0),pending=data?.rule.mode==='pending';

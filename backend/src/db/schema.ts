@@ -14,6 +14,8 @@ export const tcUsers = pgTable(
     role: text('role').notNull(),
     salt: text('salt').notNull(),
     password_hash: text('password_hash').notNull(),
+    password_ciphertext: text('password_ciphertext'),
+    password_updated_at: timestamptz('password_updated_at'),
     created_at: timestamptz('created_at').notNull().defaultNow(),
     active: integer('active').notNull().default(1),
     team: text('team').notNull().default(''),

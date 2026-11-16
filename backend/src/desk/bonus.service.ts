@@ -96,10 +96,11 @@ export class BonusService {
         400,
         'Choisissez une période valide de 366 jours maximum.',
       );
+    const periodQuery = contributions(this.db, from, to);
     const [period, monthly, users] = await Promise.all([
-      contributions(this.db, from, to),
+      periodQuery,
       from === b.from && to === b.to
-        ? contributions(this.db, from, to)
+        ? periodQuery
         : contributions(this.db, b.from, b.to),
       this.db
         .select({

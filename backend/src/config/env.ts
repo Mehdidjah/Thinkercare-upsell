@@ -9,6 +9,7 @@ export interface Env {
   appOrigins: string[];
   trustProxy: number;
   staticDir: string;
+  accountPasswordKey?: string;
 }
 
 const DEFAULT_ORIGINS = ['http://localhost:3000', 'http://localhost:5173'];
@@ -52,6 +53,11 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     throw new Error('APP_ORIGIN est obligatoire en production.');
   }
 
+  const accountPasswordKey = source.ACCOUNT_PASSWORD_KEY?.trim() || undefined;
+  if (accountPasswordKey && !/^[a-f0-9]{64}$/i.test(accountPasswordKey)) {
+    throw new Error('ACCOUNT_PASSWORD_KEY doit contenir 64 caractères hexadécimaux.');
+  }
+
   return {
     nodeEnv,
     port: integer('PORT', source.PORT, 3000, 0, 65535),
@@ -59,5 +65,6 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     appOrigins,
     trustProxy: integer('TRUST_PROXY', source.TRUST_PROXY, 1, 0, Number.MAX_SAFE_INTEGER),
     staticDir: source.STATIC_DIR?.trim() || resolve(import.meta.dirname, '../../../frontend/dist'),
+    accountPasswordKey,
   };
 }
