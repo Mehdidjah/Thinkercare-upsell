@@ -65,3 +65,6 @@ ehthumbs.db
 # TypeScript incremental build info
 *.tsbuildinfo
 .vercel
+
+# Local agent memory store (machine-specific notes, never committed)
+/.memory/

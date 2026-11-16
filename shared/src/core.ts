@@ -33,6 +33,7 @@ export function expand(p:Product,catalogue:Product[]):Product[]{
 }
 export function physicalCount(basket:Product[],catalogue:Product[]):number{return basket.reduce((s,p)=>s+expand(p,catalogue).length,0);}
 export function basketOffer(basket:Product[],tier:Tier):number{
+ if(basket.some(p=>!Number.isSafeInteger(p.price)||p.price<0))throw new Error('Montant invalide');
  const total=basket.reduce((s,p)=>s+p.price,0);
  if(basket.length<2||tier==='catalogue')return total;
  const packs=basket.filter(isPack).reduce((s,p)=>s+p.price,0);
