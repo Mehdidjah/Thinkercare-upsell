@@ -139,3 +139,15 @@
   .account-table tbody tr { padding:16px }
   .account-actions .outline { width:100% }
 }
+.initial-selection{margin:0 0 24px;padding:20px;border:1px solid var(--line,#dededb);border-radius:12px;background:#f7f7f4}
+.initial-selection-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.initial-selection-heading b,.initial-selection-heading small{display:block}
+.initial-selection small{color:#73736e;font-size:12px;line-height:1.5}
+.initial-selection-heading strong{white-space:nowrap;font-size:18px}
+.initial-selection-chips{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.initial-selection-chips button{display:inline-flex;align-items:center;gap:10px;background:#fff;border:1px solid #d9d9d5;border-radius:6px;padding:8px 12px;text-align:left}
+.initial-selection label{display:grid;gap:8px;max-width:480px;font-size:13px;font-weight:600}
+.initial-selection select{width:100%;min-width:0;background:#fff}
+.initial-selection label small{font-weight:400}
+.initial-selection p{font-size:13px;color:#66665f;margin:12px 0 0;line-height:1.6}
+.product-card:disabled{cursor:default}

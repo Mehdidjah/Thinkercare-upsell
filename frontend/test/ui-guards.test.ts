@@ -44,9 +44,9 @@ test('Step 3 lets the adviser add a product the customer asks for, below the sug
   assert.ok(request.includes('>Suggéré<'), '"Suggéré" tag on products that are also suggested');
   assert.ok(request.includes('Confirmer : la cliente le demande, compatibilité vérifiée'), 'confirmation button text');
   assert.ok(request.includes('>Annuler<'), 'cancel button');
-  assert.ok(app.includes('manualAddCheck(activeBase,added,'), 'each row is checked against the active base and the added products');
+  assert.ok(app.includes('manualAddCheck(activeBase,companions,'), 'each row is checked against the active base, other original products and additions');
   const rail = app.slice(app.indexOf('<aside className="routine-rail">'));
-  assert.ok(rail.includes("requestedIds.includes(p.id)?'DEMANDÉ PAR LA CLIENTE':`COMPLÉMENT ${i}`"), 'rail labels a requested complement');
+  assert.ok(rail.includes("requestedIds.includes(p.id)?'DEMANDÉ PAR LA CLIENTE':`COMPLÉMENT ${adds.indexOf(p.id)+1}`"), 'rail labels a requested complement');
   assert.ok(rail.includes('setRequestedIds(a=>a.filter(x=>x!==p.id))'), 'removing it from the routine forgets the request');
   const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
   for (const rule of ['.customer-request{', '.request-row{', '.request-row.blocked{', '.request-tag{', '.request-confirm{']) assert.ok(css.includes(rule), rule);

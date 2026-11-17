@@ -3,14 +3,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import {
-  tcAcceptedDossiers,
-  tcAudit,
-  tcCallMeta,
-  tcCalls,
-  tcProposals,
-} from '../src/db/schema.js';
-import { EMPTY_PROFILE, type Product, basketOffer, recommend } from '@touche/domain';
+import { tcAcceptedDossiers, tcAudit, tcCallMeta, tcCalls, tcProposals } from '../src/db/schema.js';
+import { EMPTY_PROFILE, type Product, type CallMeta, basketOffer, recommend, localDay } from '@touche/domain';
+import { contributions } from '../src/desk/contributions.js';
 import type { DeskUser } from '../src/desk/desk.types.js';
 import { type TestContext, createTestApp } from './support/context.js';
 import { resetDatabase } from './support/database.js';
@@ -353,7 +348,12 @@ describe('save-call', () => {
 
   it('accepting another adviser’s presented offer on one’s own call is 400', async () => {
     const p = await presented(lina);
-    const body = save({ outcome: 'duo', consent: true, checked: true, meta: { acceptedProposalId: p.id } });
+    const body = save({
+      outcome: 'duo',
+      consent: true,
+      checked: true,
+      meta: { acceptedProposalId: p.id },
+    });
     const res = await post(body, sara);
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: 'Offre présentée introuvable pour cet appel.' });
@@ -363,9 +363,9 @@ describe('save-call', () => {
 
   it('a second accepted add-on on the same dossier is refused', async () => {
     const p1 = await presented();
-    expect(
-      (await post(save({ id: p1.callId, meta: { acceptedProposalId: p1.id } }))).status,
-    ).toBe(200);
+    expect((await post(save({ id: p1.callId, meta: { acceptedProposalId: p1.id } }))).status).toBe(
+      200,
+    );
     const p2 = await presented();
     const res = await post(
       save({ id: p2.callId, meta: { orderRef: 'Dos-001', acceptedProposalId: p2.id } }),
@@ -386,8 +386,14 @@ describe('save-call', () => {
     await ctx.db.transaction(async (tx) => {
       await tx.execute(sql`LOCK TABLE tc_call_meta IN ACCESS EXCLUSIVE MODE`);
       both = Promise.all([
-        post(save({ id: p1.callId, meta: { orderRef: 'DOS-777', acceptedProposalId: p1.id } }), lina),
-        post(save({ id: p2.callId, meta: { orderRef: 'DOS-777', acceptedProposalId: p2.id } }), sara),
+        post(
+          save({ id: p1.callId, meta: { orderRef: 'DOS-777', acceptedProposalId: p1.id } }),
+          lina,
+        ),
+        post(
+          save({ id: p2.callId, meta: { orderRef: 'DOS-777', acceptedProposalId: p2.id } }),
+          sara,
+        ),
       ]);
       await waitForLockWaiters('tc_call_meta', 2);
     });
@@ -419,12 +425,13 @@ describe('save-call', () => {
     });
     const results = await both;
     expect(results.map((r) => r.status)).toEqual([200, 200]);
-    expect(results.map((r) => r.body).sort((a, b) => Object.keys(a).length - Object.keys(b).length)).toEqual([
-      { ok: true },
-      { ok: true, duplicate: true },
-    ]);
+    expect(
+      results.map((r) => r.body).sort((a, b) => Object.keys(a).length - Object.keys(b).length),
+    ).toEqual([{ ok: true }, { ok: true, duplicate: true }]);
     expect(await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, body.id))).toHaveLength(1);
-    expect(await ctx.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, body.id))).toHaveLength(1);
+    expect(
+      await ctx.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, body.id)),
+    ).toHaveLength(1);
     expect((await auditRows('call.closed')).map((a) => a.target)).toEqual([body.id]);
   });
 
@@ -502,7 +509,11 @@ describe('save-call', () => {
     const body = present(pack);
     const shown = await post(body);
     expect(shown.status).toBe(200);
-    expect(shown.body.proposal).toMatchObject({ offerTotal: 3250, extra: 1350, catalogueTotal: 3250 });
+    expect(shown.body.proposal).toMatchObject({
+      offerTotal: 3250,
+      extra: 1350,
+      catalogueTotal: 3250,
+    });
     const res = await post(
       save({ id: body.callId, ...pack, outcome: 'duo', meta: { acceptedProposalId: body.id } }),
     );
@@ -624,5 +635,200 @@ describe('reminders', () => {
     const byAdmin = await post({ action: 'complete-reminder', callId: theirs.id }, admin);
     expect(byAdmin.status).toBe(200);
     expect((await deskGet(ctx, '?action=reminders', admin)).body.reminders).toEqual([]);
+  });
+});
+
+describe('multiple products in the original order', () => {
+  const baseIds = ['antiacne', 'wcgel'];
+  const productIds = [...baseIds, 'wcspf'];
+
+  it('saves the complete initial order at its full price without counting an upsell', async () => {
+    const body = save({
+      baseIds,
+      productIds: baseIds,
+      outcome: 'initial',
+      tier: 'catalogue',
+      agreedTotal: 3300,
+      consent: false,
+      checked: false,
+    });
+    expect((await post(body)).status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, body.id));
+    const [meta] = await ctx.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, body.id));
+    expect(call).toMatchObject({
+      base_id: 'antiacne',
+      base_total: 3300,
+      offered_total: 3300,
+      extra: 0,
+    });
+    expect(call.products.map((p) => p.id)).toEqual(baseIds);
+    expect((meta.data as CallMeta).originals?.map((p) => p.id)).toEqual(baseIds);
+    expect((meta.data as CallMeta).original?.id).toBe('antiacne');
+    const rows = await contributions(ctx.db, localDay(new Date()), localDay(new Date()));
+    expect(rows[0]).toMatchObject({
+      confirmations: 1,
+      upsells: 0,
+      initial_dzd: 3300,
+      confirmed_dzd: 3300,
+    });
+  });
+
+  it('counts only the third product and its actual uplift as the accepted upsell', async () => {
+    const offer = await presented(lina, { baseIds, productIds, agreedTotal: 4400 });
+    const [savedProposal] = await ctx.db
+      .select()
+      .from(tcProposals)
+      .where(eq(tcProposals.id, offer.id));
+    expect(savedProposal.snapshot).toMatchObject({ extra: 1100, offerTotal: 4400 });
+    expect(savedProposal.snapshot.originals?.map((p) => p.id)).toEqual(baseIds);
+    expect(
+      (
+        await post(
+          save({
+            id: offer.callId,
+            baseIds,
+            productIds,
+            outcome: 'trio',
+            agreedTotal: 4400,
+            meta: { acceptedProposalId: offer.id },
+          }),
+        )
+      ).status,
+    ).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, offer.callId));
+    expect(call).toMatchObject({
+      base_total: 3300,
+      catalogue_total: 4800,
+      offered_total: 4400,
+      extra: 1100,
+    });
+    const rows = await contributions(ctx.db, localDay(new Date()), localDay(new Date()));
+    expect(rows[0]).toMatchObject({
+      confirmations: 1,
+      upsells: 1,
+      initial_dzd: 3300,
+      confirmed_dzd: 4400,
+      uplift_dzd: 1100,
+    });
+  });
+
+  it('retains the whole initial baseline when the new product is refused', async () => {
+    const offer = await presented(lina, { baseIds, productIds, agreedTotal: 4400 });
+    expect(
+      (
+        await post(
+          save({
+            id: offer.callId,
+            baseIds,
+            productIds,
+            outcome: 'refused',
+            refusal: 'budget',
+            agreedTotal: 4400,
+          }),
+        )
+      ).status,
+    ).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, offer.callId));
+    expect(call).toMatchObject({ base_total: 3300, offered_total: 3300, extra: 0 });
+  });
+
+  it('preserves multiple initial products in reminder data', async () => {
+    const body = save({
+      baseIds,
+      productIds: baseIds,
+      outcome: 'callback',
+      meta: { callbackAt: at(DAY) },
+    });
+    expect((await post(body)).status).toBe(200);
+    const res = await deskGet(ctx, '?action=reminders', lina);
+    expect(res.status).toBe(200);
+    expect(
+      res.body.reminders
+        .find((r: { id: string }) => r.id === body.id)
+        .meta.originals.map((p: { id: string }) => p.id),
+    ).toEqual(baseIds);
+  });
+
+  it('allows an unchanged existing order above three care products, but rejects a new addition', async () => {
+    const originals = ['antiacne', 'wcgel', 'wcspf', 'shpousse'];
+    const body = save({ baseIds: originals, productIds: originals, outcome: 'initial' });
+    expect((await post(body)).status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, body.id));
+    expect(call).toMatchObject({ base_total: 6700, offered_total: 6700, extra: 0 });
+    expect(
+      (
+        await post(
+          save({ baseIds: originals, productIds: [...originals, 'conditioner'], outcome: 'trio' }),
+        )
+      ).status,
+    ).toBe(400);
+  });
+
+  it('does not require new-product verification for products already in the original order', async () => {
+    const res = await post(
+      present({
+        baseIds: ['antiacne', 'nia12'],
+        productIds: ['antiacne', 'nia12', 'wcspf'],
+        agreedTotal: 4800,
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it.each([
+    { baseIds: ['antiacne', 'antiacne'] },
+    { baseIds: ['wcgel', 'antiacne'] },
+    { baseIds: ['antiacne', 'nonexistent'] },
+    { baseIds, productIds: ['antiacne', 'wcspf'] },
+    { baseIds, productIds: ['antiacne', 'wcspf', 'wcgel'] },
+    {
+      baseId: 'shpousse',
+      baseIds: ['shpousse', 'wcgel'],
+      upgradeId: 'packpousse',
+      productIds: ['packpousse', 'wcgel'],
+    },
+  ])('rejects an invalid or partially removed initial order: %j', async (overrides) => {
+    expect((await post(present(overrides))).status).toBe(400);
+    expect((await post(save({ ...overrides, outcome: 'initial' }))).status).toBe(400);
+  });
+
+  it('rejects an original two-product order falsely declared as an upsell', async () => {
+    expect((await post(present({ baseIds, productIds: baseIds }))).status).toBe(400);
+    expect((await post(save({ baseIds, productIds: baseIds }))).status).toBe(400);
+  });
+
+  it('prevents rewriting the initial baseline after an offer was presented', async () => {
+    const offer = await presented(lina, { baseIds, productIds, agreedTotal: 4400 });
+    expect(
+      (await post(present({ callId: offer.callId, productIds, agreedTotal: 4400 }))).status,
+    ).toBe(409);
+    expect(
+      (
+        await post(
+          save({
+            id: offer.callId,
+            productIds,
+            outcome: 'trio',
+            agreedTotal: 4400,
+            meta: { acceptedProposalId: offer.id },
+          }),
+        )
+      ).status,
+    ).toBe(409);
+    expect((await post(save({ id: offer.callId, productIds, outcome: 'refused' }))).status).toBe(
+      409,
+    );
+    const legacy = save({ id: offer.callId, productIds, outcome: 'refused' });
+    delete legacy.meta;
+    expect((await post(legacy)).status).toBe(409);
+  });
+
+  it('persists the full baseline even for a client without optional call context', async () => {
+    const body = save({ baseIds, productIds: baseIds, outcome: 'initial' });
+    delete body.meta;
+    expect((await post(body)).status).toBe(200);
+    const [meta] = await ctx.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, body.id));
+    expect((meta.data as CallMeta).originals?.map((p) => p.id)).toEqual(baseIds);
+    expect(meta.version).toBe(1);
   });
 });

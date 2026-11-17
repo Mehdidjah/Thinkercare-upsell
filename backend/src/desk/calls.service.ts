@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import type { ItemSnapshot, Product, Proposal } from '@touche/domain';
-import { basketOffer, basketProblem, isPack, physicalCount } from '@touche/domain';
+import {
+  basketOffer,
+  basketProblem,
+  isPack,
+  physicalCount,
+  proposalOriginals,
+} from '@touche/domain';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { isUniqueViolation } from '../common/db-errors.js';
 import { DeskError } from '../common/http.js';
@@ -18,6 +24,26 @@ import { auditRow } from './audit.js';
 import { loadProducts, snapshot } from './catalogue.js';
 import type { DeskUser } from './desk.types.js';
 import { completeReminderSchema, proposalSchema, saveCallSchema } from './schemas.js';
+
+// Keep baseId for older clients and reports; baseIds is the complete original order.
+function originalOrder(all: Product[], baseId: string, baseIds?: string[]): Product[] {
+  const ids = baseIds || [baseId];
+  if (ids[0] !== baseId || new Set(ids).size !== ids.length) {
+    throw new DeskError(400, 'Composition de la commande initiale invalide.');
+  }
+  return ids.map((id) => {
+    const product = all.find((p) => p.id === id && p.enabled);
+    if (!product) throw new DeskError(400, 'Produit initial indisponible dans le catalogue.');
+    return product;
+  });
+}
+
+function preservesOriginals(initial: Product[], basket: Product[], upgradeId?: string): boolean {
+  return upgradeId ? initial.length === 1 : initial.every((p, i) => basket[i]?.id === p.id);
+}
+
+const originalIds = (proposal: Proposal) => proposalOriginals(proposal).map((p) => p.id);
+const sameIds = (a: string[], b: string[]) => JSON.stringify(a) === JSON.stringify(b);
 
 @Injectable()
 export class CallsService {
@@ -40,7 +66,7 @@ export class CallsService {
       return { ok: true, proposal: old.snapshot, duplicate: true };
     }
     const [owner] = await this.db
-      .select({ user_id: tcProposals.user_id })
+      .select({ user_id: tcProposals.user_id, snapshot: tcProposals.snapshot })
       .from(tcProposals)
       .where(eq(tcProposals.call_id, v.callId))
       .limit(1);
@@ -68,6 +94,19 @@ export class CallsService {
       throw new DeskError(400, 'Produits invalides ou désactivés.');
     }
     const b = basket as Product[];
+    const initial = originalOrder(all, v.baseId, v.baseIds);
+    if (
+      owner &&
+      !sameIds(
+        originalIds(owner.snapshot),
+        initial.map((p) => p.id),
+      )
+    ) {
+      throw new DeskError(
+        409,
+        'La commande initiale ne peut plus changer après une offre présentée.',
+      );
+    }
     const first = b[0]!;
     if (first.id !== (v.upgradeId || v.baseId)) {
       throw new DeskError(400, 'Le panier ne correspond pas au produit initial.');
@@ -75,12 +114,15 @@ export class CallsService {
     if (v.upgradeId && (!isPack(first) || !first.components?.includes(base.id))) {
       throw new DeskError(400, 'Pack de remplacement non compatible avec le produit initial.');
     }
+    if (!preservesOriginals(initial, b, v.upgradeId)) {
+      throw new DeskError(400, 'Tous les produits de la commande initiale doivent être conservés.');
+    }
     const problem = basketProblem(b, all);
     if (problem) throw new DeskError(400, problem);
-    if (b.length === 1 && !v.upgradeId) {
+    if (b.length === initial.length && !v.upgradeId) {
       throw new DeskError(400, 'Ajoutez un complément pertinent avant de présenter une offre.');
     }
-    const conditional = b.slice(v.upgradeId ? 0 : 1).filter((p) => !p.recommendable);
+    const conditional = b.slice(v.upgradeId ? 0 : initial.length).filter((p) => !p.recommendable);
     if (conditional.some((p) => !v.verifiedProducts?.includes(p.id))) {
       throw new DeskError(
         400,
@@ -97,10 +139,11 @@ export class CallsService {
       user_id: user.id,
       created_at: createdAt.toISOString(),
       base: snapshot(base, all),
+      originals: initial.map((p) => snapshot(p, all)),
       products: b.map((p) => snapshot(p, all)),
       catalogueTotal: b.reduce((s, p) => s + p.price, 0),
       offerTotal: v.agreedTotal,
-      extra: v.agreedTotal - base.price,
+      extra: v.agreedTotal - initial.reduce((s, p) => s + p.price, 0),
       tier: v.tier,
       delivery: v.delivery,
       version: 3,
@@ -147,13 +190,25 @@ export class CallsService {
     if (!original || !original.enabled) {
       throw new DeskError(400, 'Produit initial indisponible dans le catalogue.');
     }
+    const initial = originalOrder(all, v.baseId, v.baseIds);
+    if (!preservesOriginals(initial, b, v.upgradeId)) {
+      throw new DeskError(400, 'Tous les produits de la commande initiale doivent être conservés.');
+    }
+    const altered = !!v.upgradeId || b.length > initial.length;
+    if (accepted && !altered) {
+      throw new DeskError(
+        400,
+        'Une vente additionnelle doit ajouter un produit à la commande initiale.',
+      );
+    }
     if (
       v.upgradeId &&
       (!isPack(first) || !first.recommendable || !first.components?.includes(v.baseId))
     ) {
       throw new DeskError(400, 'Le pack de remplacement doit contenir le produit initial.');
     }
-    const problem = basketProblem(b, all);
+    // An existing order may already exceed the recommendation limit. New additions may not.
+    const problem = altered ? basketProblem(b, all) : null;
     if (problem) throw new DeskError(400, problem);
     const count = physicalCount(b, all);
     if ((v.outcome === 'duo' && count !== 2) || (v.outcome === 'trio' && count !== 3)) {
@@ -165,7 +220,7 @@ export class CallsService {
     if (
       accepted &&
       b
-        .slice(v.upgradeId ? 0 : 1)
+        .slice(v.upgradeId ? 0 : initial.length)
         .some((p) => !p.recommendable && !v.verifiedProducts?.includes(p.id))
     ) {
       throw new DeskError(
@@ -174,7 +229,7 @@ export class CallsService {
       );
     }
     const sum = b.reduce((s, p) => s + p.price, 0);
-    const base = original.price;
+    const base = initial.reduce((s, p) => s + p.price, 0);
     const offer = accepted
       ? basketOffer(b, v.tier)
       : ['initial', 'refused'].includes(v.outcome)
@@ -197,6 +252,26 @@ export class CallsService {
     if (retry) return retry;
     const now = new Date();
     let presentation: Proposal | null = null;
+    const [proposalOwner] = await this.db
+      .select({ user_id: tcProposals.user_id, snapshot: tcProposals.snapshot })
+      .from(tcProposals)
+      .where(eq(tcProposals.call_id, v.id))
+      .limit(1);
+    if (proposalOwner && proposalOwner.user_id !== user.id) {
+      throw new DeskError(403, 'Appel appartenant à un autre compte.');
+    }
+    if (
+      proposalOwner &&
+      !sameIds(
+        originalIds(proposalOwner.snapshot),
+        initial.map((p) => p.id),
+      )
+    ) {
+      throw new DeskError(
+        409,
+        'La commande initiale ne peut plus changer après une offre présentée.',
+      );
+    }
     if (v.meta) {
       const startedAt = new Date(v.meta.startedAt).getTime();
       if (startedAt > Date.now() + 60000 || startedAt < Date.now() - 7 * 86400000) {
@@ -214,14 +289,6 @@ export class CallsService {
           Date.parse(v.meta.callbackAt) > Date.now() + 366 * 86400000)
       ) {
         throw new DeskError(400, 'Choisissez un rappel futur dans les 12 prochains mois.');
-      }
-      const [proposalOwner] = await this.db
-        .select({ user_id: tcProposals.user_id })
-        .from(tcProposals)
-        .where(eq(tcProposals.call_id, v.id))
-        .limit(1);
-      if (proposalOwner && proposalOwner.user_id !== user.id) {
-        throw new DeskError(403, 'Appel appartenant à un autre compte.');
       }
       if (accepted) {
         if (!v.meta.acceptedProposalId) {
@@ -242,6 +309,11 @@ export class CallsService {
         presentation = row.snapshot;
         if (
           presentation.base.id !== v.baseId ||
+          !sameIds(
+            originalIds(presentation),
+            initial.map((p) => p.id),
+          ) ||
+          proposalOriginals(presentation).reduce((s, p) => s + p.price, 0) !== base ||
           presentation.offerTotal !== offer ||
           presentation.tier !== v.tier ||
           presentation.delivery !== v.delivery ||
@@ -276,7 +348,10 @@ export class CallsService {
     const snapshots: ItemSnapshot[] = presentation
       ? presentation.products
       : b.map((p) => snapshot(p, all));
-    const lockedBase = presentation ? presentation.base.price : base;
+    const originals = presentation
+      ? proposalOriginals(presentation)
+      : initial.map((p) => snapshot(p, all));
+    const lockedBase = originals.reduce((s, p) => s + p.price, 0);
     const lockedSum = presentation ? presentation.catalogueTotal : sum;
     const meta = v.meta;
     // One transaction: a unique violation on tc_accepted_dossiers (concurrent double-accept)
@@ -300,24 +375,27 @@ export class CallsService {
           refusal: v.refusal,
           pilot: pilot ? 1 : 0,
         });
-        await tx.insert(tcAudit).values(auditRow(user, 'call.closed', v.id, { outcome: v.outcome }));
-        if (meta) {
+        await tx
+          .insert(tcAudit)
+          .values(auditRow(user, 'call.closed', v.id, { outcome: v.outcome }));
+        if (meta || initial.length > 1) {
           const data = {
             ...meta,
-            orderRef: meta.orderRef.toUpperCase(),
+            orderRef: meta?.orderRef.toUpperCase() || '',
             team: user.team || '',
             original: presentation?.base || snapshot(original, all),
+            originals,
             ruleVersion: 'touche-v3',
             completedAt: now.toISOString(),
           };
           await tx.insert(tcCallMeta).values({
             call_id: v.id,
             data,
-            callback_at: meta.callbackAt ? new Date(meta.callbackAt) : null,
+            callback_at: meta?.callbackAt ? new Date(meta.callbackAt) : null,
             order_ref: data.orderRef,
-            customer_stage: meta.customerStage,
+            customer_stage: meta?.customerStage || 'unknown',
             team: user.team || '',
-            version: 3,
+            version: meta ? 3 : 1,
           });
         }
         if (accepted && meta?.orderRef) {
@@ -367,10 +445,7 @@ export class CallsService {
       throw new DeskError(403, 'Accès non autorisé.');
     }
     await this.db.transaction(async (tx) => {
-      await tx
-        .update(tcCallMeta)
-        .set({ callback_done: 1 })
-        .where(eq(tcCallMeta.call_id, v.callId));
+      await tx.update(tcCallMeta).set({ callback_done: 1 }).where(eq(tcCallMeta.call_id, v.callId));
       await tx.insert(tcAudit).values(auditRow(user, 'reminder.closed', v.callId));
     });
     return { ok: true };

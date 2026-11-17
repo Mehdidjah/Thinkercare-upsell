@@ -9,7 +9,7 @@ import type { Db } from '../db/schema.js';
  * Upsell rule: one upsell per physical product added to the customer's initial order (pack
  * components count as physical products). An accepted duo adds 1 product, a trio adds 2; a
  * single product replaced by its pack of 2 adds 1, plus 1 per further product; an initial pack
- * of 2 completed into a trio adds 1. Only the dossier's rank-1 call counts, and only when it is
+ * of 2 or two separate initial products completed into a trio add 1. Only the dossier's rank-1 call counts, and only when it is
  * a duo/trio with a positive extra and an offer above the initial order. `without_ref` and
  * `duplicates` are expressed in the same unit (added products).
  */
@@ -34,7 +34,11 @@ WITH ranked AS (
             c.created_at, c.id COLLATE "C") AS sale_rank,
   GREATEST(0,
    (CASE c.outcome WHEN 'duo' THEN 2 WHEN 'trio' THEN 3 ELSE 0 END)
-   - CASE WHEN c.products->0->>'id' = c.base_id AND jsonb_typeof(c.products->0->'components') = 'array'
+   - CASE WHEN jsonb_typeof(m.data->'originals') = 'array' AND jsonb_array_length(m.data->'originals') > 0
+          THEN (SELECT SUM(CASE WHEN jsonb_typeof(item->'components') = 'array'
+                            THEN GREATEST(1, jsonb_array_length(item->'components')) ELSE 1 END)
+                FROM jsonb_array_elements(m.data->'originals') AS item)
+          WHEN c.products->0->>'id' = c.base_id AND jsonb_typeof(c.products->0->'components') = 'array'
           THEN GREATEST(1, jsonb_array_length(c.products->0->'components')) ELSE 1 END
   ) AS added_units
  FROM tc_calls c LEFT JOIN tc_call_meta m ON m.call_id = c.id
