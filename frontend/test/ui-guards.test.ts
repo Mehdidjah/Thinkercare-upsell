@@ -28,29 +28,22 @@ test('Questionnaire says which answers still block "Construire la routine"', () 
   const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
   for (const rule of ['.missing-answers{', '.missing-link{', '.missing-link:focus-visible{']) assert.ok(css.includes(rule), rule);
 });
-test('Step 3 lets the adviser add a product the customer asks for, below the suggestions', () => {
-  assert.ok(/import \{[^}]*\bmanualAddCheck\b[^}]*\} from '@touche\/domain'/.test(app), 'manualAddCheck imported from @touche/domain');
+test('Step 3 combines suggested and requested products without bypassing compatibility checks', () => {
   const step2 = app.slice(app.indexOf('{step===2&&base&&<>'), app.indexOf('<aside className="routine-rail">'));
-  const list = step2.indexOf('<div className="recommendations">');
-  const empty = step2.indexOf('Pas d’ajout pertinent dans cette sélection.');
-  const section = step2.indexOf('<section className="customer-request"');
-  const details = step2.indexOf('<summary>Références à vérification spécifique</summary>');
-  assert.ok(list > 0 && empty > list && section > empty && details > section, 'order: suggestions, empty state, customer request, verification details');
-  const request = step2.slice(section, details);
-  assert.ok(step2.includes('{!blocked&&count<3&&<section className="customer-request"'), 'shown only when no review is required and the routine has room');
-  assert.ok(request.includes('<h2>Elle sait déjà ce qu’elle veut ?</h2>'), 'section heading');
-  assert.ok(request.includes('Ajoutez le produit qu’elle demande, même s’il n’est pas suggéré. Les règles de sécurité restent appliquées : trois soins maximum, pas de doublon, allergies déclarées.'), 'explanation');
-  assert.ok(request.includes('aria-label="Rechercher un produit demandé par la cliente"') && request.includes('placeholder="Rechercher un produit du catalogue…"'), 'own search field');
-  assert.ok(request.includes('>Suggéré<'), '"Suggéré" tag on products that are also suggested');
-  assert.ok(request.includes('Confirmer : la cliente le demande, compatibilité vérifiée'), 'confirmation button text');
-  assert.ok(request.includes('>Annuler<'), 'cancel button');
-  assert.ok(app.includes('manualAddCheck(activeBase,companions,'), 'each row is checked against the active base, other original products and additions');
+  assert.equal((step2.match(/<section className="product-picker"/g) || []).length, 1);
+  assert.ok(!step2.includes('className="recommendations"') && !step2.includes('className="customer-request"'));
+  assert.ok(step2.includes('{!blocked&&count<3&&<section className="product-picker"'), 'only shown when additions are allowed');
+  assert.ok(step2.includes('aria-label="Rechercher un produit à ajouter"'), 'one search for both sources');
+  assert.ok(step2.includes('>Suggéré<'), 'recommendations are labelled');
+  assert.ok(step2.includes('Ingrédients & argumentaire'), 'product details remain accessible');
+  assert.ok(step2.includes('Confirmer : la cliente le demande, compatibilité vérifiée') && step2.includes('>Annuler<'), 'requested products retain warning confirmation');
+  assert.ok(app.includes('manualAddCheck(activeBase,companions,'), 'checks include every original and added product');
   const rail = app.slice(app.indexOf('<aside className="routine-rail">'));
-  assert.ok(rail.includes("requestedIds.includes(p.id)?'DEMANDÉ PAR LA CLIENTE':`COMPLÉMENT ${adds.indexOf(p.id)+1}`"), 'rail labels a requested complement');
-  assert.ok(rail.includes('setRequestedIds(a=>a.filter(x=>x!==p.id))'), 'removing it from the routine forgets the request');
+  assert.ok(rail.includes("requestedIds.includes(p.id)?'DEMANDÉ PAR LA CLIENTE':`COMPLÉMENT ${adds.indexOf(p.id)+1}`"));
+  assert.ok(rail.includes('setRequestedIds(a=>a.filter(x=>x!==p.id))'));
   const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
-  for (const rule of ['.customer-request{', '.request-row{', '.request-row.blocked{', '.request-tag{', '.request-confirm{']) assert.ok(css.includes(rule), rule);
-  assert.ok(/\.customer-request [^{}]*:focus-visible\{/.test(css), 'visible focus ring in the section');
+  for (const rule of ['.product-picker{', '.request-row{', '.request-row.blocked{', '.request-tag{', '.request-confirm{']) assert.ok(css.includes(rule), rule);
+  assert.ok(/\.product-picker [^{}]*:focus-visible\{/.test(css));
 });
 test('Every catalogue image file exists', () => {
   const catalogue = JSON.parse(readFileSync(new URL('../../shared/test/fixtures/catalogue.json', import.meta.url), 'utf8'));
