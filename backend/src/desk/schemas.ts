@@ -136,6 +136,7 @@ export const userSchema = z
       .regex(/^[a-z0-9._-]{3,40}$/),
     label: z.string().trim().min(2).max(80),
     password: z.string().min(1).max(200),
+    role: z.enum(['advisor', 'manager']).default('advisor'),
   })
   .strict();
 
@@ -161,8 +162,14 @@ export const userSettingsSchema = z
     team: z.string().trim().max(60),
     active: z.boolean(),
     reporting_scope: z.enum(['own', 'team']),
+    role: z.enum(['advisor', 'manager']).optional(),
   })
   .strict();
+
+export const removeUserSchema = z.object({
+  action: z.literal('remove-user'),
+  id: z.string().min(1).max(64),
+}).strict();
 
 // Calls: activity.server.ts lines 11-13 and 36, api.server.ts line 54.
 const id = z.string().regex(/^[a-z0-9_-]{2,60}$/);

@@ -1,3 +1,4 @@
+import { canManageWorkspace } from '@touche/domain';
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import { dateRangeValid, reportScope, shiftDay } from '@touche/domain';
@@ -30,7 +31,7 @@ export class ReportingService {
   constructor(@InjectDrizzle() private readonly db: Db) {}
 
   async audit(user: DeskUser) {
-    if (user.role !== 'admin')
+    if (!canManageWorkspace(user))
       throw new DeskError(403, 'Accès direction requis.');
     const events = await this.db
       .select({
@@ -51,7 +52,7 @@ export class ReportingService {
 
   /** Port of activity.server.ts lines 52-65: closed calls of a period, 500 per page, keyset cursor. */
   async analytics(user: DeskUser, query: URLSearchParams) {
-    if (user.role !== 'admin')
+    if (!canManageWorkspace(user))
       throw new DeskError(403, 'Le pilotage est réservé à la direction.');
     const from = query.get('from') || '';
     const to = query.get('to') || '';

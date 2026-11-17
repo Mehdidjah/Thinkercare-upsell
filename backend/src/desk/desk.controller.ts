@@ -1,3 +1,4 @@
+import { canManageWorkspace } from '@touche/domain';
 import {
   Controller,
   Get,
@@ -98,7 +99,7 @@ export class DeskController {
     if (body.action === 'bonus-rule')
       return sendJson(res, await this.bonus.saveRule(user, body));
     // POST order after the session check: logout, bonus-rule, present-offer and complete-reminder (T7),
-    // user-settings, save-call (T7), password, non-admin -> 403, then product, clinical, user, reset-user.
+    // user-settings, save-call (T7), password, non-management -> 403, then product, clinical and account management.
     if (body.action === 'present-offer')
       return sendJson(res, await this.calls.presentOffer(user, body));
     if (body.action === 'complete-reminder')
@@ -111,7 +112,7 @@ export class DeskController {
       await this.auth.changePassword(user, body, req.headers.cookie);
       return sendJson(res, { ok: true });
     }
-    if (user.role !== 'admin')
+    if (!canManageWorkspace(user))
       throw new DeskError(403, 'Cette action est réservée à la direction.');
     if (body.action === 'user-password')
       return sendJson(res, await this.auth.revealPassword(user, body, req.headers.cookie));
@@ -121,6 +122,8 @@ export class DeskController {
       return sendJson(res, await this.admin.setClinical(user, body));
     if (body.action === 'user')
       return sendJson(res, await this.admin.createUser(user, body));
+    if (body.action === 'remove-user')
+      return sendJson(res, await this.admin.removeUser(user, body));
     if (body.action === 'reset-user')
       return sendJson(res, await this.admin.resetUser(user, body));
     throw new DeskError(400, 'Action inconnue.');

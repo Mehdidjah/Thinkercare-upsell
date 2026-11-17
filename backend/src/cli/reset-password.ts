@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { hashPassword, newSaltHex } from '../auth/crypto.js';
 import { sealPassword } from '../auth/password-vault.js';
@@ -35,13 +35,13 @@ export async function resetPassword(
       const [row] = await tx
         .select({ id: tcUsers.id, active: tcUsers.active, role: tcUsers.role })
         .from(tcUsers)
-        .where(eq(tcUsers.username, name))
-        .limit(1);
+        .where(and(eq(tcUsers.username, name), isNull(tcUsers.deleted_at)))
+        .limit(1).for('update');
       if (!row) throw new Error('Compte introuvable : ' + name);
       await tx
         .update(tcUsers)
         .set({ salt, password_hash: passwordHash,
-          password_ciphertext: row.role === 'advisor' ? sealPassword(row.id, password, process.env.ACCOUNT_PASSWORD_KEY?.trim()) : null,
+          password_ciphertext: row.role !== 'admin' ? sealPassword(row.id, password, process.env.ACCOUNT_PASSWORD_KEY?.trim()) : null,
           password_updated_at: new Date(),
         })
         .where(eq(tcUsers.id, row.id));

@@ -1,6 +1,7 @@
+import { canManageWorkspace } from '@touche/domain';
 import { Inject, Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { and, eq, lt, ne, sql } from 'drizzle-orm';
+import { and, eq, isNull, lt, ne, sql } from 'drizzle-orm';
 import { DeskError } from '../common/http.js';
 import { loginSchema, passwordSchema, revealPasswordSchema } from '../desk/schemas.js';
 import type { DeskUser } from '../desk/desk.types.js';
@@ -35,7 +36,7 @@ export class AuthService {
       .from(tcUsers)
       .innerJoin(tcSessions, eq(tcSessions.user_id, tcUsers.id))
       .where(
-        and(eq(tcSessions.token_hash, sha256Hex(token)), sql`${tcSessions.expires_at} > now()`, eq(tcUsers.active, 1)),
+        and(eq(tcSessions.token_hash, sha256Hex(token)), sql`${tcSessions.expires_at} > now()`, eq(tcUsers.active, 1), isNull(tcUsers.deleted_at)),
       )
       .limit(1);
     return rows[0] ?? null;
@@ -57,14 +58,14 @@ export class AuthService {
       ? []
       : await this.db.select().from(tcUsers).where(eq(tcUsers.username, v.username)).limit(1);
     const hashed = await hashPassword(v.password, row?.salt ?? DUMMY_SALT);
-    if (!row || !row.active || !safeEqualHex(hashed, row.password_hash)) {
+    if (!row || !row.active || row.deleted_at || !safeEqualHex(hashed, row.password_hash)) {
       throw new DeskError(401, 'Identifiant ou mot de passe incorrect.');
     }
     const token = newSessionToken();
     await this.db.transaction(async (tx) => {
       // Serialize session creation with password replacement, including CLI recovery.
       const [current] = await tx.select().from(tcUsers).where(eq(tcUsers.id, row.id)).for('update');
-      if (!current?.active || current.password_hash !== row.password_hash || current.salt !== row.salt) {
+      if (!current?.active || current.deleted_at || current.password_hash !== row.password_hash || current.salt !== row.salt) {
         throw new DeskError(401, 'Identifiant ou mot de passe incorrect.');
       }
       await tx.insert(tcSessions).values({
@@ -100,12 +101,12 @@ export class AuthService {
         eq(tcSessions.user_id, user.id), eq(tcSessions.token_hash, sha256Hex(readSessionToken(cookieHeader))),
         sql`${tcSessions.expires_at} > now()`,
       ));
-      if (!current?.active || !session || current.password_hash !== row.password_hash || current.salt !== row.salt) {
+      if (!current?.active || current.deleted_at || !session || current.password_hash !== row.password_hash || current.salt !== row.salt) {
         throw new DeskError(401, 'Votre accès a changé. Reconnectez-vous avant de modifier le mot de passe.');
       }
       await tx.update(tcUsers).set({
         salt, password_hash: passwordHash,
-        password_ciphertext: current.role === 'advisor' ? sealPassword(user.id, v.next, this.env.accountPasswordKey) : null,
+        password_ciphertext: current.role !== 'admin' ? sealPassword(user.id, v.next, this.env.accountPasswordKey) : null,
         password_updated_at: new Date(),
       }).where(eq(tcUsers.id, user.id));
       await tx
@@ -118,7 +119,7 @@ export class AuthService {
   }
 
   async revealPassword(user: DeskUser, body: unknown, cookieHeader?: string): Promise<{ password: string | null }> {
-    if (user.role !== 'admin') throw new DeskError(403, 'Cette action est réservée à la direction.');
+    if (!canManageWorkspace(user)) throw new DeskError(403, 'Cette action est réservée à la direction.');
     const v = revealPasswordSchema.parse(body);
     if (!this.env.accountPasswordKey) throw new DeskError(503, 'La consultation des mots de passe n’est pas configurée.');
     const now = Date.now();
@@ -138,12 +139,12 @@ export class AuthService {
         eq(tcSessions.user_id, user.id), eq(tcSessions.token_hash, sha256Hex(readSessionToken(cookieHeader))),
         sql`${tcSessions.expires_at} > now()`,
       ));
-      if (!admin?.active || admin.role !== 'admin' || !session || admin.password_hash !== verified.password_hash || admin.salt !== verified.salt) {
+      if (!admin?.active || admin.deleted_at || !canManageWorkspace(admin) || !session || admin.password_hash !== verified.password_hash || admin.salt !== verified.salt) {
         throw new DeskError(401, 'Votre session a expiré. Reconnectez-vous.');
       }
       const [target] = await tx.select().from(tcUsers).where(eq(tcUsers.id, v.id));
-      if (!target) throw new DeskError(404, 'Compte introuvable.');
-      if (target.role !== 'advisor') throw new DeskError(403, 'Le mot de passe de la direction ne peut pas être consulté.');
+      if (!target || target.deleted_at) throw new DeskError(404, 'Compte introuvable.');
+      if (target.role === 'admin') throw new DeskError(403, 'Le mot de passe de la direction ne peut pas être consulté.');
       const password = target.password_ciphertext ? openPassword(target.id, target.password_ciphertext, this.env.accountPasswordKey) : null;
       await tx.insert(tcAudit).values(auditRow(user, 'account.password_viewed', target.id));
       return { password };

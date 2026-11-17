@@ -52,7 +52,7 @@ describe('migrations', () => {
   it('check constraints reject an unknown role and a zero threshold', async () => {
     await expect(
       db.execute(
-        sql`INSERT INTO tc_users (id, username, label, role, salt, password_hash) VALUES ('u1', 'x', 'X', 'manager', 's', 'h')`,
+        sql`INSERT INTO tc_users (id, username, label, role, salt, password_hash) VALUES ('u1', 'x', 'X', 'unknown', 's', 'h')`,
       ),
     ).rejects.toMatchObject({ cause: { code: '23514' } });
     await expect(

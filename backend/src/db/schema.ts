@@ -18,10 +18,11 @@ export const tcUsers = pgTable(
     password_updated_at: timestamptz('password_updated_at'),
     created_at: timestamptz('created_at').notNull().defaultNow(),
     active: integer('active').notNull().default(1),
+    deleted_at: timestamptz('deleted_at'),
     team: text('team').notNull().default(''),
     reporting_scope: text('reporting_scope').notNull().default('own'),
   },
-  (t) => [check('tc_users_role_check', sql`${t.role} IN ('admin','advisor')`)],
+  (t) => [check('tc_users_role_check', sql`${t.role} IN ('admin','manager','advisor')`)],
 );
 
 export const tcSessions = pgTable(

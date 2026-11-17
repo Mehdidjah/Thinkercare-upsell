@@ -22,6 +22,13 @@
       "when": 1794825555889,
       "tag": "0002_account_passwords",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794923515437,
+      "tag": "0003_manager_accounts",
+      "breakpoints": true
     }
   ]
 }

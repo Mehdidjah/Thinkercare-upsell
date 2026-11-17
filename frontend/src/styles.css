@@ -95,18 +95,20 @@
   margin:24px 0;
 }
 .account-form>label,.account-form .password-field { min-width:0 }
+.account-create-form { grid-template-columns:repeat(4,minmax(0,1fr)) auto }
+.account-form select { width:100%;min-height:44px;box-sizing:border-box;border:1px solid var(--line);border-radius:7px;background:#fff;padding:10px 12px;font:inherit;color:inherit }
 .account-form>.primary { margin-top:25px;white-space:nowrap }
 .account-form .password-actions { margin:4px 0 0;gap:14px }
 .account-table-wrap { margin-top:26px;border:1px solid var(--line);border-radius:9px;overflow:hidden }
 .account-table { width:100%;table-layout:fixed;border-collapse:collapse;text-align:left;font-size:12px;line-height:1.5 }
 .account-table th,.account-table td { padding:18px 16px;vertical-align:middle;overflow-wrap:anywhere }
 .account-table thead th { padding-top:12px;padding-bottom:12px;background:#f7f7f7;color:#666;font-size:11px;font-weight:600;border-bottom:1px solid var(--line) }
-.account-table thead th:nth-child(1) { width:26% }
-.account-table thead th:nth-child(2) { width:14% }
-.account-table thead th:nth-child(3) { width:15% }
-.account-table thead th:nth-child(4) { width:11% }
-.account-table thead th:nth-child(5) { width:15% }
-.account-table thead th:nth-child(6) { width:19%;text-align:right }
+.account-table thead th:nth-child(1) { width:24% }
+.account-table thead th:nth-child(2) { width:12% }
+.account-table thead th:nth-child(3) { width:12% }
+.account-table thead th:nth-child(4) { width:10% }
+.account-table thead th:nth-child(5) { width:14% }
+.account-table thead th:nth-child(6) { width:28%;text-align:right }
 .account-table tbody tr+tr { border-top:1px solid var(--line) }
 .account-table tbody tr:hover { background:#fcfcfc }
 .account-table tbody th { font-weight:400 }
@@ -120,6 +122,14 @@
 .account-status.inactive { color:#737373;background:#fafafa }
 .account-status.inactive>span { background:#aaa }
 .account-actions { text-align:right }
+.account-action-buttons { display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px }
+.account-actions .danger-outline { color:#9b2727;border-color:#dfbcbc }
+.account-actions .danger-outline:hover { color:#781b1b;background:#fff3f3;border-color:#b65959 }
+.account-remove-modal { max-width:500px }
+.account-remove-modal p { line-height:1.7 }
+.account-remove-actions { display:flex;justify-content:flex-end;flex-wrap:wrap;gap:12px;margin-top:24px }
+.account-remove-actions .danger-button { background:#9b2727;border-color:#9b2727;color:white }
+.account-remove-actions .danger-button:hover { background:#781b1b }
 .account-actions .outline { min-height:38px;font-size:11px;padding:8px 12px;white-space:nowrap }
 .account-actions .outline:focus-visible { outline:2px solid #222;outline-offset:3px }
 
@@ -138,13 +148,14 @@
   .account-table tbody th { grid-column:1/-1;padding-bottom:14px;border-bottom:1px solid var(--line) }
   .account-table td[data-label]::before { content:attr(data-label);display:block;margin-bottom:6px;font-size:11px;color:#6b6b6b }
   .account-table .account-actions { grid-column:1/-1;text-align:left;padding-top:2px }
+  .account-action-buttons { justify-content:flex-start }
   .account-actions .outline { min-height:42px }
 }
 @media(max-width:650px) {
   .account-form { grid-template-columns:minmax(0,1fr);gap:16px }
   .account-form>.primary { margin-top:0;justify-self:stretch }
   .account-table tbody tr { padding:16px }
-  .account-actions .outline { width:100% }
+  .account-actions .outline { flex:1;min-width:130px }
 }
 .initial-selection{margin:0 0 24px;padding:20px;border:1px solid var(--line,#dededb);border-radius:12px;background:#f7f7f4}
 .initial-selection-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}

@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 const app = readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8');
 const commission = readFileSync(new URL('../src/ui/Commission.tsx', import.meta.url), 'utf8');
-test('Dashboard direction guarded in rendering', () => { assert.ok(app.includes("view==='results'&&state.user.role==='admin'")); assert.ok(app.includes("view==='contributions'&&state.user.role==='admin'")); });
+test('Dashboard direction guarded in rendering', () => { assert.ok(app.includes("view==='results'&&canManageWorkspace(state.user)")); assert.ok(app.includes("view==='contributions'&&canManageWorkspace(state.user)")); });
 test('Own progress mounted on calls and dashboard', () => assert.equal((app.match(/<PersonalProgress /g) || []).length, 2));
 test('Both upsell-rule footnotes count added products and cover an initial pack of 2', () => {
   const card = commission.slice(commission.indexOf('export function ProgressCard'), commission.indexOf('export function PersonalProgress'));

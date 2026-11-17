@@ -22,4 +22,4 @@ export function bonusEstimate(count:number,rule:BonusRule){
 export type ContributionRow={user_id:string;day:string;calls:number;confirmations:number;upsells:number;initial_dzd:number;confirmed_dzd:number;uplift_dzd:number;without_ref:number;duplicates:number};
 export const emptyContribution=()=>({calls:0,confirmations:0,upsells:0,initialDzd:0,confirmedDzd:0,upliftDzd:0,withoutRef:0,duplicates:0});
 export function sumContributions(rows:ContributionRow[]){return rows.reduce((a,r)=>({calls:a.calls+Number(r.calls),confirmations:a.confirmations+Number(r.confirmations),upsells:a.upsells+Number(r.upsells),initialDzd:a.initialDzd+Number(r.initial_dzd),confirmedDzd:a.confirmedDzd+Number(r.confirmed_dzd),upliftDzd:a.upliftDzd+Number(r.uplift_dzd),withoutRef:a.withoutRef+Number(r.without_ref),duplicates:a.duplicates+Number(r.duplicates)}),emptyContribution());}
-export const canViewDirection=(user:{role:string})=>user.role==='admin';
+export { canManageWorkspace as canViewDirection } from './access.js';

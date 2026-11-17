@@ -19,6 +19,6 @@ test('Algiers monthly rollover',()=>assert.equal(b.algerDay('2026-11-30T23:00:00
 test('Invalid months rejected',()=>{for(const m of ['2026-00','2026-13','2026-1','2026-11<script>',''])assert.equal(b.validMonth(m),false)});
 test('No contributions for empty input',()=>assert.deepEqual(b.sumContributions([]),b.emptyContribution()));
 test('Net incremental revenue not added catalogue',()=>{const s=b.sumContributions([{user_id:'u',day:'2026-11-13',calls:30,confirmations:30,upsells:30,initial_dzd:54000,confirmed_dzd:81000,uplift_dzd:27000,without_ref:0,duplicates:0}]);assert.equal(s.upliftDzd,27000);assert.equal(s.confirmedDzd,s.initialDzd+s.upliftDzd)});
-test('Direction only role',()=>{assert.ok(b.canViewDirection({role:'admin'}));for(const role of ['advisor','manager',''])assert.equal(b.canViewDirection({role}),false)});
+test('Direction and manager roles',()=>{assert.ok(b.canViewDirection({role:'admin'}));assert.ok(b.canViewDirection({role:'manager'}));for(const role of ['advisor',''])assert.equal(b.canViewDirection({role}),false)});
 test('Advisor own scope regardless of former team flag',()=>assert.deepEqual(reportScope({id:'u',role:'advisor',team:'A',reporting_scope:'team'}),{userId:'u'}));
 test('Admin global scope',()=>assert.deepEqual(reportScope({id:'u',role:'admin'}),{userId:null}));

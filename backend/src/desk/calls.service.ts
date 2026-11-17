@@ -1,3 +1,4 @@
+import { canManageWorkspace } from '@touche/domain';
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import type { ItemSnapshot, Product, Proposal } from '@touche/domain';
@@ -441,7 +442,7 @@ export class CallsService {
       .from(tcCalls)
       .where(eq(tcCalls.id, v.callId))
       .limit(1);
-    if (!row || (user.role !== 'admin' && row.user_id !== user.id)) {
+    if (!row || (!canManageWorkspace(user) && row.user_id !== user.id)) {
       throw new DeskError(403, 'Accès non autorisé.');
     }
     await this.db.transaction(async (tx) => {

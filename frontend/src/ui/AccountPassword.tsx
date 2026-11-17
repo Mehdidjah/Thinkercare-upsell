@@ -83,7 +83,7 @@ export default function AccountPassword({ account, enabled, request, saved }: {
         </div>
         <small>Masqué après une minute ou lorsque vous quittez cet onglet.</small>
       </div> : confirming ? <div className="password-confirmation">
-        <label>Votre mot de passe administrateur<input type="password" autoComplete="current-password"
+        <label>Votre mot de passe<input type="password" autoComplete="current-password"
           value={adminPassword} onChange={e => setAdminPassword(e.target.value)} maxLength={200} disabled={busy}
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (adminPassword && !busy) void reveal(); } }}/></label>
         <div className="password-actions">
@@ -91,10 +91,10 @@ export default function AccountPassword({ account, enabled, request, saved }: {
           <button type="button" className="text-button" disabled={busy} onClick={() => { setConfirming(false); setAdminPassword(''); }}>Annuler</button>
         </div>
       </div> : <button type="button" className="outline" disabled={busy} onClick={() => { setConfirming(true); setError(''); setMessage(''); }}>Voir le mot de passe enregistré</button>}
-    {enabled && <p className="muted">La consultation est réservée à la direction et enregistrée dans le journal de traçabilité.</p>}
+    {enabled && <p className="muted">La consultation est réservée à la direction et aux managers, et enregistrée dans le journal de traçabilité.</p>}
     <form onSubmit={reset}>
       <NewPasswordField value={replacement} onChange={setReplacement} disabled={busy}/>
-      <p>Le nouveau mot de passe remplace immédiatement l’ancien et déconnecte les sessions de cette conseillère.</p>
+      <p>Le nouveau mot de passe remplace immédiatement l’ancien et déconnecte les sessions de ce compte.</p>
       <button className="primary" disabled={busy}>{busy ? 'Enregistrement…' : 'Enregistrer le nouveau mot de passe'}</button>
     </form>
     {error && <p className="alert" role="alert">{error}</p>}
