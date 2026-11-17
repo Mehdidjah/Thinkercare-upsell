@@ -104,7 +104,8 @@ describe('login', () => {
 });
 
 describe('logout and password', () => {
-  it('logout deletes the session and clears the cookie', async () => {
+  it.each(['advisor', 'manager', 'admin'] as const)('logout revokes a %s session and clears the cookie', async (role) => {
+    await ctx.db.update(tcUsers).set({ role }).where(eq(tcUsers.username, USER));
     const cookie = await loginCookie(ctx, USER, PASSWORD);
     const res = await deskPost(ctx, { action: 'logout' }, { cookie });
     expect(res.status).toBe(200);
