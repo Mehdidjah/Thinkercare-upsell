@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { validMonth } from '@touche/domain';
+import { validMonth, MAX_ITEM_QUANTITY } from '@touche/domain';
 
 export const loginSchema = z
   .object({
@@ -173,6 +173,8 @@ export const removeUserSchema = z.object({
 
 // Calls: activity.server.ts lines 11-13 and 36, api.server.ts line 54.
 const id = z.string().regex(/^[a-z0-9_-]{2,60}$/);
+const quantities = z.record(id, z.number().int().min(1).max(MAX_ITEM_QUANTITY))
+  .refine(value => Object.keys(value).length <= 32, 'Trop de références.');
 
 export const proposalSchema = z
   .object({
@@ -181,6 +183,8 @@ export const proposalSchema = z
     callId: z.string().uuid(),
     baseId: id,
     baseIds: z.array(id).min(1).max(32).optional(),
+    baseQuantities: quantities.optional(),
+    quantities: quantities.optional(),
     upgradeId: id.optional(),
     productIds: z.array(id).min(1).max(32),
     tier: z.enum(['catalogue', 'duo', 'final']),
@@ -228,6 +232,8 @@ export const saveCallSchema = z
     id: z.string().uuid(),
     baseId: z.string().max(60),
     baseIds: z.array(id).min(1).max(32).optional(),
+    baseQuantities: quantities.optional(),
+    quantities: quantities.optional(),
     upgradeId: z.string().max(60).optional(),
     agreedTotal: z.number().int().min(0).max(500000).optional(),
     productIds: z.array(z.string().max(60)).min(1).max(32),

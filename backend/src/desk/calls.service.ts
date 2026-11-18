@@ -1,13 +1,17 @@
 import { canManageWorkspace } from '@touche/domain';
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import type { ItemSnapshot, Product, Proposal } from '@touche/domain';
+import type { ItemSnapshot, Product, Proposal, OrderItem } from '@touche/domain';
 import {
   basketOffer,
   basketProblem,
   isPack,
   physicalCount,
   proposalOriginals,
+  quantityOf,
+  itemsTotal,
+  sameOrder,
+  orderSignature,
 } from '@touche/domain';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { isUniqueViolation } from '../common/db-errors.js';
@@ -27,24 +31,34 @@ import type { DeskUser } from './desk.types.js';
 import { completeReminderSchema, proposalSchema, saveCallSchema } from './schemas.js';
 
 // Keep baseId for older clients and reports; baseIds is the complete original order.
-function originalOrder(all: Product[], baseId: string, baseIds?: string[]): Product[] {
+function withQuantities(items: Product[], quantities: Record<string, number> = {}): OrderItem[] {
+  if (Object.keys(quantities).some(id => !items.some(item => item.id === id))) {
+    throw new DeskError(400, 'Une quantité ne correspond pas aux produits sélectionnés.');
+  }
+  return items.map(item => ({ ...item, quantity: quantities[item.id] ?? 1 }));
+}
+
+function originalOrder(all: Product[], baseId: string, baseIds?: string[], quantities?: Record<string, number>): OrderItem[] {
   const ids = baseIds || [baseId];
   if (ids[0] !== baseId || new Set(ids).size !== ids.length) {
     throw new DeskError(400, 'Composition de la commande initiale invalide.');
   }
-  return ids.map((id) => {
+  return withQuantities(ids.map((id) => {
     const product = all.find((p) => p.id === id && p.enabled);
     if (!product) throw new DeskError(400, 'Produit initial indisponible dans le catalogue.');
     return product;
-  });
+  }), quantities);
 }
 
-function preservesOriginals(initial: Product[], basket: Product[], upgradeId?: string): boolean {
-  return upgradeId ? initial.length === 1 : initial.every((p, i) => basket[i]?.id === p.id);
+function preservesOriginals(initial: OrderItem[], basket: OrderItem[], upgradeId?: string): boolean {
+  return upgradeId ? initial.length === 1 && quantityOf(basket[0]) >= quantityOf(initial[0])
+    : initial.every((p, i) => basket[i]?.id === p.id && quantityOf(basket[i]) >= quantityOf(p));
 }
 
-const originalIds = (proposal: Proposal) => proposalOriginals(proposal).map((p) => p.id);
-const sameIds = (a: string[], b: string[]) => JSON.stringify(a) === JSON.stringify(b);
+const addedLines = (initial: OrderItem[], basket: OrderItem[]) => basket.filter(p => {
+  const before = initial.find(x => x.id === p.id);
+  return !before || quantityOf(p) > quantityOf(before);
+});
 
 @Injectable()
 export class CallsService {
@@ -94,14 +108,11 @@ export class CallsService {
     ) {
       throw new DeskError(400, 'Produits invalides ou désactivés.');
     }
-    const b = basket as Product[];
-    const initial = originalOrder(all, v.baseId, v.baseIds);
+    const b = withQuantities(basket as Product[], v.quantities);
+    const initial = originalOrder(all, v.baseId, v.baseIds, v.baseQuantities);
     if (
       owner &&
-      !sameIds(
-        originalIds(owner.snapshot),
-        initial.map((p) => p.id),
-      )
+      orderSignature(proposalOriginals(owner.snapshot)) !== orderSignature(initial)
     ) {
       throw new DeskError(
         409,
@@ -120,10 +131,10 @@ export class CallsService {
     }
     const problem = basketProblem(b, all);
     if (problem) throw new DeskError(400, problem);
-    if (b.length === initial.length && !v.upgradeId) {
+    if (sameOrder(initial, b) && !v.upgradeId) {
       throw new DeskError(400, 'Ajoutez un complément pertinent avant de présenter une offre.');
     }
-    const conditional = b.slice(v.upgradeId ? 0 : initial.length).filter((p) => !p.recommendable);
+    const conditional = addedLines(initial, b).filter((p) => !p.recommendable);
     if (conditional.some((p) => !v.verifiedProducts?.includes(p.id))) {
       throw new DeskError(
         400,
@@ -139,12 +150,12 @@ export class CallsService {
       call_id: v.callId,
       user_id: user.id,
       created_at: createdAt.toISOString(),
-      base: snapshot(base, all),
+      base: snapshot(initial[0], all),
       originals: initial.map((p) => snapshot(p, all)),
       products: b.map((p) => snapshot(p, all)),
-      catalogueTotal: b.reduce((s, p) => s + p.price, 0),
+      catalogueTotal: itemsTotal(b),
       offerTotal: v.agreedTotal,
-      extra: v.agreedTotal - initial.reduce((s, p) => s + p.price, 0),
+      extra: v.agreedTotal - itemsTotal(initial),
       tier: v.tier,
       delivery: v.delivery,
       version: 3,
@@ -185,17 +196,17 @@ export class CallsService {
     if (basket.some((x) => !x || !x.enabled)) {
       throw new DeskError(400, 'Un produit a été désactivé. Actualisez le catalogue.');
     }
-    const b = basket as Product[];
+    const b = withQuantities(basket as Product[], v.quantities);
     const first = b[0]!;
     const original = all.find((p) => p.id === v.baseId);
     if (!original || !original.enabled) {
       throw new DeskError(400, 'Produit initial indisponible dans le catalogue.');
     }
-    const initial = originalOrder(all, v.baseId, v.baseIds);
+    const initial = originalOrder(all, v.baseId, v.baseIds, v.baseQuantities);
     if (!preservesOriginals(initial, b, v.upgradeId)) {
       throw new DeskError(400, 'Tous les produits de la commande initiale doivent être conservés.');
     }
-    const altered = !!v.upgradeId || b.length > initial.length;
+    const altered = !!v.upgradeId || !sameOrder(initial, b);
     if (accepted && !altered) {
       throw new DeskError(
         400,
@@ -220,8 +231,7 @@ export class CallsService {
     }
     if (
       accepted &&
-      b
-        .slice(v.upgradeId ? 0 : initial.length)
+      addedLines(initial, b)
         .some((p) => !p.recommendable && !v.verifiedProducts?.includes(p.id))
     ) {
       throw new DeskError(
@@ -229,8 +239,8 @@ export class CallsService {
         'Cette référence nécessite une vérification de sa fiche avant ajout automatique.',
       );
     }
-    const sum = b.reduce((s, p) => s + p.price, 0);
-    const base = initial.reduce((s, p) => s + p.price, 0);
+    const sum = itemsTotal(b);
+    const base = itemsTotal(initial);
     const offer = accepted
       ? basketOffer(b, v.tier)
       : ['initial', 'refused'].includes(v.outcome)
@@ -263,10 +273,7 @@ export class CallsService {
     }
     if (
       proposalOwner &&
-      !sameIds(
-        originalIds(proposalOwner.snapshot),
-        initial.map((p) => p.id),
-      )
+      orderSignature(proposalOriginals(proposalOwner.snapshot)) !== orderSignature(initial)
     ) {
       throw new DeskError(
         409,
@@ -310,15 +317,12 @@ export class CallsService {
         presentation = row.snapshot;
         if (
           presentation.base.id !== v.baseId ||
-          !sameIds(
-            originalIds(presentation),
-            initial.map((p) => p.id),
-          ) ||
-          proposalOriginals(presentation).reduce((s, p) => s + p.price, 0) !== base ||
+          !sameOrder(proposalOriginals(presentation), initial) ||
+          itemsTotal(proposalOriginals(presentation)) !== base ||
           presentation.offerTotal !== offer ||
           presentation.tier !== v.tier ||
           presentation.delivery !== v.delivery ||
-          JSON.stringify(presentation.products.map((p) => p.id)) !== JSON.stringify(v.productIds)
+          orderSignature(presentation.products) !== orderSignature(b)
         ) {
           throw new DeskError(
             409,
@@ -352,7 +356,7 @@ export class CallsService {
     const originals = presentation
       ? proposalOriginals(presentation)
       : initial.map((p) => snapshot(p, all));
-    const lockedBase = originals.reduce((s, p) => s + p.price, 0);
+    const lockedBase = itemsTotal(originals);
     const lockedSum = presentation ? presentation.catalogueTotal : sum;
     const meta = v.meta;
     // One transaction: a unique violation on tc_accepted_dossiers (concurrent double-accept)
@@ -379,12 +383,12 @@ export class CallsService {
         await tx
           .insert(tcAudit)
           .values(auditRow(user, 'call.closed', v.id, { outcome: v.outcome }));
-        if (meta || initial.length > 1) {
+        if (meta || initial.length > 1 || initial.some(p => quantityOf(p) > 1)) {
           const data = {
             ...meta,
             orderRef: meta?.orderRef.toUpperCase() || '',
             team: user.team || '',
-            original: presentation?.base || snapshot(original, all),
+            original: presentation?.base || snapshot(initial[0], all),
             originals,
             ruleVersion: 'touche-v3',
             completedAt: now.toISOString(),

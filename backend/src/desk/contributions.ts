@@ -22,6 +22,13 @@ export async function contributions(
   const start = new Date(from + 'T00:00:00+01:00').toISOString();
   const end = new Date(shiftDay(to, 1) + 'T00:00:00+01:00').toISOString();
   const filter = userId === undefined ? sql`` : sql`WHERE user_id = ${userId}`;
+  // Unit price and pack components stay per item; multiply each snapshot by its quantity.
+  // Missing quantities on historical snapshots retain the original value of one.
+  const itemUnits = sql`GREATEST(1, COALESCE((item->>'quantity')::int, 1)) *
+    CASE WHEN jsonb_typeof(item->'components') = 'array' AND jsonb_array_length(item->'components') > 0
+      THEN (SELECT SUM(GREATEST(1, COALESCE((component->>'quantity')::int, 1)))
+            FROM jsonb_array_elements(item->'components') AS component)
+      ELSE 1 END`;
   const result = await db.execute(sql`
 WITH ranked AS (
  SELECT c.id, c.user_id, c.created_at, c.outcome, c.base_total, c.offered_total, c.extra,
@@ -34,16 +41,14 @@ WITH ranked AS (
             c.created_at, c.id COLLATE "C") AS sale_rank,
   GREATEST(0,
    (CASE c.outcome WHEN 'duo' THEN 2 WHEN 'trio' THEN 3
-    WHEN 'routine' THEN (SELECT COALESCE(SUM(CASE WHEN jsonb_typeof(item->'components') = 'array'
-                         THEN GREATEST(1, jsonb_array_length(item->'components')) ELSE 1 END), 0)
+    WHEN 'routine' THEN (SELECT COALESCE(SUM(${itemUnits}), 0)
                          FROM jsonb_array_elements(c.products) AS item)
     ELSE 0 END)
    - CASE WHEN jsonb_typeof(m.data->'originals') = 'array' AND jsonb_array_length(m.data->'originals') > 0
-          THEN (SELECT SUM(CASE WHEN jsonb_typeof(item->'components') = 'array'
-                            THEN GREATEST(1, jsonb_array_length(item->'components')) ELSE 1 END)
+          THEN (SELECT SUM(${itemUnits})
                 FROM jsonb_array_elements(m.data->'originals') AS item)
           WHEN c.products->0->>'id' = c.base_id AND jsonb_typeof(c.products->0->'components') = 'array'
-          THEN GREATEST(1, jsonb_array_length(c.products->0->'components')) ELSE 1 END
+          THEN (SELECT ${itemUnits} FROM (SELECT c.products->0 AS item) AS original_item) ELSE 1 END
   ) AS added_units
  FROM tc_calls c LEFT JOIN tc_call_meta m ON m.call_id = c.id
  WHERE c.created_at >= ${start}::timestamptz AND c.created_at < ${end}::timestamptz

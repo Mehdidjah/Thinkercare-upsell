@@ -40,7 +40,8 @@ test('Step 3 combines suggested and requested products without bypassing compati
   assert.ok(app.includes('manualAddCheck(activeBase,companions,'), 'checks include every original and added product');
   const rail = app.slice(app.indexOf('<aside className="routine-rail">'));
   assert.ok(rail.includes("requestedIds.includes(p.id)?'DEMANDÉ PAR LA CLIENTE':`COMPLÉMENT ${adds.indexOf(p.id)+1}`"));
-  assert.ok(rail.includes('setRequestedIds(a=>a.filter(x=>x!==p.id))'));
+  assert.ok(rail.includes('removeComplement(p.id)'));
+  assert.ok(app.includes('setRequestedIds(a=>a.filter(x=>x!==id))'));
   const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
   for (const rule of ['.product-picker{', '.request-row{', '.request-row.blocked{', '.request-tag{', '.request-confirm{']) assert.ok(css.includes(rule), rule);
   assert.ok(/\.product-picker [^{}]*:focus-visible\{/.test(css));

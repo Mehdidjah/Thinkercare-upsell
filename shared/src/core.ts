@@ -1,8 +1,10 @@
+import {itemsTotal,lineTotal,quantityOf,quantityLabel,sameOrder,unitCount,type WithQuantity} from './quantity.js';
 export type Ingredient={name:string;inci:string;role:string};
 export type Product={id:string;name:string;short:string;category:string;price:number;image:string;source:string;description:string;concerns:string[];skins:string[];active:boolean;size:string;enabled:boolean;recommendable:boolean;review:string;priceSource?:string;domain?:'face'|'hair'|'body';components?:string[];ingredients?:Ingredient[];inciText?:string;formulaNote?:string;checkedAt?:string;pitch?:string;usage?:string;cautions?:string[];fragrance?:boolean;essentialOils?:boolean;gentle?:boolean;exfoliant?:boolean;verificationRequired?:string};
 export type Profile={concerns:string[];skin:string;sensitive:string;routine:string[];routineKnown:boolean;safety:string[];severity:string;marks:string;redState?:string;hairPattern?:string;allergens?:string[];age?:string;scalpProtocol?:boolean;verifiedProducts?:string[]};
 export type Candidate={product:Product;score:number;reason:string};
 export type Tier='catalogue'|'duo'|'final';
+export type OrderItem=Product&WithQuantity;
 export const FACE_CONCERNS=[['acne','Boutons','Imperfections légères ou occasionnelles'],['blackheads','Points noirs','Pores obstrués et comédons'],['oil','Brillance','Excès de sébum'],['marks','Marques brunes','Traces de couleur après les boutons'],['red','Rougeurs légères','Hors brûlure, gonflement ou douleur'],['dry','Tiraillements','Peau sèche, inconfort quotidien'],['dehydration','Déshydratation','Manque de confort hydrique'],['dull','Teint terne','Manque d’éclat'],['scars','Cicatrices en relief','Distinguer cicatrice et simple marque']];
 export const HAIR_CONCERNS=[['growth','Longueurs / pousse','Objectif de longueur et aspect des cheveux'],['breakage','Casse et démêlage','Cheveux cassants, pointes et nœuds'],['fall','Chute de cheveux','Distinguer perte à la racine et casse'],['hairdry','Longueurs sèches','Manque de souplesse, frisottis'],['scalpoil','Racines grasses','Besoin d’une étape lavante adaptée'],['flakes','Pellicules','Ne pas les assimiler au psoriasis'],['scalpcomfort','Confort du cuir chevelu','Sensibilité légère, hors lésion ou brûlure']];
 export const BODY_CONCERNS=[['bodyspots','Imperfections du corps','Dos, épaules ou torse : préciser la zone'],['bodydry','Sécheresse corporelle','Besoin de confort et d’hydratation']];
@@ -31,24 +33,24 @@ export function expand(p:Product,catalogue:Product[]):Product[]{
  if(!p.components?.length)return[p];
  return p.components.map(id=>catalogue.find(x=>x.id===id)).filter((x):x is Product=>!!x);
 }
-export function physicalCount(basket:Product[],catalogue:Product[]):number{return basket.reduce((s,p)=>s+expand(p,catalogue).length,0);}
-export function basketOffer(basket:Product[],tier:Tier):number{
+export function physicalCount(basket:OrderItem[],catalogue:Product[]):number{return basket.reduce((s,p)=>s+quantityOf(p)*expand(p,catalogue).length,0);}
+export function basketOffer(basket:OrderItem[],tier:Tier):number{
  if(basket.some(p=>!Number.isSafeInteger(p.price)||p.price<0))throw new Error('Montant invalide');
- const total=basket.reduce((s,p)=>s+p.price,0);
- if(basket.length<2||tier==='catalogue')return total;
- const packs=basket.filter(isPack).reduce((s,p)=>s+p.price,0);
- if(!packs)return priceOffer(total,tier,basket.length);
+ const total=itemsTotal(basket);
+ if(unitCount(basket)<2||tier==='catalogue')return total;
+ const packs=itemsTotal(basket.filter(isPack));
+ if(!packs)return priceOffer(total,tier,unitCount(basket));
  // Existing pack tariff is protected. Discount only added singles, one final upward rounding.
  return Math.min(total,Math.ceil((packs*11+(total-packs)*(tier==='duo'?10:9))/1100)*100);
 }
 /** Existing products alone retain their catalogue/pack prices; discounts apply to an upsell. */
-export function orderOffer(initial:Product[],basket:Product[],tier:Tier):number{
- const unchanged=initial.length===basket.length&&initial.every(p=>basket.some(x=>x.id===p.id));
+export function orderOffer(initial:OrderItem[],basket:OrderItem[],tier:Tier):number{
+ const unchanged=sameOrder(initial,basket);
  return basketOffer(basket,unchanged?'catalogue':tier);
 }
-export function basketProblem(basket:Product[],catalogue:Product[]):string|null{
+export function basketProblem(basket:OrderItem[],catalogue:Product[]):string|null{
  const flat=basket.flatMap(p=>expand(p,catalogue));
- if(basket.some(p=>isPack(p)&&(!p.components?.length||expand(p,catalogue).length!==p.components.length))&&basket.length>1)return'Le contenu exact de ce pack doit être confirmé avant tout ajout.';
+ if(basket.some(p=>isPack(p)&&(!p.components?.length||expand(p,catalogue).length!==p.components.length))&&unitCount(basket)>1)return'Le contenu exact de ce pack doit être confirmé avant tout ajout.';
  if(new Set(flat.map(p=>p.id)).size!==flat.length)return'Un produit est déjà inclus dans le pack ou la routine.';
  return null;
 }
@@ -220,11 +222,11 @@ export function packUpgrades(catalogue:Product[],base:Product,profile:Profile):C
   return extra.length>0&&extra.every(x=>canCombine(p.id==='bodypack'&&x.id==='nia10'?{...base,domain:'face'}:base,[],x,profile,catalogue))&&p.concerns.some(c=>profile.concerns.includes(c));
  }).map(p=>({product:p,score:100,reason:p.pitch||p.description}));
 }
-export function summaryText(base:Product,basket:Product[],tier:Tier,delivery:number|null,initial:Product[]=[base]){
- const total=basket.reduce((s,p)=>s+p.price,0),offer=orderOffer(initial,basket,tier),pack=basket.some(isPack),baseTotal=initial.reduce((s,p)=>s+p.price,0);
+export function summaryText(base:Product,basket:OrderItem[],tier:Tier,delivery:number|null,initial:OrderItem[]=[base]){
+ const total=itemsTotal(basket),offer=orderOffer(initial,basket,tier),pack=basket.some(isPack),baseTotal=itemsTotal(initial);
  const fee=delivery===null?'Frais de livraison à confirmer.':`Livraison : ${money(delivery)}. Total avec livraison : ${money(offer+delivery)}.`;
- const replacement=initial.length>1?`Commande initiale : ${initial.map(p=>p.name).join(' + ')} (${money(baseTotal)}).\n`:basket[0]?.id!==base.id?`Commande initiale : ${base.name} (${money(base.price)}). Remplacement par le pack ci-dessous, sans double facturation.\n`:'';
- return `TOUCHÉ | Récapitulatif de l’offre\n${replacement}${basket.map(p=>`• ${p.name} : ${money(p.price)}`).join('\n')}\n\nTotal catalogue : ${money(total)}\nOffre produits : ${money(offer)}\nÉconomie : ${money(total-offer)}\nÉcart avec la commande initiale : ${money(offer-baseTotal)}\n${fee}\n${pack?'Tarif pack conservé, réduction uniquement sur les compléments éligibles. ':''}Offre liée à la commande en cours, sans cumul de remises. À valider avec la cliente. Aucun système de commande externe modifié.`;
+ const replacement=`Commande initiale : ${initial.map(quantityLabel).join(' + ')} (${money(baseTotal)}).${basket[0]?.id!==base.id?' Remplacement par le pack ci-dessous, sans double facturation.':''}\n`;
+ return `TOUCHÉ | Récapitulatif de l’offre\n${replacement}${basket.map(p=>`• ${quantityLabel(p)} : ${money(lineTotal(p))}${quantityOf(p)>1?` (${money(p.price)} / unité)`:""}`).join('\n')}\n\nTotal catalogue : ${money(total)}\nOffre produits : ${money(offer)}\nÉconomie : ${money(total-offer)}\nÉcart avec la commande initiale : ${money(offer-baseTotal)}\n${fee}\n${pack?'Tarif pack conservé, réduction uniquement sur les compléments éligibles. ':''}Offre liée à la commande en cours, sans cumul de remises. À valider avec la cliente. Aucun système de commande externe modifié.`;
 }
 export function goalPhrase(p:Profile):string{
  const goals:Record<string,string>={acne:'mieux prendre soin de vos petites imperfections',blackheads:'cibler les points noirs sans surcharger votre routine',oil:'limiter l’apparence de la brillance',marks:'améliorer l’apparence des marques brunes',red:'retrouver davantage de confort',dry:'réduire les sensations de tiraillement',dehydration:'mieux hydrater votre peau',dull:'retrouver un teint plus lumineux',scars:'améliorer l’aspect de votre peau sans promesse sur le relief des cicatrices',growth:'prendre soin de vos longueurs',breakage:'faciliter le démêlage et limiter la casse',fall:'mieux accompagner votre routine capillaire',hairdry:'retrouver des longueurs plus souples',scalpoil:'adapter le lavage à vos racines grasses',flakes:'adapter votre routine aux pellicules',scalpcomfort:'préserver le confort de votre cuir chevelu',bodyspots:'prendre soin des imperfections de votre corps',bodydry:'retrouver davantage de confort sur votre corps'};
@@ -252,20 +254,22 @@ export function customerBenefit(p:Product):string{
  bodywash:'Ce nettoyant est destiné au corps et contient notamment niacinamide et acide salicylique. Nous le proposons pour la zone concernée, en tenant compte des actifs que vous utilisez déjà.'};
  return lines[p.id]||p.pitch||p.description;
 }
-export function salesPitch(base:Product,basket:Product[],profile:Profile,tier:Tier,catalogue:Product[],initial:Product[]=[base]){
- const offer=orderOffer(initial,basket,tier),total=basket.reduce((s,p)=>s+p.price,0),extra=offer-initial.reduce((s,p)=>s+p.price,0);
+export function salesPitch(base:Product,basket:OrderItem[],profile:Profile,tier:Tier,catalogue:Product[],initial:OrderItem[]=[base]){
+ const offer=orderOffer(initial,basket,tier),total=itemsTotal(basket),extra=offer-itemsTotal(initial);
  const expanded=basket.flatMap(p=>expand(p,catalogue)),initialIds=new Set(initial.flatMap(p=>expand(p,catalogue)).map(p=>p.id));
  const complements=expanded.filter(p=>!initialIds.has(p.id));
  const facts=complements.flatMap(p=>(p.ingredients||[]).slice(0,2).map(i=>`${p.short} : ${i.name}. ${i.role}`));
- const why=complements.map(customerBenefit).join(' ');
- const opener=`Vous m’avez dit vouloir ${goalPhrase(profile)}. Vous avez déjà choisi ${initial.map(p=>p.short).join(' + ')}. Je vous propose de compléter précisément ce qui manque, pas de multiplier les produits.`;
- const value=complements.length?why:'Votre pack couvre déjà plusieurs gestes. Nous ne doublons pas ses composants.';
+ const repeats=basket.filter(p=>quantityOf(p)>quantityOf(initial.find(x=>x.id===p.id)||{quantity:1})&&initial.some(x=>x.id===p.id));
+ const repeatedText=repeats.map(p=>`${quantityOf(p)-quantityOf(initial.find(x=>x.id===p.id)!)} ${quantityOf(p)-quantityOf(initial.find(x=>x.id===p.id)!)>1?'unités supplémentaires':'unité supplémentaire'} de ${p.short}, selon la quantité demandée.`).join(' ');
+ const why=[complements.map(customerBenefit).join(' '),repeatedText].filter(Boolean).join(' ');
+ const opener=`Vous m’avez dit vouloir ${goalPhrase(profile)}. Vous avez déjà choisi ${initial.map(p=>quantityLabel({...p,name:p.short})).join(' + ')}. Je vous propose de compléter précisément ce qui manque, pas de multiplier les produits.`;
+ const value=why?why:'Votre pack couvre déjà plusieurs gestes. Nous ne doublons pas ses composants.';
  const price=`L’ensemble revient à ${money(offer)}${total>offer?' au lieu de '+money(total):''}, soit ${money(extra)} ${extra<0?'de différence':'supplémentaires'} par rapport à votre commande initiale. ${total>offer?'Vous économisez '+money(total-offer)+' sur le catalogue. ':''}Les frais de livraison restent séparés.`;
  const close='Est-ce que je vous confirme cette composition et ce montant pour votre commande ?';
  return{opener,value,facts,price,close,text:[opener,value,price,close].join('\n\n')};
 }
-export function objections(base:Product,basket:Product[],profile:Profile,tier:Tier,catalogue:Product[],initial:Product[]=[base]){
- const offer=orderOffer(initial,basket,tier),final=orderOffer(initial,basket,'final'),total=basket.reduce((s,p)=>s+p.price,0),baseTotal=initial.reduce((s,p)=>s+p.price,0),extra=offer-baseTotal;
+export function objections(base:Product,basket:OrderItem[],profile:Profile,tier:Tier,catalogue:Product[],initial:OrderItem[]=[base]){
+ const offer=orderOffer(initial,basket,tier),final=orderOffer(initial,basket,'final'),total=itemsTotal(basket),baseTotal=itemsTotal(initial),extra=offer-baseTotal;
  const items=basket.flatMap(p=>expand(p,catalogue)),baseIds=new Set(initial.flatMap(p=>expand(p,catalogue)).map(p=>p.id)),p=items.find(p=>!baseIds.has(p.id));
  const proof=p?.ingredients?.slice(0,2).map(i=>`${i.name} : ${i.role}`).join(' ')||p?.pitch||'Chaque produit garde un rôle précis dans la routine.';
  return[

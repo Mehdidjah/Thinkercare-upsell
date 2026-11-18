@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { tcAcceptedDossiers, tcAudit, tcCallMeta, tcCalls, tcProposals } from '../src/db/schema.js';
 import { EMPTY_PROFILE, type Product, type CallMeta, basketOffer, recommend, localDay } from '@touche/domain';
 import { contributions } from '../src/desk/contributions.js';
+import { productStats } from '@touche/domain';
 import type { DeskUser } from '../src/desk/desk.types.js';
 import { type TestContext, createTestApp } from './support/context.js';
 import { resetDatabase } from './support/database.js';
@@ -901,5 +902,69 @@ describe('catalogue-price acceptance without a discount', () => {
     expect(await ctx.db.select().from(tcCalls)).toEqual([]);
     const fullPrice = await presented(lina, { callId: discounted.callId, tier: 'catalogue', agreedTotal: 3300 });
     expect((await post({ ...body, meta: { ...body.meta as Body, acceptedProposalId: fullPrice.id } })).status).toBe(200);
+  });
+});
+
+describe('quantities in original orders and accepted offers', () => {
+  it.each([
+    { baseId: 'antiacne', productIds: ['antiacne'], baseQuantities: { antiacne: 1 }, quantities: { antiacne: 2 }, tier: 'catalogue', outcome: 'duo', agreedTotal: 3600, baseTotal: 1800, units: 1 },
+    { baseId: 'antiacne', productIds: ['antiacne'], baseQuantities: { antiacne: 2 }, quantities: { antiacne: 3 }, tier: 'duo', outcome: 'trio', agreedTotal: 5000, baseTotal: 3600, units: 1 },
+    { baseId: 'antiacne', productIds: ['antiacne', 'wcgel'], baseQuantities: { antiacne: 2 }, quantities: { antiacne: 2, wcgel: 3 }, tier: 'duo', outcome: 'routine', agreedTotal: 7400, baseTotal: 3600, units: 3 },
+    { baseId: 'packpousse', productIds: ['packpousse', 'wcgel'], baseQuantities: { packpousse: 2 }, quantities: { packpousse: 2, wcgel: 2 }, tier: 'catalogue', outcome: 'routine', agreedTotal: 9500, baseTotal: 6500, units: 2 },
+    { baseId: 'shpousse', upgradeId: 'packpousse', productIds: ['packpousse', 'antiacne'], baseQuantities: { shpousse: 2 }, quantities: { packpousse: 2, antiacne: 2 }, tier: 'duo', outcome: 'routine', agreedTotal: 9800, baseTotal: 3800, units: 4 },
+  ])('persists quantities, exact amounts and added units: $baseId / $quantities', async ({ outcome, baseTotal, units, ...selection }) => {
+    const offer = await presented(lina, selection);
+    const result = await post(save({ ...selection, id: offer.callId, outcome, meta: { acceptedProposalId: offer.id } }));
+    expect(result.status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, offer.callId));
+    expect(call).toMatchObject({ base_total: baseTotal, offered_total: selection.agreedTotal, extra: selection.agreedTotal - baseTotal });
+    for (const item of call.products) expect(item.quantity).toBe(selection.quantities[item.id as keyof typeof selection.quantities]);
+    const { body: report } = await deskGet(ctx, `?action=analytics&from=${localDay(new Date())}&to=${localDay(new Date())}`, admin);
+    expect(productStats(report.calls).reduce((sum, p) => sum + p.units, 0)).toBe(units);
+    const { body: progress } = await deskGet(ctx, '?action=my-progress', lina);
+    expect(progress.progress.count).toBe(units);
+    const { body: dashboard } = await deskGet(ctx, '?action=contributions', admin);
+    expect(dashboard.people.find((p: { id: string }) => p.id === linaUser.id).period).toMatchObject({ upsells: units, initialDzd: baseTotal, confirmedDzd: selection.agreedTotal });
+  });
+
+  it.each([0, -1, 1.5, 100, '2', null])('rejects an invalid quantity (%s) in either order', async quantity => {
+    expect((await post(present({ quantities: { antiacne: quantity } }))).status).toBe(400);
+    expect((await post(save({ baseQuantities: { antiacne: quantity } }))).status).toBe(400);
+  });
+
+  it('rejects unknown quantity keys, repeated lines and decreases below the original quantity', async () => {
+    expect((await post(present({ quantities: { unknown: 2 } }))).status).toBe(400);
+    expect((await post(present({ baseQuantities: { wcgel: 2 } }))).status).toBe(400);
+    expect((await post(present({ productIds: ['antiacne', 'antiacne'] }))).status).toBe(400);
+    expect((await post(present({ baseQuantities: { antiacne: 2 }, quantities: { antiacne: 1 } }))).status).toBe(400);
+    expect((await post(save({ baseQuantities: { antiacne: 2 }, quantities: { antiacne: 1 } }))).status).toBe(400);
+  });
+
+  it('locks the original quantity once an offer is presented', async () => {
+    const offer = await presented(lina, { baseQuantities: { antiacne: 2 }, quantities: { antiacne: 2, wcgel: 1 }, agreedTotal: 4700 });
+    const changed = { baseQuantities: { antiacne: 1 }, quantities: { antiacne: 2, wcgel: 1 }, agreedTotal: 4700 };
+    expect((await post(present({ ...changed, callId: offer.callId }))).status).toBe(409);
+    expect((await post(save({ ...changed, id: offer.callId, outcome: 'trio', meta: { acceptedProposalId: offer.id } }))).status).toBe(409);
+  });
+
+  it('requires a new presentation when quantities change, even with the same products and total', async () => {
+    const selection = { productIds: ['antiacne', 'wcgel', 'wcspf'], agreedTotal: 5800 };
+    const offer = await presented(lina, { ...selection, quantities: { antiacne: 1, wcgel: 2, wcspf: 1 } });
+    const changed = { ...selection, quantities: { antiacne: 1, wcgel: 1, wcspf: 2 } };
+    const body = save({ ...changed, id: offer.callId, outcome: 'routine', meta: { acceptedProposalId: offer.id } });
+    expect((await post(body)).status).toBe(409);
+    const next = await presented(lina, { ...changed, callId: offer.callId });
+    expect((await post({ ...body, meta: { ...body.meta as Body, acceptedProposalId: next.id } })).status).toBe(200);
+  });
+
+  it('preserves original quantities without an upsell or metadata from an older client', async () => {
+    const body = save({ baseQuantities: { antiacne: 3 }, quantities: { antiacne: 3 }, productIds: ['antiacne'], outcome: 'initial', tier: 'catalogue', agreedTotal: 5400 });
+    delete body.meta;
+    expect((await post(body)).status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, body.id));
+    expect(call).toMatchObject({ base_total: 5400, offered_total: 5400, extra: 0 });
+    const [meta] = await ctx.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, body.id));
+    expect(meta.data).toMatchObject({ originals: [{ id: 'antiacne', quantity: 3 }] });
+    expect((await deskGet(ctx, '?action=my-progress', lina)).body.progress.count).toBe(0);
   });
 });
