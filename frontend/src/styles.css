@@ -217,6 +217,7 @@
 .report-freshness{font-size:11px;line-height:1.5;color:#686868;margin:12px 0 18px}.bonus-inline .report-freshness{font-size:10px;margin:0 0 12px}
 
 .journal-latest{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 18px;font-size:12px;color:#686868}.journal-latest p{margin:0}.journal-latest strong{color:#222}
+.journal-sync{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:16px 18px;margin:0 0 18px;border:1px solid #e5e5e2;border-radius:10px;background:#fafaf9}.journal-sync b{font-size:13px}.journal-sync .report-freshness{margin:5px 0;font-size:12px}.journal-sync p:not(.report-freshness){margin:0;font-size:11px;color:#777}.journal-sync button{flex-shrink:0}
 .quantity-control{display:inline-flex;align-items:center;border:1px solid #d6d6d3;border-radius:8px;background:#fff;overflow:hidden;width:max-content;flex-shrink:0}
 .quantity-control button{display:grid;place-items:center;width:34px;min-height:36px;padding:0;border:0;border-radius:0;background:transparent;font-size:19px;color:#222}
 .quantity-control button:hover:not(:disabled){background:#f1f1ef}.quantity-control button:disabled{color:#bbb;cursor:default}
