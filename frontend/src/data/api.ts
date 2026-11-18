@@ -1,4 +1,5 @@
 import { reportCache } from './report-cache';
+import { reportUpdates } from './report-updates';
 
 export async function requestJson(query = '', body?: unknown, signal?: AbortSignal) {
   const action = (body as { action?: string } | undefined)?.action;
@@ -16,6 +17,9 @@ export async function requestJson(query = '', body?: unknown, signal?: AbortSign
     }
     throw Object.assign(new Error(data.error || 'Chargement impossible.'), { status: response.status });
   }
-  if (body) reportCache.clear();
+  if (body) {
+    if (action === 'login' || action === 'logout') reportCache.clear();
+    else reportUpdates.changed();
+  }
   return data;
 }

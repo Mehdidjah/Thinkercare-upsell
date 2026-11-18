@@ -213,3 +213,5 @@
 .price-option>b{white-space:nowrap}
 .price-option:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
 @media(max-width:760px){.price-option.catalogue{grid-column:1/-1}}
+
+.report-freshness{font-size:11px;line-height:1.5;color:#686868;margin:12px 0 18px}.bonus-inline .report-freshness{font-size:10px;margin:0 0 12px}
