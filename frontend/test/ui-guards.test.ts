@@ -32,7 +32,7 @@ test('Step 3 combines suggested and requested products without bypassing compati
   const step2 = app.slice(app.indexOf('{step===2&&base&&<>'), app.indexOf('<aside className="routine-rail">'));
   assert.equal((step2.match(/<section className="product-picker"/g) || []).length, 1);
   assert.ok(!step2.includes('className="recommendations"') && !step2.includes('className="customer-request"'));
-  assert.ok(step2.includes('{!blocked&&count<3&&<section className="product-picker"'), 'only shown when additions are allowed');
+  assert.ok(step2.includes('{!blocked&&<section className="product-picker"'), 'only shown when additions are allowed');
   assert.ok(step2.includes('aria-label="Rechercher un produit à ajouter"'), 'one search for both sources');
   assert.ok(step2.includes('>Suggéré<'), 'recommendations are labelled');
   assert.ok(step2.includes('Ingrédients & argumentaire'), 'product details remain accessible');

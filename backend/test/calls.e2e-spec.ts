@@ -749,7 +749,7 @@ describe('multiple products in the original order', () => {
     ).toEqual(baseIds);
   });
 
-  it('allows an unchanged existing order above three care products, but rejects a new addition', async () => {
+  it('allows an unchanged existing order above three care products, but rejects a false trio outcome', async () => {
     const originals = ['antiacne', 'wcgel', 'wcspf', 'shpousse'];
     const body = save({ baseIds: originals, productIds: originals, outcome: 'initial' });
     expect((await post(body)).status).toBe(200);
@@ -830,5 +830,41 @@ describe('multiple products in the original order', () => {
     const [meta] = await ctx.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, body.id));
     expect((meta.data as CallMeta).originals?.map((p) => p.id)).toEqual(baseIds);
     expect(meta.version).toBe(1);
+  });
+});
+
+
+describe('accepted routines above three physical products', () => {
+  it.each([
+    { baseId: 'antiacne', baseIds: ['antiacne'], productIds: ['antiacne', 'wcgel', 'wcspf', 'total'], expectedUnits: 3, expectedOffer: 6100, expectedBase: 1800 },
+    { baseId: 'antiacne', baseIds: ['antiacne', 'wcgel', 'wcspf', 'shpousse'], productIds: ['antiacne', 'wcgel', 'wcspf', 'shpousse', 'conditioner'], expectedUnits: 1, expectedOffer: 7700, expectedBase: 6700 },
+    { baseId: 'packpousse', baseIds: ['packpousse'], productIds: ['packpousse', 'antiacne', 'wcgel'], expectedUnits: 2, expectedOffer: 6300, expectedBase: 3250 },
+    { baseId: 'shpousse', baseIds: ['shpousse'], upgradeId: 'packpousse', productIds: ['packpousse', 'antiacne', 'wcgel'], expectedUnits: 3, expectedOffer: 6300, expectedBase: 1900 },
+  ])('presents, saves and counts every added product: $productIds', async ({expectedUnits, expectedOffer, expectedBase, ...selection}) => {
+    const offer = await presented(lina, { ...selection, agreedTotal: expectedOffer });
+    const body = save({ ...selection, id: offer.callId, outcome: 'routine', agreedTotal: expectedOffer, meta: { acceptedProposalId: offer.id } });
+    expect((await post(body)).status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, offer.callId));
+    expect(call).toMatchObject({ outcome: 'routine', offered_total: expectedOffer, base_total: expectedBase, extra: expectedOffer - expectedBase });
+    expect(call.products.map(p => p.id)).toEqual(selection.productIds);
+    const rows = await contributions(ctx.db, localDay(new Date()), localDay(new Date()));
+    expect(rows[0]).toMatchObject({ confirmations: 1, upsells: expectedUnits, initial_dzd: expectedBase, confirmed_dzd: expectedOffer, uplift_dzd: expectedOffer - expectedBase });
+    const progress = await deskGet(ctx, '?action=my-progress', lina);
+    expect(progress.body.progress.count).toBe(expectedUnits);
+    const duplicate = await presented(lina, { ...selection, agreedTotal: expectedOffer });
+    expect((await post(save({ ...body, id: duplicate.callId, meta: { acceptedProposalId: duplicate.id } }))).status).toBe(409);
+  });
+
+  it('keeps consent, accurate outcome, exact price and verification checks for larger routines', async () => {
+    const selection = { productIds: ['antiacne', 'wcgel', 'wcspf', 'total'], agreedTotal: 6100 };
+    const offer = await presented(lina, selection);
+    const body = save({ ...selection, id: offer.callId, outcome: 'routine', meta: { acceptedProposalId: offer.id } });
+    for (const override of [{consent: false}, {checked: false}, {outcome: 'trio'}]) {
+      expect((await post({...body, ...override})).status).toBe(400);
+    }
+    expect((await post({...body, agreedTotal: 6000})).status).toBe(409);
+    expect((await post(present({productIds: ['antiacne', 'wcgel', 'wcspf', 'nia12'], agreedTotal: 6100}))).status).toBe(400);
+    expect((await post(present({productIds: ['antiacne', 'packpousse', 'conditioner', 'wcgel']}))).status).toBe(400);
+    expect((await post(save({ outcome: 'routine' }))).status).toBe(400);
   });
 });

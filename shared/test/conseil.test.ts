@@ -40,7 +40,7 @@ test('basketOffer rejects any price that is not a whole DZD amount >= 0, pack br
 test('Value added is the offer minus the initial order: +1200 / +900',()=>{const b=[p('antiacne'),p('wcgel')];assert.equal(c.basketOffer(b,'duo')-p('antiacne').price,1200);assert.equal(c.basketOffer(b,'final')-p('antiacne').price,900);assert.ok(c.summaryText(p('antiacne'),b,'duo',null).includes('Écart avec la commande initiale : '+c.money(1200)));assert.ok(c.summaryText(p('antiacne'),b,'final',null).includes('Écart avec la commande initiale : '+c.money(900)))});
 test('No duplicate shampoo inside pack',()=>assert.ok(c.basketProblem([p('packpousse'),p('shpousse')],catalogue)));
 test('Pack component is excluded from suggestions',()=>assert.ok(!c.recommend(catalogue,p('packpousse'),hair).some(x=>['shpousse','conditioner'].includes(x.product.id))));
-test('3 physical products maximum incl packs',()=>{assert.equal(c.physicalCount([p('packanti'),p('conditioner')],catalogue),3);assert.ok(c.basketProblem([p('packanti'),p('packpousse')],catalogue))});
+test('Four physical products in two non-overlapping packs are allowed',()=>{const basket=[p('packanti'),p('packpousse')];assert.equal(c.physicalCount(basket,catalogue),4);assert.equal(c.basketProblem(basket,catalogue),null)});
 test('Incomplete Junior pack cannot take automatic add-on',()=>assert.ok(c.basketProblem([p('packjunior'),p('conditioner')],catalogue)));
 test('No two targeted facial actives',()=>assert.ok(!c.canCombine(p('antiacne'),[],p('sal2'),skin,catalogue)));
 test('Existing moisturizer not duplicated',()=>assert.ok(c.recommend(catalogue,p('antiacne'),{...skin,routine:['Hydratant']}).every(x=>x.product.category!=='Hydratant')));

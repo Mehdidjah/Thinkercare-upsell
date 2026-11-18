@@ -9,6 +9,7 @@ import {
   initialItems,
   initialProductStats,
   productStats,
+  summary,
   combinationStats,
   recommend,
   manualAddCheck,
@@ -152,8 +153,24 @@ describe("complete original order", () => {
       manualAddCheck(initial[0], [initial[1]], initial[1], profile, catalogue)
         .blocked,
     ).toBeTruthy();
-    expect(recommend(catalogue, initial[0], profile, basket.slice(1))).toEqual(
-      [],
-    );
+    expect(recommend(catalogue, initial[0], profile, basket.slice(1)).some(
+      r => r.product.id === "total",
+    )).toBe(true);
+  });
+});
+
+
+describe("accepted routines above three products", () => {
+  it("counts larger routines in revenue, products and initial-order analytics", () => {
+    const products = [...basket, get("total"), get("shpousse")];
+    const offer = orderOffer(initial, products, "duo");
+    const p = { ...proposal, products: products.map(snapshot), offerTotal: offer, extra: offer - 3300 };
+    const c = { ...call, outcome: "routine", products: p.products, offered_total: offer, extra: p.extra, proposals: [p] };
+    expect(summary([c])).toMatchObject({ won: 1, routines: 1, trios: 0, duos: 0, extra: offer - 3300, acceptRate: 100 });
+    expect(productStats([c]).map(x => [x.id, x.units, x.routines])).toEqual([
+      ["wcspf", 1, 1], ["total", 1, 1], ["shpousse", 1, 1],
+    ]);
+    expect(initialProductStats([c]).every(x => x.confirmed === 1 && x.upsells === 1)).toBe(true);
+    expect(combinationStats([c])[0]).toMatchObject({ accepted: 1, extra: offer - 3300 });
   });
 });

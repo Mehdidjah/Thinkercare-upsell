@@ -173,7 +173,7 @@ export class CallsService {
     ) {
       throw new DeskError(400, 'Composition du panier invalide.');
     }
-    const accepted = ['duo', 'trio'].includes(v.outcome);
+    const accepted = ['duo', 'trio', 'routine'].includes(v.outcome);
     if (accepted && (!v.consent || !v.checked)) {
       throw new DeskError(
         400,
@@ -208,11 +208,11 @@ export class CallsService {
     ) {
       throw new DeskError(400, 'Le pack de remplacement doit contenir le produit initial.');
     }
-    // An existing order may already exceed the recommendation limit. New additions may not.
+    // Preserve existing orders; new additions must pass pack-content and duplicate checks.
     const problem = altered ? basketProblem(b, all) : null;
     if (problem) throw new DeskError(400, problem);
     const count = physicalCount(b, all);
-    if ((v.outcome === 'duo' && count !== 2) || (v.outcome === 'trio' && count !== 3)) {
+    if ((v.outcome === 'duo' && count !== 2) || (v.outcome === 'trio' && count !== 3) || (v.outcome === 'routine' && count < 4)) {
       throw new DeskError(
         400,
         'Le résultat doit correspondre aux soins physiques, composants des packs inclus.',
@@ -334,7 +334,7 @@ export class CallsService {
           .where(
             and(
               eq(tcCallMeta.order_ref, v.meta.orderRef.toUpperCase()),
-              inArray(tcCalls.outcome, ['duo', 'trio']),
+              inArray(tcCalls.outcome, ['duo', 'trio', 'routine']),
             ),
           )
           .limit(1);

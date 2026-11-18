@@ -182,7 +182,7 @@ export const proposalSchema = z
     baseId: id,
     baseIds: z.array(id).min(1).max(32).optional(),
     upgradeId: id.optional(),
-    productIds: z.array(id).min(1).max(3),
+    productIds: z.array(id).min(1).max(32),
     tier: z.enum(['catalogue', 'duo', 'final']),
     delivery: z.number().int().min(0).max(10000).nullable(),
     agreedTotal: z.number().int().min(0).max(500000),
@@ -234,6 +234,7 @@ export const saveCallSchema = z
     outcome: z.enum([
       'duo',
       'trio',
+      'routine',
       'initial',
       'refused',
       'review',
