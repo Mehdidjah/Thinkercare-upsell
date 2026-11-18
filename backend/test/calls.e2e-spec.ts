@@ -868,3 +868,38 @@ describe('accepted routines above three physical products', () => {
     expect((await post(save({ outcome: 'routine' }))).status).toBe(400);
   });
 });
+
+
+describe('catalogue-price acceptance without a discount', () => {
+  it('saves the accepted 3300 DA price and counts the full 1500 DA uplift', async () => {
+    const offer = await presented(lina, { tier: 'catalogue', agreedTotal: 3300 });
+    const res = await post(save({
+      id: offer.callId,
+      tier: 'catalogue',
+      agreedTotal: 3300,
+      meta: { acceptedProposalId: offer.id },
+    }));
+    expect(res.status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, offer.callId));
+    expect(call).toMatchObject({
+      outcome: 'duo', tier: 'catalogue', catalogue_total: 3300,
+      base_total: 1800, offered_total: 3300, extra: 1500,
+    });
+    const [row] = await contributions(ctx.db, localDay(new Date()), localDay(new Date()));
+    expect(row).toMatchObject({ confirmations: 1, upsells: 1, confirmed_dzd: 3300, uplift_dzd: 1500 });
+  });
+
+  it('requires the catalogue price to be presented again when switching from a discount', async () => {
+    const discounted = await presented();
+    const body = save({
+      id: discounted.callId,
+      tier: 'catalogue',
+      agreedTotal: 3300,
+      meta: { acceptedProposalId: discounted.id },
+    });
+    expect((await post(body)).status).toBe(409);
+    expect(await ctx.db.select().from(tcCalls)).toEqual([]);
+    const fullPrice = await presented(lina, { callId: discounted.callId, tier: 'catalogue', agreedTotal: 3300 });
+    expect((await post({ ...body, meta: { ...body.meta as Body, acceptedProposalId: fullPrice.id } })).status).toBe(200);
+  });
+});
