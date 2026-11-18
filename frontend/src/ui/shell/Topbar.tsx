@@ -1,0 +1,6 @@
+import {Icon} from '../shared/Icon';
+import {type State} from '../shared/types';
+
+export function Topbar({state,view,setView,titles,signingOut,signOut,baseId,saved,demo,reset}:{state:State;view:string;setView:(view:string)=>void;titles:Record<string,string>;signingOut:boolean;signOut:()=>Promise<void>;baseId:string;saved:boolean;demo:boolean;reset:()=>void}){
+ return <header className="topbar"><div><span className="crumb">Touché Conseil</span><span className="slash">/</span><b>{titles[view]||'Mon compte'}</b></div><div className="topbar-right"><button className="topbar-account" aria-label="Mon compte" onClick={()=>setView('admin')}><Icon name="lock" size={15}/><span>Mon compte</span></button><button type="button" className="topbar-logout" aria-label="Se déconnecter" title="Se déconnecter" disabled={signingOut} onClick={signOut}><Icon name="logout" size={16}/><span>{signingOut?'Déconnexion…':'Se déconnecter'}</span></button><span className="pilot-badge"><span/>{state.clinical.validated?'Protocole validé en interne':'Pilote · validation médicale à finaliser'}</span><button className="new-call" onClick={()=>{if(baseId&&!saved&&!demo&&!confirm('Abandonner l’appel non enregistré et ouvrir un nouvel appel ?'))return;reset();}}><Icon name="plus" size={18}/>Nouvel appel</button></div></header>;
+}

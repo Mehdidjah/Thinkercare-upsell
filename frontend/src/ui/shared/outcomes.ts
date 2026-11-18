@@ -1,0 +1,1 @@
+export const outcomes:Record<string,string>={duo:'Duo accepté',trio:'Trio accepté',routine:'Routine acceptée (4 soins et +)',initial:'Commande initiale',refused:'Ajout refusé',review:'À vérifier médicalement',noanswer:'Sans réponse'};

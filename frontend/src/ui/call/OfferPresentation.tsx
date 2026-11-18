@@ -1,0 +1,8 @@
+import {quantityLabel,money} from '@touche/domain';
+import {Chip} from '../shared/Chip';
+import {useCall} from './callModel';
+
+/** Step 03 · offers actually presented and objections handled. */
+export function OfferPresentation(){const {saved,presenting,blocked,altered,offer,presented,matchingOffer,presentOffer,handledObjections,setHandledObjections}=useCall();
+ return <section className="presentation-panel"><div className="section-head"><div><h3>Offres effectivement présentées</h3><p className="muted">Cliquer après avoir annoncé les produits et le prix. Une suggestion affichée seule ne compte pas.</p></div><span className="counter">{presented.length}</span></div>{altered&&<button className="primary" disabled={presenting||saved||!!matchingOffer||!!blocked} onClick={()=>void presentOffer()}>{presenting?'Enregistrement…':matchingOffer?'Cette offre est tracée':'J’ai présenté cette offre'} · {money(offer)}</button>}{presented.map((p,i)=><div className="presented-line" key={p.id}><span>{i+1}. {p.products.map(quantityLabel).join(' + ')}</span><b>{money(p.offerTotal)}</b><small>{p.id===matchingOffer?.id?'Composition actuelle':'Offre précédente'}</small></div>)}<details><summary>Objections réellement traitées pendant cet appel</summary><div className="chips">{[['budget','Budget'],['only','Produit seul'],['already','Déjà équipée'],['efficacy','Efficacité'],['reaction','Tolérance'],['later','Plus tard'],['many','Trop de soins'],['discount','Remise supplémentaire']].map(([k,l])=><Chip key={k} selected={handledObjections.includes(k)} disabled={saved} onClick={()=>setHandledObjections(a=>a.includes(k)?a.filter(x=>x!==k):[...a,k])}>{l}</Chip>)}</div></details></section>;
+}
