@@ -103,6 +103,10 @@
 
   /* ── Offline banner ───────────────────────────────────────────────────── */
   .shell-offline { margin: var(--space-4) var(--gutter) 0; }
+  /* A view that crashed (per-view error boundary): the notice replaces the page, the shell and the call stay. */
+  .view-error { margin-block-end: var(--space-6); }
+  /* Why the login form is back (session expired, signed out in another tab). */
+  .login-form > .notice { margin-block-start: var(--space-4); }
 
   /* ── Phone (≤760): no sidebar, a bottom navigation bar ─────────────────── */
   @media (max-width: 760px) {

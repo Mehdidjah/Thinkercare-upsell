@@ -4,7 +4,8 @@ import {Wordmark} from '../shared/Wordmark';
 import {api} from '../shared/api';
 import {type State} from '../shared/types';
 
-export function Login({onSuccess}:{onSuccess:(state:State)=>void}){
+/** `notice` explains why the form is back (session expired, signed out in another tab) and whether the call is kept. */
+export function Login({onSuccess,notice=''}:{onSuccess:(state:State)=>void;notice?:string}){
  const [username,setUsername]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[shown,setShown]=useState(false);
  const userId=useId(),passwordId=useId(),errorId=useId();
  async function submit(e:FormEvent){e.preventDefault();setError('');setBusy(true);try{const data=await api({action:'login',username,password,bootstrap:true});onSuccess(data.bootstrap);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
@@ -14,6 +15,7 @@ export function Login({onSuccess}:{onSuccess:(state:State)=>void}){
    <div className="login-form">
     <h1>Votre espace conseil</h1>
     <p className="login-form__lead">Connectez-vous avec l’identifiant fourni par votre équipe.</p>
+    {notice&&<p className="notice notice--info" role="status"><Icon name="info" className="notice__icon"/><span className="notice__text">{notice}</span></p>}
     <form onSubmit={submit}>
      <div className="field">
       <label className="field__label" htmlFor={userId}>Identifiant</label>
