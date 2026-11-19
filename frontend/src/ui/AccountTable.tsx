@@ -19,7 +19,7 @@ export default function AccountTable({ user: actor, users, onManage, onRemove }:
   onManage: (user: AccountUser) => void;
   onRemove: (user: AccountUser) => void;
 }) {
-  return <div className="data-table admin-accounts">
+  return <div className="data-table data-table--cards admin-accounts">
     <table aria-label="Comptes et autorisations" role="table">
       <thead role="rowgroup">
         <tr role="row">

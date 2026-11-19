@@ -25,9 +25,19 @@
     .pilot-filters__grid { grid-template-columns: minmax(0, 1fr); }
     .pilot-filters__dates > .field { flex: 1 1 9rem; }
   }
+  /* Phones: the same filters folded into one summary row (« Filtres · du … au … »), closed by default. */
+  .pilot-filters.pilot-filters--fold { display: block; padding-block: var(--space-2); }
+  .pilot-filters.pilot-filters--fold > * + * { margin-block-start: var(--space-4); }
+  .pilot-filters.pilot-filters--fold[open] { padding-block-end: var(--space-4); }
+  .pilot-filters__summary { flex-wrap: wrap; min-block-size: var(--control-height-touch); cursor: pointer; }
+  .pilot-filters__summary > svg { inline-size: var(--icon); block-size: var(--icon); color: var(--color-text-secondary); }
 
-  /* Views */
+  /* Views: the strip scrolls sideways; a fade on each edge that hides a view (set from script). */
   .pilot-views { margin-block-start: calc(-1 * var(--space-2)); }
+  .pilot-views::before, .pilot-views::after { content: ""; position: absolute; inset-block: 0 1px; z-index: var(--z-raised); inline-size: var(--space-12); pointer-events: none; opacity: 0; transition: opacity var(--duration-fast) var(--ease-out); }
+  .pilot-views::before { inset-inline-start: 0; background: linear-gradient(to right, var(--color-bg-page), transparent); }
+  .pilot-views::after { inset-inline-end: 0; background: linear-gradient(to left, var(--color-bg-page), transparent); }
+  .pilot-views[data-more-start]::before, .pilot-views[data-more-end]::after { opacity: 1; }
 
   /* Panels and two-column rows */
   .pilot-panel { min-inline-size: 0; }
@@ -83,7 +93,15 @@
   .pilot-latest strong { color: var(--color-text-primary); }
   .pilot-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: var(--text-ui); color: var(--color-text-secondary); }
 
-  /* Call detail (opened from the Journal) */
+  /* A voided result stays listed; its amounts read as struck out (the « Annulé » tag says why). */
+  .data-table tr.is-voided > td.num { color: var(--color-text-tertiary); text-decoration: line-through; }
+
+  /* Call detail (opened from the Journal), with « Annuler ce résultat » */
+  .pilot-void { display: flex; flex-direction: column; gap: var(--space-3); padding-block-start: var(--space-4); border-block-start: 1px solid var(--color-border-hairline); }
+  .pilot-void > * + * { margin-block-start: 0; }
+  .pilot-void > h3 { font-size: var(--text-body); }
+  .pilot-void > p { font-size: var(--text-ui); color: var(--color-text-secondary); max-inline-size: var(--measure-text); }
+  .pilot-void textarea { inline-size: 100%; min-block-size: 5rem; }
   .pilot-event { display: grid; gap: var(--space-1); padding: var(--space-3) var(--space-4); border-radius: var(--radius-option); background: var(--color-bg-sunken); box-shadow: inset 3px 0 0 var(--color-border-control-strong); font-size: var(--text-ui); }
 
   /* Monthly progress (Ma progression, and the compact strip on the call) */
@@ -115,6 +133,10 @@
   .pilot-progress--compact .pilot-progress__count > strong { font-size: var(--text-price-md); }
   .pilot-progress--compact .meter { flex: 1 1 6rem; }
   .pilot-progress--compact :is(.pilot-progress__motivation, .pilot-progress__estimate, .pilot-progress__foot, .pilot-progress__head .tag) { display: none; }
+  /* The strip's due reminders (X7) and a failed refresh (PN2): one line each, below the meter. */
+  .pilot-progress__due, .report-stale--compact { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); flex: 1 1 100%; font-size: var(--text-ui); color: var(--color-text-secondary); }
+  .pilot-progress__due > svg, .report-stale--compact > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); flex: none; color: var(--color-warning-text); }
+  .report-stale--compact { color: var(--color-warning-text); }
 
   /* Bonus rule (Apports & primes) */
   .pilot-rule .check-row { margin-inline: 0; }

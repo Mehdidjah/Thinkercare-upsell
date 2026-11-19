@@ -29,6 +29,20 @@ test('navigation items are named by their visible label, with the current page m
   expect((nav.match(/aria-current="page"/g) || []).length).toBe(1);
   expect(html).toContain('Espace conseil');
   expect(render('admin', 'results')).toContain('>Direction</p>');
+  expect(render('manager', 'results')).toContain('>Manager</p>');
+});
+
+test('advisers get a due-reminders badge on « Ma progression », fed by its own live report (X7)', () => {
+  const sidebar = readFileSync(new URL('../src/ui/shell/Sidebar.tsx', import.meta.url), 'utf8');
+  expect(sidebar).toContain('const due=useDueReminders(!manager);');
+  expect(sidebar).toContain("{v==='progress'&&due>0&&<span className=\"nav-badge\">");
+  // No badge before the first load, and the props stay those App passes today.
+  expect(render('advisor', 'call')).not.toContain('nav-badge');
+});
+
+test('« Plus » carries aria-current when it holds the current view', () => {
+  expect(render('advisor', 'protocol')).toMatch(/aria-haspopup="dialog" aria-expanded="false" aria-current="true"/);
+  expect(render('advisor', 'call')).not.toContain('aria-current="true"');
 });
 
 test('Mon compte is its own view, reached from the account card', () => {
