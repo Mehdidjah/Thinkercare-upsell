@@ -35,6 +35,8 @@
   .shell-nav__item[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-accent-text-strong); font-weight: var(--font-weight-semibold); }
   .shell-nav__item:focus-visible { outline-offset: calc(-1 * var(--focus-width)); }
   @media (forced-colors: active) { .shell-nav__item[aria-current="page"] { outline: 2px solid Highlight; } }
+  /* « Plus » exists on the phone bar only. */
+  .shell-nav__plus { display: none; }
 
   .shell-sidebar__foot { display: flex; flex-direction: column; gap: var(--space-3); margin-block-start: auto; padding-block-start: var(--space-4); border-block-start: 1px solid var(--color-border-hairline); }
   .shell-sidebar__status { padding-inline: var(--space-1); }
@@ -98,7 +100,6 @@
   .shell-crumbs__current { color: var(--color-text-primary); font-weight: var(--font-weight-semibold); overflow-wrap: anywhere; }
   .shell-crumbs__sep { color: var(--color-text-tertiary); }
   .shell-topbar__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); }
-  .shell-topbar__phone { display: none; }
 
   /* ── Offline banner ───────────────────────────────────────────────────── */
   .shell-offline { margin: var(--space-4) var(--gutter) 0; }
@@ -125,20 +126,33 @@
     .shell-nav__item[aria-current="page"] > svg { background: var(--color-accent-tint-hover); }
     .shell-nav__full { display: none; }
     .shell-nav__short { display: block; }
+    .shell-nav__list > li:not([data-phone]) { display: none; }
+    .shell-nav__list > .shell-nav__plus { display: block; }
+    .shell-nav__item[data-current] { color: var(--color-accent-text-strong); font-weight: var(--font-weight-semibold); }
+    .shell-nav__item[data-current] > svg { background: var(--color-accent-tint-hover); }
     .shell-topbar { min-block-size: var(--topbar-height-phone); padding-block: var(--space-1); }
     .shell-topbar__brand { display: inline-flex; }
     .shell-crumbs { display: none; }
     .shell-topbar__desktop { display: none; }
-    .shell-topbar__phone { display: inline-grid; }
     .shell-offline { margin: var(--space-3) var(--gutter) 0; }
   }
+
+  /* ── « Plus » sheet (phone) ───────────────────────────────────────────── */
+  .shell-plus__list { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+  .shell-plus__item { display: flex; align-items: center; gap: var(--space-3); inline-size: 100%; min-block-size: var(--control-height-touch); padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-control); background: transparent; color: var(--color-text-primary); font-size: var(--text-body); text-align: start; -webkit-tap-highlight-color: transparent; transition: background-color var(--duration-fast) var(--ease-out); }
+  .shell-plus__item > svg { inline-size: var(--icon); block-size: var(--icon); color: var(--color-text-secondary); }
+  @media (hover: hover) { .shell-plus__item:not([aria-current="page"]):hover { background: var(--color-bg-sunken); } }
+  .shell-plus__item[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-accent-text-strong); font-weight: var(--font-weight-semibold); }
+  .shell-plus__item[aria-current="page"] > svg { color: currentColor; }
+  .shell-plus__status { padding-block: var(--space-2); }
+  .shell-plus__status .tag { white-space: normal; }
 
   /* ── Loading and error screens ────────────────────────────────────────── */
   .shell-loading, .shell-error { display: grid; place-items: center; min-block-size: 100dvh; padding: var(--space-6) var(--gutter); background: var(--color-bg-page); }
   .shell-loading__inner { display: flex; flex-direction: column; align-items: center; gap: var(--space-5); text-align: center; color: var(--color-text-secondary); }
   .shell-loading__bar { display: block; inline-size: 6rem; block-size: 4px; border-radius: var(--radius-pill); background: var(--color-bg-fill); overflow: hidden; }
   .shell-loading__bar::after { content: ""; display: block; inline-size: 40%; block-size: 100%; border-radius: inherit; background: var(--color-text-tertiary); }
-  @media (prefers-reduced-motion: no-preference) { .shell-loading__bar::after { animation: tc-loading 1.4s var(--ease-out) infinite; } }
+  @media (prefers-reduced-motion: no-preference) { .shell-loading__bar::after { animation: tc-loading var(--duration-loading) var(--ease-out) infinite; } }
   @keyframes tc-loading { from { translate: -100% 0; } to { translate: 250% 0; } }
   .shell-error__card { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-4); inline-size: min(30rem, 100%); padding: var(--space-8); border: 1px solid var(--color-border-hairline); border-radius: var(--radius-card); background: var(--color-bg-surface); }
   .shell-error__card p { color: var(--color-text-secondary); }

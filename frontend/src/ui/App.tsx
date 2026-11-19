@@ -17,8 +17,12 @@ import {Catalogue} from './pages/Catalogue';
 import {Coverage} from './pages/Coverage';
 import {Protocol} from './pages/Protocol';
 import {Admin} from './pages/Admin';
+import {Account} from './pages/Account';
 import {CallModelContext,type CallModel} from './call/callModel';
 import {CallView} from './call/CallView';
+
+/** One title per view: the nav label, the breadcrumb, the h1 and document.title (« Pilotage – ThinkerCare »). */
+const TITLES:Record<string,string>={coverage:'Parcours produits',call:'Appel guidé',catalogue:'Catalogue',results:'Pilotage',progress:'Ma progression',contributions:'Apports & primes',protocol:'Protocole',admin:'Gestion',account:'Mon compte'};
 
 export default function Desk(){
  const [state,setState]=useState<State|null>(null),[loading,setLoading]=useState(true),[fatal,setFatal]=useState(''),[view,setView]=useState('call'),[signingOut,setSigningOut]=useState(false);
@@ -32,6 +36,10 @@ export default function Desk(){
  function acceptState(next:State){reportCache.setUser(next.user.id);setState(next);setFatal('');}
  async function load(){try{acceptState(await api());setFatal('');}catch(e){if((e as any).status===401)setState(null);else setFatal((e as Error).message);}finally{setLoading(false);}}
  useEffect(()=>{void load();const expired=()=>{setState(null);reset();};window.addEventListener('desk-session-expired',expired);return()=>window.removeEventListener('desk-session-expired',expired);},[]);
+ // On every view change: the tab title names the view, the page starts at the top and focus moves to its h1.
+ const firstView=useRef(true);
+ useEffect(()=>{document.title=(state?TITLES[view]+' – ':'')+'ThinkerCare';},[view,state]);
+ useEffect(()=>{if(firstView.current){firstView.current=false;return;}window.scrollTo(0,0);const id=requestAnimationFrame(()=>{const h=document.querySelector<HTMLElement>('#contenu h1');if(!h)return;if(!h.hasAttribute('tabindex'))h.setAttribute('tabindex','-1');h.focus({preventScroll:true});});return()=>cancelAnimationFrame(id);},[view]);
  async function signOut(){
   if(signingOut)return;
   setSigningOut(true);
@@ -117,7 +125,7 @@ export default function Desk(){
 
  if(loading)return <div className="shell-loading" role="status"><div className="shell-loading__inner"><Wordmark size="lg"/><span className="shell-loading__bar" aria-hidden="true"/><p>Ouverture de votre espace conseil…</p></div></div>;
  if(!state)return <>{fatal&&<OfflineBanner fatal={fatal} load={load}/>}<Login onSuccess={acceptState}/></>;
- const titles:Record<string,string>={coverage:'Parcours produits',call:'Appel guidé',catalogue:'Catalogue',results:'Pilotage',progress:'Ma progression',contributions:'Apports & primes',protocol:'Protocole',admin:canManageWorkspace(state.user)?'Gestion':'Mon compte'};
+ const titles=TITLES;
  const changeProfile=(patch:Partial<Profile>)=>{setProfile(p=>({...p,...patch}));setUpgradeId('');setAdds([]);clearRequests();setConsent(false);setChecked(false);};
  const toggleConcern=(id:string)=>{const a=profile.concerns.includes(id)?profile.concerns.filter(x=>x!==id):profile.concerns.length<2?[...profile.concerns,id]:[profile.concerns[0],id];changeProfile({concerns:a,severity:a.includes('acne')?profile.severity:'',marks:a.includes('marks')?profile.marks:'',hairPattern:a.includes('fall')?profile.hairPattern:'',redState:a.includes('red')?profile.redState:''});};
  const toStep=(n:number)=>{setStep(n);setTimeout(()=>document.getElementById('workflow-heading')?.focus(),0);};
@@ -144,6 +152,7 @@ export default function Desk(){
  {view==='progress'&&!canManageWorkspace(state.user)&&<PersonalProgress refreshKey={progressEpoch} resume={resume}/>}
  {view==='contributions'&&canManageWorkspace(state.user)&&<ContributionDashboard openOperator={id=>{setFocusOperator(id);setView('results')}}/>}
  {view==='protocol'&&<Protocol clinical={state.clinical}/>}
- {view==='admin'&&<Admin state={state} reload={load} notify={notify}/>}
+ {view==='admin'&&canManageWorkspace(state.user)&&<Admin state={state} reload={load} notify={notify}/>}
+ {view==='account'&&<Account state={state} reload={load}/>}
  </AppShell>;
 }

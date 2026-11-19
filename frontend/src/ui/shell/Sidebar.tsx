@@ -1,44 +1,64 @@
+import {useState} from 'react';
 import {canManageWorkspace,accountRoleLabel} from '@touche/domain';
 import {Icon} from '../shared/Icon';
 import {Wordmark} from '../shared/Wordmark';
 import {type State} from '../shared/types';
+import {PlusSheet} from './PlusSheet';
 
 /** Visible label when the sidebar is compact (761 to 1199px) or becomes the bottom bar (≤760px). */
-const SHORT:Record<string,string>={call:'Appel',progress:'Progression',catalogue:'Catalogue',coverage:'Parcours',protocol:'Protocole',results:'Pilotage',contributions:'Apports',admin:'Gestion'};
-const ICONS:Record<string,string>={call:'call',progress:'trend',catalogue:'grid',coverage:'route',protocol:'shield',results:'chart',contributions:'coins',admin:'sliders'};
+export const SHORT:Record<string,string>={call:'Appel',progress:'Progression',catalogue:'Catalogue',coverage:'Parcours',protocol:'Protocole',results:'Pilotage',contributions:'Apports',admin:'Gestion',account:'Compte'};
+export const ICONS:Record<string,string>={call:'call',progress:'trend',catalogue:'grid',coverage:'route',protocol:'shield',results:'chart',contributions:'coins',admin:'sliders',account:'user'};
+
+/** Sidebar order (§6.2) and the four destinations the phone bar keeps beside « Plus ». */
+export function navItems(manager:boolean){
+ const items=manager?['results','contributions','call','catalogue','coverage','protocol','admin']:['call','progress','catalogue','coverage','protocol'];
+ const phone=manager?['results','contributions','call','admin']:['call','progress','catalogue','coverage'];
+ return {items,phone,more:items.filter(v=>!phone.includes(v))};
+}
 
 /** The compact sidebar scrolls, so its tooltips are fixed-position: this pins them to the hovered item. */
 function placeTip(event:{currentTarget:HTMLElement}){const r=event.currentTarget.getBoundingClientRect();event.currentTarget.style.setProperty('--tip-y',r.top+r.height/2+'px');}
 
+/** One navigation landmark: the labelled sidebar (≥1200), the compact sidebar with visible short labels
+ *  (761 to 1199) and the phone bar of four destinations plus « Plus » (≤760). Each item's accessible name is
+ *  its visible label; the full name shows as a tooltip where the label is shortened. */
 export function Sidebar({state,view,setView,titles,signingOut,signOut}:{state:State;view:string;setView:(view:string)=>void;titles:Record<string,string>;signingOut:boolean;signOut:()=>Promise<void>}){
  const manager=canManageWorkspace(state.user);
- const items=[...(manager?['results','contributions']:['progress']),'call','catalogue','coverage','protocol',...(manager?['admin']:[])];
+ const {items,phone,more}=navItems(manager);
+ const [plusOpen,setPlusOpen]=useState(false);
+ const inMore=more.includes(view)||view==='account';
  return <aside className="shell-sidebar">
   <div className="shell-sidebar__brand">
    <button type="button" className="shell-brand" onClick={()=>setView('call')} aria-label="ThinkerCare, Appel guidé"><Wordmark/></button>
    <p className="shell-sidebar__context">{manager?'Direction':'Espace conseil'}</p>
   </div>
   <nav className="shell-nav" aria-label="Navigation principale">
-   <ul className="shell-nav__list" role="list">{items.map(v=><li key={v}>
-    <button type="button" className="shell-nav__item" aria-label={titles[v]} aria-current={view===v?'page':undefined} onClick={()=>setView(v)} onPointerEnter={placeTip} onFocus={placeTip}>
+   <ul className="shell-nav__list" role="list">{items.map(v=><li key={v} data-phone={phone.includes(v)||undefined}>
+    <button type="button" className="shell-nav__item" aria-current={view===v?'page':undefined} onClick={()=>setView(v)} onPointerEnter={placeTip} onFocus={placeTip}>
      <Icon name={ICONS[v]}/><span className="shell-nav__full">{titles[v]}</span><span className="shell-nav__short">{SHORT[v]}</span>
      {SHORT[v]!==titles[v]&&<span className="tooltip" aria-hidden="true">{titles[v]}</span>}
     </button>
-   </li>)}</ul>
+   </li>)}
+    <li className="shell-nav__plus"><button type="button" className="shell-nav__item" aria-haspopup="dialog" aria-expanded={plusOpen} data-current={inMore||undefined} onClick={()=>setPlusOpen(true)}>
+     <Icon name="more"/><span className="shell-nav__short">{inMore?SHORT[view]:'Plus'}</span>
+    </button></li>
+   </ul>
   </nav>
   <div className="shell-sidebar__foot">
    <p className="shell-sidebar__status">{state.clinical.validated
     ?<span className="tag tag--success"><Icon name="check"/>Protocole validé en interne</span>
     :<span className="tag tag--warning"><Icon name="alert"/>Pilote : validation médicale à finaliser</span>}</p>
    <p className="shell-sidebar__privacy"><Icon name="shield"/><span>Un conseil personnalisé. Aucun dossier médical stocké.</span></p>
-   <button type="button" className="shell-account" aria-label={'Mon compte, '+state.user.label} aria-current={view==='admin'&&!manager?'page':undefined} onClick={()=>setView('admin')}>
+   <button type="button" className="shell-account" aria-current={view==='account'?'page':undefined} onClick={()=>setView('account')} onPointerEnter={placeTip} onFocus={placeTip}>
     <span className="avatar" aria-hidden="true">{state.user.label.slice(0,1)}</span>
+    <span className="sr-only">Mon compte : </span>
     <span className="shell-account__text"><span className="shell-account__name">{state.user.label}</span><span className="shell-account__role">{accountRoleLabel(state.user.role)}</span></span>
-    <span className="shell-account__short" aria-hidden="true">Compte</span>
+    <span className="shell-account__short">Compte</span>
    </button>
-   <button type="button" className="shell-logout" aria-label="Se déconnecter" disabled={signingOut} onClick={signOut}>
-    <Icon name="logout"/><span className="shell-logout__label">{signingOut?'Déconnexion…':'Se déconnecter'}</span><span className="shell-logout__short" aria-hidden="true">Quitter</span>
+   <button type="button" className="shell-logout" disabled={signingOut} onClick={signOut}>
+    <Icon name="logout"/><span className="shell-logout__label">{signingOut?'Déconnexion…':'Se déconnecter'}</span><span className="shell-logout__short">Déconnexion</span>
    </button>
   </div>
+  {plusOpen&&<PlusSheet state={state} view={view} more={more} titles={titles} setView={setView} signingOut={signingOut} signOut={signOut} onClose={()=>setPlusOpen(false)}/>}
  </aside>;
 }
