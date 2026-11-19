@@ -305,16 +305,15 @@ export default function Desk(){
   consent:d.consent,setConsent:edit('consent'),checked:d.checked,setChecked:edit('checked'),callbackAt:d.callbackAt,setCallbackAt:edit('callbackAt'),refusal:d.refusal,setRefusal:edit('refusal'),record,
   removal,dismissRemoval:()=>setRemoval(null),catalogueNotice,dismissCatalogueNotice:()=>setCatalogueNotice(null)};
  // « Voir les appels » opens the journal filtered on the adviser; the filter is dropped once Pilotage has applied it (F3).
- const pilotage:{initialTab?:string;onOperatorUsed?:()=>void;features?:string[]}={features:state.features,initialTab:pilotageTab||undefined,onOperatorUsed:()=>setFocusOperator('')};
 
  return <AppShell state={state} view={view} setView={go} titles={titles} signingOut={signingOut} signOut={signOut} newCall={()=>void newCall()} fatal={fatal} offline={offline} load={load} modal={detail&&<ProductModal detail={detail} setDetail={setDetail} products={products}/>}>
  {/* The progress card has its own boundary: a failure there never hides the call. */}
- {view==='call'&&!canManageWorkspace(state.user)&&<ViewBoundary title='Votre progression n’a pas pu s’afficher.'><PersonalProgress compact refreshKey={progressEpoch}/></ViewBoundary>}
+ {view==='call'&&!canManageWorkspace(state.user)&&<ViewBoundary title='Votre progression n’a pas pu s’afficher.'><PersonalProgress compact refreshKey={progressEpoch} features={state.features}/></ViewBoundary>}
  {view==='call'&&<CallModelContext value={call}><CallView/></CallModelContext>}
- {view==='catalogue'&&<Catalogue search={catalogueSearch} setSearch={setCatalogueSearch} scope={catalogueScope} setScope={setCatalogueScope} products={products} inScope={scopeFilter(catalogueScope)} setDetail={setDetail}/>}
+ {view==='catalogue'&&<Catalogue search={catalogueSearch} setSearch={setCatalogueSearch} scope={catalogueScope} setScope={setCatalogueScope} products={products} inScope={scopeFilter(catalogueScope)} setDetail={setDetail} canManage={canManageWorkspace(state.user)}/>}
  {view==='coverage'&&<Coverage search={coverageSearch} setSearch={setCoverageSearch} products={products} setDetail={setDetail}/>}
- {view==='results'&&canManageWorkspace(state.user)&&<Analytics user={state.user} users={state.users} products={products} resume={resume} initialOperator={focusOperator} {...pilotage}/>}
- {view==='progress'&&!canManageWorkspace(state.user)&&<PersonalProgress refreshKey={progressEpoch} resume={resume}/>}
+ {view==='results'&&canManageWorkspace(state.user)&&<Analytics user={state.user} users={state.users} products={products} resume={resume} initialOperator={focusOperator} initialTab={pilotageTab||undefined} onOperatorUsed={()=>setFocusOperator('')} features={state.features}/>}
+ {view==='progress'&&!canManageWorkspace(state.user)&&<PersonalProgress refreshKey={progressEpoch} resume={resume} features={state.features}/>}
  {view==='contributions'&&canManageWorkspace(state.user)&&<ContributionDashboard openOperator={id=>{setFocusOperator(id);setPilotageTab('journal');go('results');}}/>}
  {view==='protocol'&&<Protocol clinical={state.clinical}/>}
  {view==='admin'&&canManageWorkspace(state.user)&&<Admin state={state} reload={load} notify={notify}/>}
