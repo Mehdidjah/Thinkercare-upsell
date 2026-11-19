@@ -10,14 +10,15 @@ import {SavedPanel} from './SavedPanel';
 import {CallNotices} from './CallNotices';
 import {CopyFallback} from './CopyFallback';
 
-/** Guided call: step navigation, heading, call context, the saved outcome and call notices, then the current step, beside the live routine rail. */
-export function CallView(){const {step,base}=useCall();
+/** Guided call: step navigation, heading, call context, the saved outcome and call notices, then the current step, beside the live routine rail.
+ *  At step 3 with the routine builder the saved outcome sits after the close-out instead (StepRoutine). */
+export function CallView(){const {step,base,blocked}=useCall();
  return <div className="call-layout">
   <div className="call-notebook">
    <StepNav/>
    <CallHeading/>
    <CallContextPanel/>
-   <SavedPanel/>
+   {!(step===2&&base&&!blocked)&&<SavedPanel/>}
    <CallNotices/>
    {step===0&&<StepOrder/>}
    {step===1&&<StepNeeds/>}

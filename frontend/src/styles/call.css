@@ -234,6 +234,7 @@
   .call-close__row > .field { flex: 1 1 16rem; }
   .call-close__row > .btn { margin-block-start: calc(var(--text-label) * 1.35 + var(--space-2)); }
   @media (max-width: 760px) { .call-close__row > .btn, .call-close__accept-btn, .call-stop__callback > .btn { flex: 1 1 100%; inline-size: 100%; margin-block-start: 0; } }
+  .call-close__price { font-size: var(--text-ui); color: var(--color-text-secondary); line-height: var(--leading-body); }
   .call-saved { align-items: center; }
   /* COPY: the text the browser refused to copy, to select by hand. */
   .call-copy__text { inline-size: 100%; min-block-size: 12rem; margin-block-start: var(--space-3); }

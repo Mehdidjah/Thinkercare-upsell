@@ -18,6 +18,9 @@ import { CopyFallback } from '../src/ui/call/CopyFallback';
 import { SalesCoach } from '../src/ui/call/SalesCoach';
 import { Photo } from '../src/ui/shared/Photo';
 import { readQuantity, typeQuantity, settleQuantity } from '../src/ui/QuantityControl';
+import { CallView } from '../src/ui/call/CallView';
+import { CallHeading } from '../src/ui/call/CallHeading';
+import { catalogueNoticeText } from '../src/ui/call/CallNotices';
 
 // Call screens rendered from a plain model (no DOM library), plus the source guards of the call flow.
 const catalogue: Product[] = JSON.parse(readFileSync(new URL('../../shared/test/fixtures/catalogue.json', import.meta.url), 'utf8'));
@@ -127,7 +130,11 @@ describe('step 3 offer (STEP3, C1, M5, RAIL)', () => {
     expect(open).toContain(money(9600));
     expect(open).not.toContain('aria-disabled');
     expect(open).toContain('6 unités, première offre, livraison à confirmer.');
-    expect(render(<OfferBar/>, { ...low, offerIssue: null, matchingOffer: { id: 'o' } as CallModel['matchingOffer'] })).toContain('Clôturer l’appel');
+    const traced = render(<OfferBar/>, { ...low, offer: 9700, offerIssue: null, matchingOffer: { id: 'o', offerTotal: 9600 } as CallModel['matchingOffer'] });
+    expect(traced).toContain('Clôturer l’appel');
+    // The bar names the amount traced with the offer (the presented one).
+    expect(traced).toContain(money(9600));
+    expect(traced).not.toContain(money(9700));
     expect(render(<OfferBar/>, { altered: false })).toContain('Pas d’ajout pour l’instant');
     expect(render(<OfferBar/>, { ...low, saved: true })).toBe('');
   });
@@ -298,6 +305,82 @@ describe('step 0 and call context (DUPPACK, SEARCH, C3, ORDERREF, X12, QTY, COPY
   });
 });
 
+describe('review follow-ups on the call screens', () => {
+  const severe = reviewStop({ ...face, severity: 'severe' })!;
+  it('a call already recorded without its outcome reads « Appel déjà enregistré », never the button clicked (state-2)', () => {
+    const html = render(<SavedPanel/>, { saved: true, savedOutcome: '', savedAt: '2026-11-19T09:05:00Z' });
+    expect(html).toContain('Appel déjà enregistré.');
+    expect(html).toContain('il n’est pas compté une seconde fois');
+    expect(html).not.toMatch(/Appel enregistré :|à 10:05/);
+    expect(render(<StepOrder/>, { saved: true, savedOutcome: '', orderLocked: true })).toContain('Appel déjà enregistré : la commande initiale ne change plus.');
+  });
+
+  it('the stop panel records its callback as an orientation with a callback date (recording-2)', () => {
+    const open = render(<StepRoutine base={p('antiacne')}/>, { step: 2, blocked: severe.text, stop: severe, callbackAt: '2026-11-20T10:00' });
+    expect(open).toMatch(/class="btn btn--primary"[^>]*>Programmer un rappel/);
+    const saved = { step: 2, blocked: severe.text, stop: severe, saved: true, savedOutcome: 'review', callbackAt: '2026-11-20T10:00' };
+    const stop = render(<StepRoutine base={p('antiacne')}/>, saved);
+    expect(stop).toContain('>Rappel programmé<');
+    expect(stop).not.toContain('>Orientation enregistrée<');
+    const panel = render(<SavedPanel/>, saved);
+    expect(panel).toContain('Orientation enregistrée, rappel prévu le ');
+    expect(panel).toContain('20 novembre');
+    // Without a callback date sent, the orientation alone.
+    expect(render(<StepRoutine base={p('antiacne')}/>, { ...saved, callbackAt: '' })).toContain('>Orientation enregistrée<');
+    expect(render(<SavedPanel/>, { ...saved, callbackAt: '' })).toContain('Orientation enregistrée : la vérification ciblée est tracée.');
+    expect(readFileSync(new URL('../src/ui/call/StepRoutine.tsx', import.meta.url), 'utf8')).toContain("onClick={()=>record('review',{callback:true})}");
+  });
+
+  it('the examples wait while a save or a presentation is on its way; a saved call set aside says so (state-4, state-7)', () => {
+    const disabled = (html: string) => (html.match(/<button type="button" class="btn btn--ghost btn--sm" disabled="">/g) || []).length;
+    expect(disabled(render(<CallHeading/>, {}))).toBe(0);
+    expect(disabled(render(<CallHeading/>, { busy: true }))).toBe(2);
+    expect(disabled(render(<CallHeading/>, { presenting: true }))).toBe(2);
+    expect(render(<CallHeading/>, { demo: true, hasParkedCall: true, parkedSaved: true })).toContain('Votre appel enregistré est mis de côté.');
+    expect(render(<CallHeading/>, { demo: true, hasParkedCall: true })).toContain('Votre appel en cours est mis de côté.');
+  });
+
+  it('the accepted sale says it keeps the presented price after a catalogue change (state-3)', () => {
+    const ready = { altered: true, count: 2, checked: true, consent: true, keepsPresentedPrice: true, offer: 3100, matchingOffer: { id: 'o', offerTotal: 3000 } as CallModel['matchingOffer'] };
+    const html = render(<CallClose/>, ready);
+    expect(html).toContain(`Accord enregistré au prix présenté : <b class="num">${money(3000)}</b>`);
+    expect(html).toContain(`Le catalogue indique maintenant <span class="num">${money(3100)}</span>`);
+    expect(render(<CallClose/>, { ...ready, offer: 3000 })).not.toContain('Le catalogue indique maintenant');
+    // An older server checks the current price: nothing is said.
+    expect(render(<CallClose/>, { ...ready, keepsPresentedPrice: false })).not.toContain('au prix présenté');
+    // The price notice gives way to the kept presented price; it carries an id to be focused (callux-2).
+    const notice = { catalogueNotice: { kind: 'price' as const, names: [] }, offer: 3100 };
+    expect(render(<CallNotices/>, notice)).toContain('id="call-catalogue-notice" role="alert"');
+    expect(render(<CallNotices/>, { ...notice, keepsPresentedPrice: true, matchingOffer: ready.matchingOffer })).toBe('');
+  });
+
+  it('the catalogue message and the notice share their words (callux-2, recording-8)', () => {
+    expect(catalogueNoticeText({ kind: 'price', names: [] }, 3700, 400)).toEqual({ title: 'Prix mis à jour dans le catalogue.', detail: `Annoncez désormais ${money(3700)} plus ${money(400)} de livraison à la cliente, puis présentez de nouveau l’offre. Votre saisie est conservée.` });
+    expect(catalogueNoticeText({ kind: 'disabled', names: ['Gel', 'SPF'] }, 0, null)).toEqual({ title: 'Gel, SPF : références désactivées dans le catalogue.', detail: 'Retirez-les de la routine, puis présentez de nouveau l’offre. Votre saisie est conservée.' });
+    const html = render(<CallNotices/>, { catalogueNotice: { kind: 'price', names: [] }, offer: 3700, fee: 400 });
+    for (const text of Object.values(catalogueNoticeText({ kind: 'price', names: [] }, 3700, 400))) expect(html).toContain(text);
+  });
+
+  it('the saved panel sits after the close-out at step 3, at the top elsewhere, once (callux-1)', () => {
+    const step3 = render(<CallView/>, { step: 2, saved: true, savedOutcome: 'initial' });
+    expect((step3.match(/id="call-saved-title"/g) || []).length).toBe(1);
+    expect(step3.indexOf('call-saved')).toBeGreaterThan(step3.indexOf('id="call-close-title"'));
+    const step1 = render(<CallView/>, { step: 1, saved: true, savedOutcome: 'initial' });
+    expect((step1.match(/id="call-saved-title"/g) || []).length).toBe(1);
+    expect(step1.indexOf('call-saved')).toBeLessThan(step1.indexOf('question-01'));
+    const stopped = render(<CallView/>, { step: 2, saved: true, savedOutcome: 'review', blocked: severe.text, stop: severe });
+    expect((stopped.match(/id="call-saved-title"/g) || []).length).toBe(1);
+    expect(stopped.indexOf('call-saved')).toBeLessThan(stopped.indexOf('call-stop'));
+  });
+
+  it('removing a line of the initial order hands focus to the order (callux-6)', () => {
+    const order = readFileSync(new URL('../src/ui/call/StepOrder.tsx', import.meta.url), 'utf8');
+    expect(order).toContain("const AFTER_REMOVAL='#call-initial, .call-order .search-field input';");
+    expect((order.match(/\.then\(done=>\{if\(done\)focusLater\(AFTER_REMOVAL\);\}\)/g) || []).length).toBe(2);
+    expect(render(<StepOrder/>, {})).toContain('<section class="call-initial" id="call-initial" tabindex="-1"');
+  });
+});
+
 describe('source guards', () => {
   const app = readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8');
   it('every exit of the call goes through one guard (A1)', () => {
@@ -333,6 +416,34 @@ describe('source guards', () => {
   it('on the call, notices open bottom left over the call column, never over the rail (TOASTRAIL)', () => {
     const components = readFileSync(new URL('../src/styles/components.css', import.meta.url), 'utf8');
     expect(components).toMatch(/@media \(min-width: 1024px\) \{\s*:root:has\(\.call-layout\) \.toast-region \{ inset-block: auto calc\(var\(--call-bar-height\) \+ var\(--space-8\)\); inset-inline: calc\(var\(--sidebar-width\) \+ var\(--gutter\)\) auto; \}/);
+  });
+  it('review follow-ups are wired in the desk (state, recording, callux)', () => {
+    // A duplicate save shows the stored outcome and says so (state-2); a duplicated tab asks the others (startCallClaims).
+    expect(app).toContain('const recorded=callState.recordedOutcome(outcome,result);');
+    expect(app).toContain('`Cet appel était déjà enregistré : ${callState.outcomeLabel(recorded.outcome)}.`');
+    expect(app).toContain('claims.current?.ask(callState.restoredCallIds(restored));');
+    // The accepted amount is the presented one (state-3); the agreement is unticked when the price moves.
+    expect(app).toContain('agreedTotal:won?matchingOffer!.offerTotal:offer,');
+    expect(app).toContain("const keepsPresentedPrice=!!state?.features?.includes('price-codes');");
+    expect(app).toContain('putState(fresh);keepAgreementHonest(before,fresh.products);');
+    // Answers land on the call they were sent for (state-4); examples wait for them.
+    expect(app).toContain('callState.applyToCall(storeRef.current,now.callId,');
+    expect(app).toContain('if(busy||presenting)return;');
+    // Back never loops on the guard (state-5); the lock keeps the warning, « Recharger » lets it through (state-8).
+    expect(app).toContain('await backFromGuard({');
+    expect(app).not.toContain('if(isGuardEntry(history.state))history.pushState');
+    expect(app).toContain('const unsaved=callState.needsUnloadPrompt(store);');
+    expect(app).toContain('<AccountChangedScreen onReload={()=>{allowLeave.current=true;window.location.reload();}}/>');
+    // The stop's callback is a « review » with its date (recording-2); only added lines are named (recording-8).
+    expect(app).toContain("withCallback=outcome==='callback'||callback;");
+    expect(app).toContain('callbackAt:withCallback?new Date(now.callbackAt+');
+    expect(app).toContain('callState.disabledAdditions(current(),fresh.products)');
+    // Focus: saved panel (callux-1), catalogue notice and its message (callux-2), after void and undo (callux-6).
+    expect(app).toContain("reveal(title?.closest<HTMLElement>('.call-saved'),'center',title);");
+    expect(app).toContain("push({kind:'info',title:text.title,detail:text.detail});");
+    expect(app).toContain("requestAnimationFrame(()=>reveal(document.getElementById('call-catalogue-notice')));");
+    expect(app).toContain("(document.getElementById('call-close-title')??document.getElementById('workflow-heading'))?.focus()");
+    expect(app).toContain("setRemoval(null);focusLater('#workflow-heading');");
   });
   it('the rail keeps a focused price option above its pinned total (callux-4)', () => {
     const css = readFileSync(new URL('../src/styles/call.css', import.meta.url), 'utf8');

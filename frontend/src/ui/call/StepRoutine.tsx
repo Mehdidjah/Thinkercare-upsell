@@ -11,8 +11,10 @@ import {OfferPresentation} from './OfferPresentation';
 import {OfferTotals} from './OfferTotals';
 import {OfferBar} from './OfferBar';
 import {CallClose} from './CallClose';
+import {SavedPanel} from './SavedPanel';
 
-/** Step 03 · Routine & offre: product path, targeted check or the routine builder, sales coach, offers and closing. */
+/** Step 03 · Routine & offre: product path, targeted check or the routine builder, sales coach, offers and closing. The
+ *  saved outcome shows right after the close-out here (not at the top of the call), where the button was pressed. */
 export function StepRoutine({base}:{base:Product}){const {toStep,saved,products,initial,domain,profile,changeProfile,blocked,notes,candidates,basket,altered,tier,copy}=useCall();
  const path=cataloguePath(base,products);
  return <>
@@ -29,6 +31,7 @@ export function StepRoutine({base}:{base:Product}){const {toStep,saved,products,
   <section className="card call-offer" aria-labelledby="call-offer-title"><h2 id="call-offer-title">Prix et récapitulatif</h2><OfferTotals/></section>
  <OfferPresentation/>
  <CallClose/>
+ <SavedPanel/>
  <OfferBar/>
  </>}
  </>;
@@ -37,16 +40,19 @@ export function StepRoutine({base}:{base:Product}){const {toStep,saved,products,
 /**
  * The targeted stop: the reason, then the words for that exact reason (MEDSCRIPT); an urgent reaction uses the danger tone.
  * Besides « Enregistrer l’orientation », a callback can be scheduled; when the script promises one, it is the suggested
- * outcome (MEDCB).
+ * outcome (MEDCB). That callback is recorded as the orientation (« review ») with its callback date, so the call counts as a
+ * targeted check and still appears in the reminders (recording-2). Calls saved before keep their « callback » outcome.
  */
 function ReviewStopPanel(){const {stop,blocked,busy,saved,savedOutcome,demo,callbackAt,setCallbackAt,record}=useCall();
  const dateId=useId(),helpId=useId();
  if(!stop||!blocked)return null;
  const urgent=stop.urgent,suggest=stop.followUp;
- const orientation=<button type="button" className={`btn ${suggest?'btn--secondary':'btn--primary'}`} disabled={busy||saved} onClick={()=>record('review')}>{saved&&savedOutcome==='review'?'Orientation enregistrée':suggest?'Enregistrer l’orientation sans rappel':'Enregistrer l’orientation'}<Icon name="check"/></button>;
+ // A saved call keeps its callback date only when it was sent with the result.
+ const scheduled=saved&&(savedOutcome==='callback'||(savedOutcome==='review'&&!!callbackAt));
+ const orientation=<button type="button" className={`btn ${suggest?'btn--secondary':'btn--primary'}`} disabled={busy||saved} onClick={()=>record('review')}>{saved&&savedOutcome==='review'&&!scheduled?'Orientation enregistrée':suggest?'Enregistrer l’orientation sans rappel':'Enregistrer l’orientation'}<Icon name="check"/></button>;
  const callback=<div className="call-stop__callback">
   <div className="field"><label className="field__label" htmlFor={dateId}>{suggest?'Date du rappel promis':'Rappel (facultatif)'}</label><input id={dateId} type="datetime-local" value={callbackAt} disabled={saved} aria-describedby={helpId} onChange={e=>setCallbackAt(e.target.value)}/><p id={helpId} className="field__help">Heure d’Alger. Il apparaîtra dans vos rappels.</p></div>
-  <button type="button" className={`btn ${suggest?'btn--primary':'btn--secondary'}`} disabled={busy||saved||demo||!callbackAt} onClick={()=>record('callback')}>{saved&&savedOutcome==='callback'?'Rappel programmé':'Programmer un rappel'}<Icon name="clock"/></button>
+  <button type="button" className={`btn ${suggest?'btn--primary':'btn--secondary'}`} disabled={busy||saved||demo||!callbackAt} onClick={()=>record('review',{callback:true})}>{scheduled?'Rappel programmé':'Programmer un rappel'}<Icon name="clock"/></button>
  </div>;
  return <section className={`notice ${urgent?'notice--danger':'notice--warning'} call-stop`} data-urgent={urgent||undefined} aria-labelledby="call-stop-title"><Icon name="alert" className="notice__icon"/><div className="notice__text">
   <h2 id="call-stop-title" className="call-stop__title">{urgent?'Urgence possible : arrêtez la proposition.':'Vérifions ce point avant de proposer.'}</h2>

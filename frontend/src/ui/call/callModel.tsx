@@ -21,8 +21,9 @@ export type CallModel={
  demo:boolean;saved:boolean;busy:boolean;presenting:boolean;
  /** Outcome recorded on the server ('' while open), when, and « Annuler ce résultat » while the server allows it (H5). */
  savedOutcome:string;savedAt:string;canVoid:boolean;voidCall:(reason:string)=>Promise<string>;
- /** Starting a new call or an example and leaving it all go through the leave guard (A1). */
- newCall:()=>void;startExample:(kind:ExampleKind)=>void;exitExample:()=>void;hasParkedCall:boolean;
+ /** Starting a new call or an example and leaving it all go through the leave guard (A1). An example sets aside an open
+  *  call, or a saved one while it may still be voided (`parkedSaved`). */
+ newCall:()=>void;startExample:(kind:ExampleKind)=>void;exitExample:()=>void;hasParkedCall:boolean;parkedSaved:boolean;
  orderRef:string;setOrderRef:(value:string)=>void;customerStage:string;setCustomerStage:(value:string)=>void;linkedCallId:string;
  products:Product[];visible:Product[];
  /** Step 0 found nothing exact: the closest products (SEARCH). */
@@ -30,7 +31,8 @@ export type CallModel={
  baseId:string;baseIds:string[];base:Product|undefined;initial:OrderItem[];baseTotal:number;
  /** True while the initial order may not change (offer presented, saved, or example: X10). */
  orderLocked:boolean;
- changeInitial:(ids:string[])=>void;changeInitialQuantity:(id:string,next:number)=>boolean;
+ /** Resolves true once the new initial order is applied (false when locked, refused or not confirmed). */
+ changeInitial:(ids:string[])=>Promise<boolean>;changeInitialQuantity:(id:string,next:number)=>boolean;
  /** A product of the initial order already inside one of its packs (DUPPACK). */
  duplicate:{pack:Product;product:Product}|null;
  domain:ReturnType<typeof domainOf>;profile:Profile;changeProfile:(patch:Partial<Profile>)=>void;toggleConcern:(id:string)=>void;
@@ -51,11 +53,14 @@ export type CallModel={
  offerIssue:string|null;delivery:string;changeDelivery:(value:string)=>void;fee:number|null;
  /** Copies and confirms with its own label (« Argumentaire copié. »); on failure the text opens in a dialog (COPY). */
  copy:(text:string,label:string)=>Promise<void>;copyFallback:CopyFallback|null;closeCopyFallback:()=>void;
- presented:Proposal[];matchingOffer:Proposal|undefined;presentOffer:()=>Promise<void>;handledObjections:string[];toggleObjection:(key:string)=>void;
+ /** The presented offer matching the screen; with `keepsPresentedPrice` (server feature 'price-codes') it matches on the
+  *  composition, price level and delivery, and the sale is recorded at its presented amount after a catalogue reload. */
+ presented:Proposal[];matchingOffer:Proposal|undefined;keepsPresentedPrice:boolean;presentOffer:()=>Promise<void>;handledObjections:string[];toggleObjection:(key:string)=>void;
  consent:boolean;setConsent:(value:boolean)=>void;checked:boolean;setChecked:(value:boolean)=>void;
  callbackAt:string;setCallbackAt:(value:string)=>void;refusal:string;setRefusal:(value:string)=>void;
- /** Saves an outcome; « Cliente non jointe » and « Conserver la commande initiale » ask first (A2). */
- record:(outcome:string)=>Promise<void>;
+ /** Saves an outcome; « Cliente non jointe » and « Conserver la commande initiale » ask first (A2). `callback` sends the
+  *  callback date with it (the targeted stop records « review » with its callback). */
+ record:(outcome:string,options?:{callback?:boolean})=>Promise<void>;
  removal:RemovalNotice|null;dismissRemoval:()=>void;
  catalogueNotice:CatalogueNotice|null;dismissCatalogueNotice:()=>void;
 };

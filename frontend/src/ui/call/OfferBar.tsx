@@ -24,7 +24,7 @@ export function OfferBar(){const {saved,presenting,altered,count,baseTotal,tier,
   {!altered
    ?<><p className="call-actions__status">Pas d’ajout pour l’instant : commande initiale à <span className="num">{money(baseTotal)}</span>. Ajoutez un produit pour construire l’offre.</p><Button variant="secondary" onClick={toClose}>Clôturer l’appel<Icon name="arrow"/></Button></>
    :matchingOffer
-    ?<><p className="call-actions__status call-actions__status--done"><Icon name="check"/><span>Offre tracée à <b className="num">{money(offer)}</b>. Enregistrez la réponse de la cliente.</span></p><Button variant="primary" onClick={toClose}>Clôturer l’appel<Icon name="arrow"/></Button></>
+    ?<><p className="call-actions__status call-actions__status--done"><Icon name="check"/><span>Offre tracée à <b className="num">{money(matchingOffer.offerTotal)}</b>. Enregistrez la réponse de la cliente.</span></p><Button variant="primary" onClick={toClose}>Clôturer l’appel<Icon name="arrow"/></Button></>
     :<>{offerIssue
       ?<DisabledReason id={reasonId} title="Pour présenter cette offre :" items={[{label:offerIssue,done:false}]}/>
       :<p className="call-actions__status">{count} unité{count>1?'s':''}, {TIER_NAMES[tier]}{fee!==null?<>, livraison <span className="num">{money(fee)}</span></>:', livraison à confirmer'}.</p>}

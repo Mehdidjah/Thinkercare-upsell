@@ -1,9 +1,10 @@
 import {useState,useEffect,useRef,type ReactNode} from 'react';
-import {money,quantityOf,itemsTotal,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,offerProblem,packDuplicate,proposalOriginals,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,type Profile,type Product,type Tier} from '@touche/domain';
+import {money,quantityOf,itemsTotal,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,offerProblem,packDuplicate,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,type Profile,type Product,type Tier} from '@touche/domain';
 import {reportCache} from '../data/report-cache';
 import {setExpectedUser,lockRequests,type RequestError} from '../data/api';
 import {announceSession,onSessionMessage,sessionReaction} from '../data/session-channel';
-import {allowedView,landingView,viewFromEntry,viewFromSearch,isGuardEntry,viewHref} from '../data/view-history';
+import {startCallClaims} from '../data/call-claims';
+import {allowedView,landingView,viewFromEntry,viewFromSearch,isGuardEntry,viewHref,backFromGuard} from '../data/view-history';
 import Analytics from './Analytics';
 import {PersonalProgress,ContributionDashboard} from './Commission';
 import {ProductModal} from './shared/ProductModal';
@@ -24,6 +25,8 @@ import {Account} from './pages/Account';
 import {CallModelContext,type CallModel,type RemovalNotice,type CatalogueNotice,type CopyFallback} from './call/callModel';
 import * as callState from './call/callState';
 import {CallView} from './call/CallView';
+import {catalogueNoticeText} from './call/CallNotices';
+import {reveal,focusLater} from './call/reveal';
 
 /** One title per view: the nav label, the breadcrumb, the h1 and document.title (« Pilotage – ThinkerCare »). */
 const TITLES:Record<string,string>={coverage:'Parcours produits',call:'Appel guidé',catalogue:'Catalogue',results:'Pilotage',progress:'Ma progression',contributions:'Apports & primes',protocol:'Protocole',admin:'Gestion',account:'Mon compte'};
@@ -42,6 +45,7 @@ export default function Desk(){
  const [confirmId,setConfirmId]=useState(''),[requestSearch,setRequestSearch]=useState(''),[removal,setRemoval]=useState<RemovalNotice|null>(null),[catalogueNotice,setCatalogueNotice]=useState<CatalogueNotice|null>(null),[clock,setClock]=useState(()=>Date.now());
  const [copyFallback,setCopyFallback]=useState<CopyFallback|null>(null);
  const storeRef=useRef(store),stateRef=useRef(state),ownerRef=useRef<string|null>(null),viewRef=useRef(view),lockedRef=useRef(false),callScroll=useRef(0),allowLeave=useRef(false),firstView=useRef(true);
+ const claims=useRef<ReturnType<typeof startCallClaims>|null>(null);
  const {notify:push,announce}=useNotify(),confirmAction=useConfirm();
  /** Results not tied to a control. Errors stay on screen (role="alert") until closed. */
  function notify(title:string,kind:NoteKind='success'){push({kind,title});}
@@ -66,11 +70,13 @@ export default function Desk(){
   if(viewFromEntry(history.state))history.replaceState({tc:'view',view:next},'',viewHref(next,location));
   else{history.replaceState({tc:'guard'},'',viewHref(null,location));history.pushState({tc:'view',view:next},'',viewHref(next,location));}
  }
+ /** Back reached the guard entry: leave as the browser would, asking first only for an open call (data/view-history.ts).
+  *  The view entry goes back on top only when the adviser stays, so Back never loops on the tab's first page. */
  async function leaveApp(){
-  if(!(await guardLeaveCall('leave'))){history.pushState({tc:'view',view:viewRef.current},'',viewHref(viewRef.current,location));return;}
-  allowLeave.current=true;history.back();
-  // Nothing before this tab's first page: stay, and put the current view back on top.
-  setTimeout(()=>{allowLeave.current=false;if(isGuardEntry(history.state))history.pushState({tc:'view',view:viewRef.current},'',viewHref(viewRef.current,location));},800);
+  await backFromGuard({
+   atStake:callState.leavePlan(storeRef.current,'leave')==='confirm',confirm:()=>guardLeaveCall('leave'),
+   back:()=>{allowLeave.current=true;history.back();setTimeout(()=>{allowLeave.current=false;},800);},
+   restoreView:()=>history.pushState({tc:'view',view:viewRef.current},'',viewHref(viewRef.current,location))});
  }
 
  // ── Workspace, session and other tabs ─────────────────────────────────────────────────────────────────────
@@ -83,9 +89,15 @@ export default function Desk(){
    ownerRef.current=next.user.id;
    const restored=callState.loadCallStore(next.user.id);
    replaceStore(restored??{draft:callState.newDraft(),parked:null});resetScreen();callScroll.current=0;
+   // A duplicated tab restored the call of the tab it was copied from: the other tab says so, and this copy forks (forkCopies).
+   if(restored)claims.current?.ask(callState.restoredCallIds(restored));
    const asked=login?null:viewFromEntry(history.state)??viewFromSearch(location.search);
    enterView(allowedView(manager,asked)?asked:restored&&callState.isOpenCall(callState.liveCall(restored))?'call':landingView(manager));
-  }else if(!allowedView(manager,viewRef.current))enterView(landingView(manager));
+  }else{
+   // The same account reloaded: a catalogue change may move the price of the open call.
+   if(stateRef.current&&stateRef.current.products!==next.products)keepAgreementHonest(stateRef.current.products,next.products);
+   if(!allowedView(manager,viewRef.current))enterView(landingView(manager));
+  }
   if(login)announceSession({type:'login',userId:next.user.id});
   putState(next);setFatal('');setBootError('');setLoginNotice('');
  }
@@ -95,7 +107,19 @@ export default function Desk(){
   finally{setLoading(false);}
  }
  function retryStartup(){setBootError('');setLoading(true);void load();}
+ /** Another tab held this call id first: this tab is a copy (duplicated tab) and its call continues under a new id. */
+ function forkCopies(ids:string[]){
+  const r=callState.forkCopies(storeRef.current,ids);if(!r)return;
+  replaceStore(r.store);
+  notify(r.hadOffers?'Onglet dupliqué : cette copie devient un appel distinct. Présentez de nouveau l’offre avant d’enregistrer un accord.':'Onglet dupliqué : cette copie devient un appel distinct de celui de l’autre onglet.','info');
+ }
+ /** The catalogue changed under the call: an agreement given for another amount is unticked (draft and call set aside). */
+ function keepAgreementHonest(before:Product[],after:Product[]){
+  const s=storeRef.current,draft=callState.afterCatalogueChange(s.draft,before,after),parked=s.parked&&callState.afterCatalogueChange(s.parked,before,after);
+  if(draft||parked)replaceStore({draft:draft??s.draft,parked:parked??s.parked});
+ }
  useEffect(()=>{
+  claims.current=startCallClaims({held:()=>callState.heldCallIds(storeRef.current),onTaken:forkCopies});
   void load();
   // Session expiry keeps the call: the login form says so and the same account gets it back (H1).
   const expired=()=>{if(!stateRef.current)return;putState(null);setLoginNotice(keptNotice('Votre session a expiré.'));};
@@ -113,11 +137,12 @@ export default function Desk(){
   };
   const down=()=>setOffline(true),up=()=>setOffline(false);
   window.addEventListener('desk-session-expired',expired);window.addEventListener('desk-account-changed',changed);window.addEventListener('popstate',onPop);window.addEventListener('offline',down);window.addEventListener('online',up);
-  return()=>{offSession();window.removeEventListener('desk-session-expired',expired);window.removeEventListener('desk-account-changed',changed);window.removeEventListener('popstate',onPop);window.removeEventListener('offline',down);window.removeEventListener('online',up);};
+  return()=>{claims.current?.stop();claims.current=null;offSession();window.removeEventListener('desk-session-expired',expired);window.removeEventListener('desk-account-changed',changed);window.removeEventListener('popstate',onPop);window.removeEventListener('offline',down);window.removeEventListener('online',up);};
  },[]);
  // The call is saved in this tab on every change (A4); an empty call removes the key.
  useEffect(()=>{if(ownerRef.current)callState.saveCallStore(ownerRef.current,store);},[store]);
- const unsaved=!locked&&callState.needsUnloadPrompt(store);
+ // The account-changed lock keeps the warning: the open call is only stored in this tab (« Recharger la page » lets it through).
+ const unsaved=callState.needsUnloadPrompt(store);
  useEffect(()=>{
   if(!unsaved)return;
   const warn=(event:BeforeUnloadEvent)=>{if(allowLeave.current)return;event.preventDefault();event.returnValue='';};
@@ -155,13 +180,18 @@ export default function Desk(){
  }
  function startFresh(next:callState.CallStore){replaceStore(next);resetScreen();callScroll.current=0;if(viewRef.current==='call')window.scrollTo(0,0);else go('call');}
  async function newCall(){if(await guardLeaveCall('new'))startFresh({draft:callState.newDraft(),parked:null});}
+ /** An example sets the call aside: an open one, or a saved one while it may still be voided (« Annuler ce résultat »). */
  async function startExample(kind:callState.ExampleKind){
+  if(busy||presenting)return;
   const parks=callState.leavePlan(storeRef.current,'example')==='park';
   if(!(await guardLeaveCall('example')))return;
-  startFresh(callState.startExample(storeRef.current,kind));
+  const s=storeRef.current,until=callState.voidDeadline(s.draft,stateRef.current?.features,stateRef.current?.void_window_minutes);
+  const next=callState.startExample(s,kind,{keepSaved:until!==null&&Date.now()<until});
+  startFresh(next);
   if(parks)notify('Appel en cours mis de côté. « Quitter l’exemple » le reprend.','info');
+  else if(!s.draft.demo&&next.parked?.saved)notify('Appel enregistré mis de côté. « Quitter l’exemple » le ramène, avec « Annuler ce résultat » tant que c’est possible.','info');
  }
- function exitExample(){const s=storeRef.current;if(!s.draft.demo)return;startFresh(callState.exitExample(s));if(s.parked)notify('Appel en cours repris là où vous l’aviez laissé.','info');}
+ function exitExample(){const s=storeRef.current;if(!s.draft.demo)return;startFresh(callState.exitExample(s));if(s.parked)notify(s.parked.saved?'Appel enregistré repris.':'Appel en cours repris là où vous l’aviez laissé.','info');}
  async function resume(call:any){if(await guardLeaveCall('resume'))startFresh({draft:callState.resumeDraft(call),parked:null});}
 
  // ── The call on screen ────────────────────────────────────────────────────────────────────────────────────
@@ -187,7 +217,10 @@ export default function Desk(){
  const inScope=scopeFilter(scope);
  const visible=products.filter(p=>p.enabled&&inScope(p)&&(category==='Tous'||p.category===category)&&orderIds.has(p.id));
  const nearby=!visible.length&&search.trim()?closestProducts(products.filter(p=>p.enabled),search,6):[];
- const matchingOffer=[...d.presented].reverse().find(p=>orderSignature(proposalOriginals(p))===orderSignature(initial)&&p.offerTotal===offer&&p.tier===tier&&p.delivery===fee&&orderSignature(p.products)===orderSignature(basket));
+ // A server that keeps the presented price ('price-codes') checks a sale against the presented offer: a catalogue reloaded
+ // since then does not change which offer the customer accepted, nor its amount (callState.matchingOffer).
+ const keepsPresentedPrice=!!state?.features?.includes('price-codes');
+ const matchingOffer=callState.matchingOffer(d.presented,{initial,basket,tier,fee,offer},keepsPresentedPrice);
  /** Each copy says what was copied; when the browser refuses, the text opens in a dialog to select by hand (COPY). */
  async function copy(text:string,label:string){try{await navigator.clipboard.writeText(text);notify(label);}catch{setCopyFallback({text,label});}}
  const productName=(id:string)=>(stateRef.current?.products||[]).find(p=>p.id===id)?.short||id;
@@ -200,7 +233,8 @@ export default function Desk(){
   // « Annuler » only ever undoes the latest change: a later one keeps the notice but drops its button.
   if(!r.removed.length||!offerUndo){setRemoval(previousNotice=>previousNotice&&{...previousNotice,undo:null});return;}
   const names=r.removed.map(id=>(stateRef.current?.products||[]).find(p=>p.id===id)?.short||id);
-  setRemoval({id:Date.now(),names,undo:()=>{commit(callState.undoRemoval(current(),previous));setRemoval(null);}});
+  // The notice and its button go away: focus moves to the step heading, never to the page body.
+  setRemoval({id:Date.now(),names,undo:()=>{commit(callState.undoRemoval(current(),previous));setRemoval(null);focusLater('#workflow-heading');}});
  }
  const changeProfile=(patch:Partial<Profile>)=>applyRemoval(current(),callState.changeProfile(current(),patch,products));
  /** A third concern replaces the second: screen readers hear which one (F5). */
@@ -209,16 +243,19 @@ export default function Desk(){
   changeProfile(callState.concernPatch(before,id));
   if(replaced&&current().profile!==before){const label=(c:string)=>concernsFor(products.find(p=>p.id===current().baseIds[0])).find(x=>x[0]===c)?.[1]||c;announce(`« ${label(replaced)} » remplacé par « ${label(id)} ».`);}
  }
- async function changeInitial(ids:string[]){
+ /** Resolves true when the new initial order is applied. */
+ async function changeInitial(ids:string[]):Promise<boolean>{
   const now=current();
-  if(callState.orderLocked(now))return;
-  if(ids.length>32){notify('Trente-deux références maximum par commande initiale.','error');return;}
+  if(callState.orderLocked(now))return false;
+  if(ids.length>32){notify('Trente-deux références maximum par commande initiale.','error');return false;}
   const clears=callState.initialNeedsConfirm(now,ids,products);
   if(clears){
    const next=products.find(p=>p.id===ids[0]);
-   if(!(await confirmAction({title:'Changer de produit guide ?',body:<p>{next?.name} relève de l’univers {DOMAIN_NAMES[domainOf(next)]}, les réponses déjà données concernent l’univers {DOMAIN_NAMES[now.profileDomain]||now.profileDomain}. Les réponses et les produits ajoutés seront effacés.</p>,cancelLabel:'Garder la commande actuelle',confirmLabel:'Changer et effacer les réponses',tone:'danger'}))||current()!==now)return;
+   if(!(await confirmAction({title:'Changer de produit guide ?',body:<p>{next?.name} relève de l’univers {DOMAIN_NAMES[domainOf(next)]}, les réponses déjà données concernent l’univers {DOMAIN_NAMES[now.profileDomain]||now.profileDomain}. Les réponses et les produits ajoutés seront effacés.</p>,cancelLabel:'Garder la commande actuelle',confirmLabel:'Changer et effacer les réponses',tone:'danger'}))||current()!==now)return false;
   }
-  applyRemoval(now,callState.changeInitialOrder(now,ids,products),!clears);
+  const r=callState.changeInitialOrder(now,ids,products);
+  applyRemoval(now,r,!clears);
+  return !!r;
  }
  const changeInitialQuantity=(id:string,next:number)=>commit(callState.changeInitialQuantity(current(),id,next));
  // The search stays after an addition: the list keeps its order and the row says « Ajouté ✓ » (B5).
@@ -242,8 +279,15 @@ export default function Desk(){
   try{
    const fresh=await api() as State;
    if(fresh.user.id!==stateRef.current?.user.id){lock();return;}
-   putState(fresh);
-   setCatalogueNotice({kind,names:kind==='disabled'?callState.basketOf(current(),fresh.products).basket.filter(p=>!p.enabled).map(p=>p.short||p.name):[]});
+   const before=stateRef.current.products;
+   putState(fresh);keepAgreementHonest(before,fresh.products);
+   // Only the lines the call adds can block the offer (recording-8): an initial product stays in the order as it is.
+   const notice:CatalogueNotice={kind,names:kind==='disabled'?callState.disabledAdditions(current(),fresh.products).map(p=>p.short||p.name):[]};
+   setCatalogueNotice(notice);
+   // The notice may sit above the screen: the same words come as a message, and focus moves to the notice.
+   const now=current(),text=catalogueNoticeText(notice,callState.offerOf(now,fresh.products)??0,now.delivery===''?null:Number(now.delivery));
+   push({kind:'info',title:text.title,detail:text.detail});
+   requestAnimationFrame(()=>reveal(document.getElementById('call-catalogue-notice')));
   }catch(error){notify('Le catalogue a changé et n’a pas pu être rechargé : '+(error as Error).message,'error');}
  }
  async function callError(e:unknown){
@@ -264,8 +308,9 @@ export default function Desk(){
     let key=now.presentationKeys[signature];if(!key){key=crypto.randomUUID();commit({...current(),presentationKeys:{...current().presentationKeys,[signature]:key}});}
     const data=await api({action:'present-offer',id:key,callId:now.callId,baseId,baseIds:now.baseIds,baseQuantities:now.baseQuantities,quantities:selectedQuantities,productIds:basket.map(p=>p.id),upgradeId:now.upgradeId||undefined,tier,delivery:fee,agreedTotal:offer,verifiedProducts:now.verifiedProducts});proposal=data.proposal;
    }
-   const latest=current();if(latest.callId!==now.callId)return;
-   commit({...latest,presented:[...latest.presented,proposal]});setCatalogueNotice(null);setRemoval(null);
+   // The answer lands on the call it was sent for, even if an example has set it aside since.
+   const store=callState.applyToCall(storeRef.current,now.callId,call=>({...call,presented:[...call.presented,proposal]}));if(!store)return;
+   replaceStore(store);if(current().callId===now.callId){setCatalogueNotice(null);setRemoval(null);}
    notify(now.demo?'Exemple : offre simulée, aucune donnée enregistrée.':'Offre présentée enregistrée avec son prix et sa composition.',now.demo?'info':'success');
   }catch(e){await callError(e);}finally{setPresenting(false);}
  }
@@ -277,26 +322,37 @@ export default function Desk(){
    ?{title:'Cliente non jointe ?',body:<p>L’appel sera enregistré comme cliente non jointe (« Sans réponse » dans le pilotage).{after}</p>,cancelLabel:'Revenir à l’appel',confirmLabel:'Enregistrer : cliente non jointe',tone:'primary'}
    :{title:'Conserver la commande initiale ?',body:<p>L’appel sera enregistré sans ajout : la cliente garde sa commande initiale.{after}</p>,cancelLabel:'Revenir à l’appel',confirmLabel:'Enregistrer sans ajout',tone:'primary'};
  }
- async function record(outcome:string){
-  const now=current();
+ /** `callback`: the targeted stop's « Programmer un rappel », recorded as « review » with its callback date. */
+ async function record(outcome:string,{callback=false}:{callback?:boolean}={}){
+  const now=current(),withCallback=outcome==='callback'||callback;
   if(!base)return;if(now.demo){notify('Exemple : aucun résultat n’est enregistré.','info');return;}if(now.saved||busy)return;
   const won=['duo','trio','routine'].includes(outcome);
   if(blocked&&won){notify('Vérification ciblée nécessaire.','error');return;}
   if(won&&offerIssue){notify(offerIssue,'error');return;}
   if(won&&!matchingOffer){notify('Marquez d’abord cette offre exacte comme présentée.','error');return;}
   if(outcome==='refused'&&!now.presented.length){notify('Pour mesurer un refus d’ajout, marquez l’offre réellement présentée. Sinon, conservez la commande initiale.','error');return;}
-  if(outcome==='callback'&&!now.callbackAt){notify('Renseignez la date et l’heure du rappel.','error');return;}
+  if(withCallback&&!now.callbackAt){notify('Renseignez la date et l’heure du rappel.','error');return;}
   if(callState.CONFIRMED_OUTCOMES.includes(outcome)&&(!(await confirmAction(outcomeConfirm(outcome)))||current()!==now))return;
   setBusy(true);try{
-   const result=await api({action:'save-call',id:now.callId,baseId,baseIds:now.baseIds,baseQuantities:now.baseQuantities,quantities:selectedQuantities,productIds:basket.map(p=>p.id),upgradeId:now.upgradeId||undefined,agreedTotal:offer,outcome,tier:altered?tier:'catalogue',delivery:fee,consent:now.consent,checked:now.checked,refusal:now.refusal,verifiedProducts:now.verifiedProducts,
-    meta:{version:3,source:'manual',customerStage:now.customerStage,orderRef:now.orderRef,startedAt:now.startedAt||new Date().toISOString(),eligible:!blocked&&(altered||candidates.length>0||upgrades.length>0||now.presented.length>0),acceptedProposalId:won?matchingOffer!.id:undefined,objections:now.handledObjections,callbackAt:outcome==='callback'?new Date(now.callbackAt+':00+01:00').toISOString():undefined,linkedCallId:now.linkedCallId||undefined}});
-   // The screen shows what the server recorded, even if a field was touched during the request.
-   if(current().callId===now.callId)commit(callState.markSaved(now,outcome,new Date().toISOString()));
-   setRemoval(null);setCatalogueNotice(null);setProgressEpoch(x=>x+1);
+   // An accepted sale carries the presented amount (equal to the current one unless the server keeps the presented price).
+   const result=await api({action:'save-call',id:now.callId,baseId,baseIds:now.baseIds,baseQuantities:now.baseQuantities,quantities:selectedQuantities,productIds:basket.map(p=>p.id),upgradeId:now.upgradeId||undefined,agreedTotal:won?matchingOffer!.offerTotal:offer,outcome,tier:altered?tier:'catalogue',delivery:fee,consent:now.consent,checked:now.checked,refusal:now.refusal,verifiedProducts:now.verifiedProducts,
+    meta:{version:3,source:'manual',customerStage:now.customerStage,orderRef:now.orderRef,startedAt:now.startedAt||new Date().toISOString(),eligible:!blocked&&(altered||candidates.length>0||upgrades.length>0||now.presented.length>0),acceptedProposalId:won?matchingOffer!.id:undefined,objections:now.handledObjections,callbackAt:withCallback?new Date(now.callbackAt+':00+01:00').toISOString():undefined,linkedCallId:now.linkedCallId||undefined}});
+   // The screen shows what the server recorded, even if a field was touched during the request: for a call id already
+   // recorded (a retry, another tab), the stored outcome, never the button just clicked; a date not sent is not kept.
+   const recorded=callState.recordedOutcome(outcome,result);
+   const keptCallback=recorded.duplicate?recorded.outcome==='callback':withCallback;
+   const store=callState.applyToCall(storeRef.current,now.callId,()=>callState.markSaved({...now,callbackAt:keptCallback?now.callbackAt:''},recorded.outcome,new Date().toISOString()));
+   const onScreen=current().callId===now.callId;
+   if(store)replaceStore(store);
+   if(onScreen){setRemoval(null);setCatalogueNotice(null);}
+   setProgressEpoch(x=>x+1);
    // A follow-up that reached the customer closes the reminder it came from (M2): say so, and let the adviser reopen it.
    const closed=typeof result?.closedReminderId==='string'?result.closedReminderId:'';
-   if(closed)push({kind:'success',title:'Résultat enregistré. Le rappel d’origine est marqué traité.',action:state?.features?.includes('reopen-reminder')?{label:'Rouvrir le rappel',run:()=>{void api({action:'reopen-reminder',id:closed}).then(()=>notify('Rappel rouvert : il revient dans les rappels à traiter.')).catch(e=>notify((e as Error).message,'error'));}}:undefined});
+   if(recorded.duplicate)notify(recorded.outcome?`Cet appel était déjà enregistré : ${callState.outcomeLabel(recorded.outcome)}.`:'Cet appel était déjà enregistré.','info');
+   else if(closed)push({kind:'success',title:'Résultat enregistré. Le rappel d’origine est marqué traité.',action:state?.features?.includes('reopen-reminder')?{label:'Rouvrir le rappel',run:()=>{void api({action:'reopen-reminder',id:closed}).then(()=>notify('Rappel rouvert : il revient dans les rappels à traiter.')).catch(e=>notify((e as Error).message,'error'));}}:undefined});
    else notify('Résultat enregistré dans le pilotage interne. Aucun système externe modifié.');
+   // The saved panel comes into view with focus on its title, wherever the button was (SavedPanel).
+   if(onScreen&&store)requestAnimationFrame(()=>{const title=document.getElementById('call-saved-title');reveal(title?.closest<HTMLElement>('.call-saved'),'center',title);});
   }catch(e){await callError(e);}finally{setBusy(false);}
  }
  /** Voids the saved outcome (H5), then reopens the same call under a new id linked to the voided one. Returns an error text or ''. */
@@ -306,10 +362,12 @@ export default function Desk(){
   catch(e){const error=e as RequestError;if(error.code!=='already-voided')return error.message;}
   if(current().callId===now.callId)commit(callState.reopenAfterVoid(current()));
   setProgressEpoch(x=>x+1);notify('Résultat annulé. L’appel est rouvert : enregistrez le bon résultat.');
+  // The saved panel and its button are gone: focus moves to the close-out (step 3) or to the step heading.
+  requestAnimationFrame(()=>(document.getElementById('call-close-title')??document.getElementById('workflow-heading'))?.focus());
   return '';
  }
 
- if(locked)return <AccountChangedScreen/>;
+ if(locked)return <AccountChangedScreen onReload={()=>{allowLeave.current=true;window.location.reload();}}/>;
  if(loading)return <div className="shell-loading" role="status"><div className="shell-loading__inner"><Wordmark size="lg"/><span className="shell-loading__bar" aria-hidden="true"/><p>Ouverture de votre espace conseil…</p></div></div>;
  if(!state)return bootError?<ConnectionScreen message={bootError} retry={retryStartup}/>:<Login onSuccess={next=>acceptState(next,true)} notice={loginNotice}/>;
  const titles=TITLES;
@@ -317,16 +375,16 @@ export default function Desk(){
  const call:CallModel={
   step:d.step,toStep,demo:d.demo,saved:d.saved,busy,presenting,
   savedOutcome:d.savedOutcome,savedAt:d.savedAt,canVoid:deadline!==null&&clock<deadline,voidCall,
-  newCall:()=>void newCall(),startExample:kind=>void startExample(kind),exitExample,hasParkedCall:!!store.parked,
+  newCall:()=>void newCall(),startExample:kind=>void startExample(kind),exitExample,hasParkedCall:!!store.parked,parkedSaved:!!store.parked?.saved,
   orderRef:d.orderRef,setOrderRef:edit('orderRef'),customerStage:d.customerStage,setCustomerStage:edit('customerStage'),linkedCallId:d.linkedCallId,
   products,visible,nearby,search,setSearch,scope,setScope,category,setCategory,
-  baseId,baseIds:d.baseIds,base,initial,baseTotal,orderLocked:callState.orderLocked(d),changeInitial:ids=>void changeInitial(ids),changeInitialQuantity,duplicate,
+  baseId,baseIds:d.baseIds,base,initial,baseTotal,orderLocked:callState.orderLocked(d),changeInitial,changeInitialQuantity,duplicate,
   domain,profile,changeProfile,toggleConcern,blocked,stop,notes,missing,
   upgrades,heldPacks,upgrade,upgradeId:d.upgradeId,chooseUpgrade,clearUpgrade,adds:d.adds,requestedIds:d.requestedIds,
   verifiedProducts,toggleVerified,setDetail,
   candidates,requests,requestApproximate,requestSearch,setRequestSearch,confirmId,setConfirmId,addComplement,removeComplement,changeQuantity,
   basket,count,total,altered,tier,chooseTier:(t:Tier)=>commit(callState.chooseTier(current(),t)),offer,offerIssue,delivery:d.delivery,changeDelivery:value=>commit(callState.changeDelivery(current(),value)),fee,copy,copyFallback,closeCopyFallback:()=>setCopyFallback(null),
-  presented:d.presented,matchingOffer,presentOffer,handledObjections:d.handledObjections,toggleObjection:key=>commit(callState.toggleObjection(current(),key)),
+  presented:d.presented,matchingOffer,keepsPresentedPrice,presentOffer,handledObjections:d.handledObjections,toggleObjection:key=>commit(callState.toggleObjection(current(),key)),
   consent:d.consent,setConsent:edit('consent'),checked:d.checked,setChecked:edit('checked'),callbackAt:d.callbackAt,setCallbackAt:edit('callbackAt'),refusal:d.refusal,setRefusal:edit('refusal'),record,
   removal,dismissRemoval:()=>setRemoval(null),catalogueNotice,dismissCatalogueNotice:()=>setCatalogueNotice(null)};
  // « Voir les appels » opens the journal filtered on the adviser; the filter is dropped once Pilotage has applied it (F3).

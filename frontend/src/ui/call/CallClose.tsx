@@ -1,4 +1,5 @@
 import {useId} from 'react';
+import {money} from '@touche/domain';
 import {Button} from '../shared/Button';
 import {DisabledReason} from '../shared/DisabledReason';
 import {Icon} from '../shared/Icon';
@@ -6,8 +7,9 @@ import {useCall} from './callModel';
 
 /** Step 03 · closing the call: accepted routine, initial order kept, callback, refusal. « Conserver » and « Cliente non
  *  jointe » ask first (A2); the saved outcome shows in SavedPanel at every step. The accepted sale and the refusal stay
- *  focusable while they wait for something, and say what is missing (B3, M5, REFUSE). */
-export function CallClose(){const {demo,saved,busy,count,altered,presented,matchingOffer,offerIssue,consent,setConsent,checked,setChecked,callbackAt,setCallbackAt,refusal,setRefusal,record}=useCall();
+ *  focusable while they wait for something, and say what is missing (B3, M5, REFUSE). When the server keeps the presented
+ *  price, the accepted sale says the amount it records: the presented one, even if the catalogue changed since. */
+export function CallClose(){const {demo,saved,busy,count,altered,presented,matchingOffer,keepsPresentedPrice,offer,offerIssue,consent,setConsent,checked,setChecked,callbackAt,setCallbackAt,refusal,setRefusal,record}=useCall();
  const callbackId=useId(),refusalId=useId(),refusalHelpId=useId(),acceptReasonId=useId();
  const acceptMissing=!matchingOffer||!checked||!consent||!!offerIssue,acceptable=!saved&&!demo;
  const offered=presented.length>0,refusalBlocked=!offered||!refusal;
@@ -18,6 +20,7 @@ export function CallClose(){const {demo,saved,busy,count,altered,presented,match
     <Button variant="primary" size="lg" className="call-close__accept-btn" disabled={!acceptable||busy} blocked={acceptable&&acceptMissing} reasonId={acceptReasonId} onClick={()=>void record(count===2?'duo':count===3?'trio':'routine')}>{saved?'Résultat enregistré':`Enregistrer ${count===2?'le duo accepté':count===3?'le trio accepté':'la routine acceptée'}`}<Icon name="check"/></Button>
     {acceptable&&acceptMissing&&<DisabledReason id={acceptReasonId} title="Pour enregistrer l’accord :" items={offerIssue?[{label:offerIssue,done:false}]:[{label:'Présentez cette offre',done:!!matchingOffer},{label:'Cochez la compatibilité',done:checked},{label:'Cochez l’accord de la cliente',done:consent}]}/>}
    </div>
+   {acceptable&&keepsPresentedPrice&&matchingOffer&&<p className="call-close__price">Accord enregistré au prix présenté : <b className="num">{money(matchingOffer.offerTotal)}</b>{matchingOffer.offerTotal!==offer&&<>. Le catalogue indique maintenant <span className="num">{money(offer)}</span> : le prix annoncé à la cliente reste celui de l’offre présentée</>}.</p>}
   </div>}
   <div className="call-close__outcomes"><button type="button" className="btn btn--secondary" disabled={saved||busy||demo} onClick={()=>record('initial')}>Conserver la commande initiale</button><button type="button" className="btn btn--ghost" disabled={saved||busy||demo} onClick={()=>record('noanswer')}>Cliente non jointe</button></div>
   <div className="call-close__row"><div className="field"><label className="field__label" htmlFor={callbackId}>Programmer un rappel</label><input id={callbackId} type="datetime-local" value={callbackAt} onChange={e=>setCallbackAt(e.target.value)} disabled={saved}/><p className="field__help">Heure d’Alger</p></div><button type="button" className="btn btn--secondary" disabled={saved||busy||demo||!callbackAt} onClick={()=>record('callback')}>Enregistrer le rappel</button></div>

@@ -11,7 +11,9 @@ export function ConnectionScreen({message,retry}:{message:string;retry:()=>void}
  return <main className="shell-error"><div className="shell-error__card"><Wordmark size="lg"/><h1>Connexion impossible</h1><p role="alert">{message}</p><button type="button" className="btn btn--primary" onClick={retry}>Réessayer</button></div></main>;
 }
 
-/** Another account signed in from another tab (X1): this tab sends nothing more; its call stays in this tab for its owner. */
-export function AccountChangedScreen(){
- return <main className="shell-error"><div className="shell-error__card"><Wordmark size="lg"/><h1>Ce poste est maintenant connecté avec un autre compte</h1><p>Un autre compte s’est connecté dans un autre onglet. Rien ne sera plus envoyé depuis cet onglet avec l’ancien compte. Un appel en cours reste gardé dans cet onglet et reprendra quand son compte se reconnectera ici.</p><button type="button" className="btn btn--primary" onClick={()=>window.location.reload()}>Recharger la page</button></div></main>;
+/** Another account signed in from another tab (X1): this tab sends nothing more; its call stays in this tab for its owner.
+ *  While an open call is kept here the browser still asks before the tab closes; « Recharger la page » is a chosen exit
+ *  (`onReload` lets it through), the call staying stored for its account. */
+export function AccountChangedScreen({onReload=()=>window.location.reload()}:{onReload?:()=>void}={}){
+ return <main className="shell-error"><div className="shell-error__card"><Wordmark size="lg"/><h1>Ce poste est maintenant connecté avec un autre compte</h1><p>Un autre compte s’est connecté dans un autre onglet. Rien ne sera plus envoyé depuis cet onglet avec l’ancien compte. Un appel en cours reste gardé dans cet onglet et reprendra quand son compte se reconnectera ici.</p><button type="button" className="btn btn--primary" onClick={onReload}>Recharger la page</button></div></main>;
 }
