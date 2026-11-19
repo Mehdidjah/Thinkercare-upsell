@@ -32,6 +32,15 @@ test('Apports & primes CSV export names each account role so CM and Call center 
   assert.ok(exportTable.includes("'Compte','Rôle','Équipe'"), 'CSV header has a Rôle column right after Compte');
   assert.ok(exportTable.includes('p.label,accountRoleLabel(p.role),p.team'), 'each CSV row writes the role label (Call center, CM, Manager, Direction)');
 });
+test('Closing the call offers a way back to the answers, and going back keeps the routine', () => {
+  // The call-close section lives in call/CallClose.tsx since the call screen was split into components.
+  const callClose = ui('call/CallClose.tsx');
+  const close = callClose.slice(callClose.indexOf('className="card call-close"'));
+  const backButton = close.slice(0, close.indexOf('call-close__outcomes'));
+  assert.ok(/!saved&&<button[^>]*className="link-btn"[^>]*disabled=\{busy\}[^>]*onClick=\{\(\)=>toStep\(1\)\}[^>]*><Icon name="back"[^>]*\/>Besoin de la cliente<\/button>/.test(backButton), 'call-close shows a "← Besoin de la cliente" back button while the call is not saved');
+  assert.ok(/const changeProfile=\(patch:Partial<Profile>\)=>\{if\(!profileChanges\(profile,patch\)\)return;/.test(app), 'changeProfile ignores taps that do not change an answer, so the added products and ticks survive going back');
+  assert.ok(/import \{[^}]*\bprofileChanges\b[^}]*\} from '@touche\/domain'/.test(app), 'profileChanges imported from @touche/domain');
+});
 test('Account form offers every member role from MEMBER_ROLES', () => {
   const accounts = readFileSync(new URL('../src/ui/AccountManagement.tsx', import.meta.url), 'utf8');
   assert.ok(/import \{[^}]*\bMEMBER_ROLES\b[^}]*\} from '@touche\/domain'/.test(accounts), 'MEMBER_ROLES imported from @touche/domain');

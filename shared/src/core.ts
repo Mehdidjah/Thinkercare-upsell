@@ -17,6 +17,8 @@ export const BODY_ROUTINES=[['Nettoyant corps','Nettoyant du corps'],['Soin cibl
 export const SIGNALS=[['none','Aucun point particulier'],['irritation','Irritation active / brûlure'],['urgent','Gonflement important / réaction sévère'],['allergy','Allergie connue'],['treatment','Traitement dermatologique en cours'],['pregnancy','Grossesse / allaitement'],['minor','Produit destiné à un mineur'],['unknown','Information à préciser']];
 export const ALLERGENS=[['fragrance','Parfum'],['essential','Huiles essentielles'],['mi','MI / MCI (conservateurs)'],['nuts','Noisette / amande / sésame'],['salicylates','Salicylates'],['unknown','Autre / non identifié']];
 export const EMPTY_PROFILE:Profile={concerns:[],skin:'',sensitive:'',routine:[],routineKnown:false,safety:[],severity:'',marks:'',redState:'',hairPattern:'',allergens:[],age:''};
+// True only when the patch sets at least one answer to a different value (lists compare by content and order).
+export const profileChanges=(p:Profile,patch:Partial<Profile>):boolean=>Object.entries(patch).some(([k,v])=>JSON.stringify(p[k as keyof Profile])!==JSON.stringify(v));
 export const money=(n:number)=>new Intl.NumberFormat('fr-DZ',{maximumFractionDigits:0}).format(n)+' DA';
 export const domainOf=(p?:Product)=>p?.domain||'face';
 export const concernsFor=(p?:Product)=>domainOf(p)==='hair'?HAIR_CONCERNS:domainOf(p)==='body'?BODY_CONCERNS:FACE_CONCERNS;

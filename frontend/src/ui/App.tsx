@@ -1,5 +1,5 @@
 import {useState,useEffect,useRef,type ReactNode} from 'react';
-import {money,quantityOf,itemsTotal,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,offerProblem,packDuplicate,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,type Profile,type Product,type Tier} from '@touche/domain';
+import {profileChanges,money,quantityOf,itemsTotal,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,offerProblem,packDuplicate,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,type Profile,type Product,type Tier} from '@touche/domain';
 import {reportCache} from '../data/report-cache';
 import {setExpectedUser,lockRequests,type RequestError} from '../data/api';
 import {announceSession,onSessionMessage,sessionReaction} from '../data/session-channel';
@@ -236,7 +236,8 @@ export default function Desk(){
   // The notice and its button go away: focus moves to the step heading, never to the page body.
   setRemoval({id:Date.now(),names,undo:()=>{commit(callState.undoRemoval(current(),previous));setRemoval(null);focusLater('#workflow-heading');}});
  }
- const changeProfile=(patch:Partial<Profile>)=>applyRemoval(current(),callState.changeProfile(current(),patch,products));
+ // Going back from « Clôturer l’appel » and re-tapping an unchanged answer keeps the routine (callState also drops only invalid additions).
+ const changeProfile=(patch:Partial<Profile>)=>{if(!profileChanges(profile,patch))return;applyRemoval(current(),callState.changeProfile(current(),patch,products));};
  /** A third concern replaces the second: screen readers hear which one (F5). */
  function toggleConcern(id:string){
   const before=current().profile,replaced=callState.replacedConcern(before,id);
