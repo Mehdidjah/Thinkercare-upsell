@@ -91,6 +91,6 @@ test('every Pages loader forwards the background marker through reportRequest', 
   }
   const signal = new AbortController().signal;
   await reportRequest('?action=reminders', signal, { background: true });
-  // Until requestJson takes its 4th parameter (integrator), the wrapper calls it as before.
-  expect(requestJson).toHaveBeenCalledWith('?action=reminders', undefined, signal);
+  // The wrapper forwards the marker; requestJson sends X-Desk-Background for background loads.
+  expect(requestJson).toHaveBeenCalledWith('?action=reminders', undefined, signal, { background: true });
 });

@@ -9,9 +9,7 @@ export type ReportLoader<T> = (signal: AbortSignal, options: LoadOptions) => Pro
 
 /** GET one report from a live-report loader, forwarding the background marker (every Pages loader goes through here). */
 export function reportRequest(query: string, signal: AbortSignal, options: LoadOptions): Promise<any> {
-  // integrator: pass o to requestJson once its 4th parameter exists: return requestJson(query, undefined, signal, options);
-  void options;
-  return requestJson(query, undefined, signal);
+  return requestJson(query, undefined, signal, options);
 }
 
 /** The inputs that started a load. */
