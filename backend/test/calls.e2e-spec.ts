@@ -1322,7 +1322,7 @@ describe('quantities in original orders and accepted offers', () => {
 
   it('accepts one more unit of the ordered product at the usual offer and counts it for its adviser (UNIT)', async () => {
     // The desk's « + Une unité » on the initial line: Anti-Acné × 1 ordered, × 2 offered at the first offer.
-    const agreedTotal = basketOffer([{ ...fixture('antiacne'), quantity: 2 } as unknown as OrderItem], 'duo');
+    const agreedTotal = basketOffer([{ ...fixture('antiacne'), quantity: 2 } as unknown as OrderItem], 'duo', catalogue);
     expect(agreedTotal).toBe(3300); // priceOffer(3 600 DA, duo, 2 units)
     const selection = { baseId: 'antiacne', baseIds: ['antiacne'], productIds: ['antiacne'], baseQuantities: { antiacne: 1 }, quantities: { antiacne: 2 }, tier: 'duo', agreedTotal };
     const offer = present(selection);
