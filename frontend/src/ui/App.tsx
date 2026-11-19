@@ -1,10 +1,12 @@
 import {useState,useEffect,useRef} from 'react';
-import {quantityOf,itemsTotal,orderSignature,sameOrder,MAX_ITEM_QUANTITY,basketProblem,type OrderItem,canManageWorkspace,type Proposal,type ItemSnapshot,EMPTY_PROFILE,missingAnswers,reviewReason,recommend,manualAddCheck,orderOffer,proposalOriginals,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,type Profile,type Product} from '@touche/domain';
+import {money,quantityOf,itemsTotal,orderSignature,sameOrder,MAX_ITEM_QUANTITY,basketProblem,type OrderItem,canManageWorkspace,type Proposal,type ItemSnapshot,EMPTY_PROFILE,missingAnswers,reviewReason,recommend,manualAddCheck,orderOffer,proposalOriginals,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,type Profile,type Product} from '@touche/domain';
 import {reportCache} from '../data/report-cache';
 import Analytics from './Analytics';
 import {PersonalProgress,ContributionDashboard} from './Commission';
 import {ProductModal} from './shared/ProductModal';
 import {Wordmark} from './shared/Wordmark';
+import {useConfirm} from './shared/Confirm';
+import {useNotify,type NoteKind} from './shell/Notifications';
 import {normalize} from './shared/catalogue';
 import {api} from './shared/api';
 import {type State} from './shared/types';
@@ -19,7 +21,7 @@ import {CallModelContext,type CallModel} from './call/callModel';
 import {CallView} from './call/CallView';
 
 export default function Desk(){
- const [state,setState]=useState<State|null>(null),[loading,setLoading]=useState(true),[fatal,setFatal]=useState(''),[view,setView]=useState('call'),[toast,setToast]=useState(''),[signingOut,setSigningOut]=useState(false);
+ const [state,setState]=useState<State|null>(null),[loading,setLoading]=useState(true),[fatal,setFatal]=useState(''),[view,setView]=useState('call'),[signingOut,setSigningOut]=useState(false);
  const [upgradeId,setUpgradeId]=useState(''),[scope,setScope]=useState('Tous');
  const [progressEpoch,setProgressEpoch]=useState(0),[focusOperator,setFocusOperator]=useState('');
  const presentationKeys=useRef<Record<string,string>>({});
@@ -29,16 +31,18 @@ export default function Desk(){
  const [requestedIds,setRequestedIds]=useState<string[]>([]),[confirmId,setConfirmId]=useState(''),[requestSearch,setRequestSearch]=useState('');
  function acceptState(next:State){reportCache.setUser(next.user.id);setState(next);setFatal('');}
  async function load(){try{acceptState(await api());setFatal('');}catch(e){if((e as any).status===401)setState(null);else setFatal((e as Error).message);}finally{setLoading(false);}}
- useEffect(()=>{void load();const expired=()=>{setState(null);reset();};window.addEventListener('desk-session-expired',expired);return()=>window.removeEventListener('desk-session-expired',expired);},[]);useEffect(()=>{const listener=(event:KeyboardEvent)=>{if(event.key==='Escape')setDetail(null);};window.addEventListener('keydown',listener);return()=>window.removeEventListener('keydown',listener);},[]);useEffect(()=>{if(toast){const t=setTimeout(()=>setToast(''),4200);return()=>clearTimeout(t);}},[toast]);
+ useEffect(()=>{void load();const expired=()=>{setState(null);reset();};window.addEventListener('desk-session-expired',expired);return()=>window.removeEventListener('desk-session-expired',expired);},[]);
  async function signOut(){
   if(signingOut)return;
   setSigningOut(true);
   try{await api({action:'logout'});}
-  catch(error){if((error as {status?:number}).status!==401){notify('Déconnexion impossible. Vérifiez votre connexion et réessayez.');return;}}
+  catch(error){if((error as {status?:number}).status!==401){notify('Déconnexion impossible. Vérifiez votre connexion et réessayez.','error');return;}}
   finally{setSigningOut(false);}
-  setState(null);reset();setDetail(null);setToast('');setFatal('');setFocusOperator('');
+  setState(null);reset();setDetail(null);setFatal('');setFocusOperator('');
  }
- function notify(s:string){setToast(s);}
+ const {notify:push}=useNotify(),confirmAction=useConfirm();
+ /** Results not tied to a control. Errors stay on screen (role="alert") until closed. */
+ function notify(title:string,kind:NoteKind='success'){push({kind,title});}
  function clearRequests(){setRequestedIds([]);setConfirmId('');setRequestSearch('');setQuantities({});}
  function addComplement(id:string,verify:string[],requested:boolean){if(saved)return;if(verify.length)setVerifiedProducts(a=>[...new Set([...a,...verify])]);setAdds(a=>a.includes(id)?a:[...a,id]);setConsent(false);setChecked(false);if(requested)setRequestedIds(a=>a.includes(id)?a:[...a,id]);setConfirmId('');setRequestSearch('');}
  function reset(example=false,hair=false){
@@ -49,7 +53,7 @@ export default function Desk(){
  }
  function changeInitial(ids:string[]){
   if(saved||presented.length)return;
-  if(ids.length>32){notify('Trente-deux références maximum par commande initiale.');return;}
+  if(ids.length>32){notify('Trente-deux références maximum par commande initiale.','error');return;}
   setBaseQuantities(previous=>Object.fromEntries(ids.map(id=>[id,previous[id]||1])));setBaseIds(ids);setUpgradeId('');setProfile({...EMPTY_PROFILE});setVerifiedProducts([]);setHandledObjections([]);setStartedAt(new Date().toISOString());setAdds([]);clearRequests();setConsent(false);setChecked(false);setTier('duo');setCallId(crypto.randomUUID());
  }
  const baseId=baseIds[0]||'';
@@ -68,8 +72,8 @@ export default function Desk(){
   const item=basket.find(p=>p.id===id);if(!item)return false;
   const minimum=id===upgradeId?quantityOf(initial[0]):quantityOf(initial.find(p=>p.id===id)||{quantity:1});
   if(next<minimum)return false;
-  if(next>quantityOf(item)&&(!item.recommendable||item.verificationRequired)&&!verifiedProducts.includes(id)){notify('Confirmez la vérification de cette référence avant d’augmenter la quantité.');return false;}
-  const problem=basketProblem(basket.map(p=>p.id===id?{...p,quantity:next}:p),products);if(problem&&next>quantityOf(item)){notify(problem);return false;}
+  if(next>quantityOf(item)&&(!item.recommendable||item.verificationRequired)&&!verifiedProducts.includes(id)){notify('Confirmez la vérification de cette référence avant d’augmenter la quantité.','error');return false;}
+  const problem=basketProblem(basket.map(p=>p.id===id?{...p,quantity:next}:p),products);if(problem&&next>quantityOf(item)){notify(problem,'error');return false;}
   setQuantities(previous=>({...previous,[id]:next}));setConsent(false);setChecked(false);return true;
  }
  function removeComplement(id:string){if(saved||busy||presenting)return;setAdds(a=>a.filter(x=>x!==id));setQuantities(previous=>{const next={...previous};delete next[id];return next});setRequestedIds(a=>a.filter(x=>x!==id));setConsent(false);setChecked(false);}
@@ -79,7 +83,7 @@ export default function Desk(){
  const requests=requestable.sort((a,b)=>(suggestionRanks.get(a.product.id)??candidates.length)-(suggestionRanks.get(b.product.id)??candidates.length)||Number(domainOf(b.product)===domain)-Number(domainOf(a.product)===domain));
  const inScope=(p:Product)=>scope==='Tous'||(scope==='Packs'?isPack(p):domainOf(p)===({Visage:'face',Cheveux:'hair',Corps:'body'} as Record<string,string>)[scope]);
  const visible=products.filter(p=>p.enabled&&inScope(p)&&(category==='Tous'||p.category===category)&&normalize(p.name+' '+p.description).includes(normalize(search)));
- async function copy(text:string){try{await navigator.clipboard.writeText(text);notify('Copié.');}catch{notify('Copie indisponible : sélectionnez le texte affiché.');}}
+ async function copy(text:string){try{await navigator.clipboard.writeText(text);notify('Récapitulatif copié.');}catch{notify('Copie indisponible : sélectionnez le texte affiché.','error');}}
  const matchingOffer=[...presented].reverse().find(p=>orderSignature(proposalOriginals(p))===orderSignature(initial)&&p.offerTotal===offer&&p.tier===tier&&p.delivery===fee&&orderSignature(p.products)===orderSignature(basket));
  async function presentOffer(){
   if(!base||!altered||blocked||saved)return;
@@ -87,23 +91,29 @@ export default function Desk(){
    let proposal:Proposal;
    if(demo){const snap=(p:OrderItem):ItemSnapshot=>({id:p.id,name:p.name,price:p.price,quantity:quantityOf(p),components:isPack(p)?expand(p,products).map(x=>({id:x.id,name:x.name,price:x.price})):[]});proposal={id:crypto.randomUUID(),call_id:id,user_id:state!.user.id,created_at:new Date().toISOString(),base:snap(initial[0]),originals:initial.map(snap),products:basket.map(snap),catalogueTotal:total,offerTotal:offer,extra:offer-baseTotal,tier,delivery:fee,version:3};}
    else {const signature=JSON.stringify([id,orderSignature(initial),orderSignature(basket),tier,fee,offer]);const proposalId=presentationKeys.current[signature]||(presentationKeys.current[signature]=crypto.randomUUID());const data=await api({action:'present-offer',id:proposalId,callId:id,baseId,baseIds,baseQuantities,quantities:selectedQuantities,productIds:basket.map(p=>p.id),upgradeId:upgradeId||undefined,tier,delivery:fee,agreedTotal:offer,verifiedProducts});proposal=data.proposal;}
-   setPresented(p=>[...p,proposal]);notify(demo?'Exemple : offre simulée, aucune donnée enregistrée.':'Offre présentée enregistrée avec son prix et sa composition.');
-  }catch(e){notify((e as Error).message)}finally{setPresenting(false)}
+   setPresented(p=>[...p,proposal]);notify(demo?'Exemple : offre simulée, aucune donnée enregistrée.':'Offre présentée enregistrée avec son prix et sa composition.',demo?'info':'success');
+  }catch(e){notify((e as Error).message,'error')}finally{setPresenting(false)}
  }
  async function record(outcome:string){
-  if(!base)return;if(demo){notify('Exemple : aucun résultat n’est enregistré.');return;}if(saved)return;
+  if(!base)return;if(demo){notify('Exemple : aucun résultat n’est enregistré.','info');return;}if(saved)return;
   const won=['duo','trio','routine'].includes(outcome);
-  if(blocked&&won){notify('Vérification ciblée nécessaire.');return;}
-  if(won&&!matchingOffer){notify('Marquez d’abord cette offre exacte comme présentée.');return;}
-  if(outcome==='refused'&&!presented.length){notify('Pour mesurer un refus d’ajout, marquez l’offre réellement présentée. Sinon, conservez la commande initiale.');return;}
-  if(outcome==='callback'&&!callbackAt){notify('Renseignez la date et l’heure du rappel.');return;}
+  if(blocked&&won){notify('Vérification ciblée nécessaire.','error');return;}
+  if(won&&!matchingOffer){notify('Marquez d’abord cette offre exacte comme présentée.','error');return;}
+  if(outcome==='refused'&&!presented.length){notify('Pour mesurer un refus d’ajout, marquez l’offre réellement présentée. Sinon, conservez la commande initiale.','error');return;}
+  if(outcome==='callback'&&!callbackAt){notify('Renseignez la date et l’heure du rappel.','error');return;}
   setBusy(true);try{const id=callId||crypto.randomUUID();if(!callId)setCallId(id);
    await api({action:'save-call',id,baseId,baseIds,baseQuantities,quantities:selectedQuantities,productIds:basket.map(p=>p.id),upgradeId:upgradeId||undefined,agreedTotal:offer,outcome,tier:altered?tier:'catalogue',delivery:fee,consent,checked,refusal,verifiedProducts,
     meta:{version:3,source:'manual',customerStage,orderRef,startedAt:startedAt||new Date().toISOString(),eligible:!blocked&&(altered||candidates.length>0||upgrades.length>0||presented.length>0),acceptedProposalId:won?matchingOffer!.id:undefined,objections:handledObjections,callbackAt:outcome==='callback'?new Date(callbackAt+':00+01:00').toISOString():undefined,linkedCallId:linkedCallId||undefined}});
    setSaved(true);setProgressEpoch(x=>x+1);notify('Résultat enregistré dans le pilotage interne. Aucun système externe modifié.');
-  }catch(e){notify((e as Error).message)}finally{setBusy(false)}
+  }catch(e){notify((e as Error).message,'error')}finally{setBusy(false)}
  }
- function resume(call:any){if(baseId&&!saved&&!demo&&!confirm('Ouvrir un nouvel appel et quitter le dossier courant ?'))return;reset();setBaseQuantities(Object.fromEntries((call.meta?.originals||[call.meta?.original].filter(Boolean)).map((p:ItemSnapshot)=>[p.id,quantityOf(p)])));setBaseIds(call.meta?.originals?.length?call.meta.originals.map((p:ItemSnapshot)=>p.id):[call.base_id]);setOrderRef(call.meta?.orderRef||call.order_ref||'');setCustomerStage(call.meta?.customerStage||'unknown');setLinkedCallId(call.id);setStep(1);}
+ /** Leaving an unsaved live call asks first (replaces window.confirm; same conditions as before). */
+ async function guardLeaveCall(){
+  if(!baseId||saved||demo)return true;
+  return confirmAction({title:'Abandonner l’appel en cours ?',body:<p>Le brouillon {orderRef||'sans référence'} ({count} soin{count>1?'s':''}, {presented.length?`offre présentée à ${money(offer)}`:'offre non présentée'}) sera supprimé.</p>,cancelLabel:'Reprendre l’appel',confirmLabel:'Abandonner l’appel',tone:'danger'});
+ }
+ async function newCall(){if(await guardLeaveCall())reset();}
+ async function resume(call:any){if(!(await guardLeaveCall()))return;reset();setBaseQuantities(Object.fromEntries((call.meta?.originals||[call.meta?.original].filter(Boolean)).map((p:ItemSnapshot)=>[p.id,quantityOf(p)])));setBaseIds(call.meta?.originals?.length?call.meta.originals.map((p:ItemSnapshot)=>p.id):[call.base_id]);setOrderRef(call.meta?.orderRef||call.order_ref||'');setCustomerStage(call.meta?.customerStage||'unknown');setLinkedCallId(call.id);setStep(1);}
 
  if(loading)return <div className="shell-loading" role="status"><div className="shell-loading__inner"><Wordmark size="lg"/><span className="shell-loading__bar" aria-hidden="true"/><p>Ouverture de votre espace conseil…</p></div></div>;
  if(!state)return <>{fatal&&<OfflineBanner fatal={fatal} load={load}/>}<Login onSuccess={acceptState}/></>;
@@ -125,7 +135,7 @@ export default function Desk(){
   presented,matchingOffer,presentOffer,handledObjections,setHandledObjections,
   consent,setConsent,checked,setChecked,callbackAt,setCallbackAt,refusal,setRefusal,record};
 
- return <AppShell state={state} view={view} setView={setView} titles={titles} signingOut={signingOut} signOut={signOut} baseId={baseId} saved={saved} demo={demo} reset={reset} fatal={fatal} load={load} toast={toast} setToast={setToast} modal={detail&&<ProductModal detail={detail} setDetail={setDetail} products={products}/>}>
+ return <AppShell state={state} view={view} setView={setView} titles={titles} signingOut={signingOut} signOut={signOut} newCall={()=>void newCall()} fatal={fatal} load={load} modal={detail&&<ProductModal detail={detail} setDetail={setDetail} products={products}/>}>
  {view==='call'&&!canManageWorkspace(state.user)&&<PersonalProgress compact refreshKey={progressEpoch}/>}
  {view==='call'&&<CallModelContext value={call}><CallView/></CallModelContext>}
  {view==='catalogue'&&<Catalogue search={search} setSearch={setSearch} scope={scope} setScope={setScope} products={products} inScope={inScope} setDetail={setDetail}/>}

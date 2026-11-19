@@ -83,7 +83,6 @@
   .pilot-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: var(--text-ui); color: var(--color-text-secondary); }
 
   /* Call detail (opened from the Journal) */
-  .pilot-detail { inline-size: min(56rem, 100%); }
   .pilot-event { display: grid; gap: var(--space-1); padding: var(--space-3) var(--space-4); border-radius: var(--radius-option); background: var(--color-bg-sunken); box-shadow: inset 3px 0 0 var(--color-border-control-strong); font-size: var(--text-ui); }
 
   /* Monthly progress (Ma progression, and the compact strip on the call) */

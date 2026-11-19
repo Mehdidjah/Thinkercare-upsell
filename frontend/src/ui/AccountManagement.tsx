@@ -1,16 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { canManageAccount, canManageWorkspace, canRemoveAccount } from '@touche/domain';
 import { requestJson } from '../data/api';
 import AccountTable, { type AccountUser } from './AccountTable';
 import AccountPassword, { NewPasswordField } from './AccountPassword';
 import { Icon } from './shared/Icon';
+import { Dialog } from './shared/Dialog';
+import { type NoteKind } from './shell/Notifications';
 
 type Props = {
   user: AccountUser;
   users: AccountUser[];
   passwordViewingEnabled: boolean;
   reload: () => Promise<void>;
-  notify: (message: string) => void;
+  notify: (message: string, kind?: NoteKind) => void;
 };
 
 export default function AccountManagement({ user, users, passwordViewingEnabled, reload, notify }: Props) {
@@ -23,14 +25,8 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (!account && !removing) return;
-    const close = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) { setAccount(null); setRemoving(null); setError(''); }
-    };
-    window.addEventListener('keydown', close);
-    return () => window.removeEventListener('keydown', close);
-  }, [account, removing, busy]);
+  // Escape (the dialog's cancel) closes either dialog unless a request is running.
+  const closeDialogs = () => { if (!busy) { setAccount(null); setRemoving(null); setError(''); } };
 
   async function save(body: unknown, message: string) {
     setBusy(true); setError('');
@@ -70,17 +66,17 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
         onRemove={target => { setError(''); setRemoving(target); }}/>
     </section>
 
-    {account && canManageAccount(user, account) && <div className="modal-backdrop">
-      <section className="admin-dialog" role="dialog" aria-modal="true" aria-labelledby="admin-account-title">
-        <div className="dialog__head"><div><p className="caption">Gérer l’accès</p><h2 id="admin-account-title" className="dialog__title">{account.username}</h2></div><button type="button" className="icon-btn dialog__close"
+    {account && canManageAccount(user, account) && <Dialog open onClose={closeDialogs} labelledBy="admin-account-title" className="dialog--wide admin-dialog">
+        <div className="dialog__head"><div><p className="caption">Gérer l’accès</p><h2 id="admin-account-title" className="dialog__title" data-dialog-title tabIndex={-1}>{account.username}</h2></div><button type="button" className="icon-btn dialog__close"
           onClick={() => setAccount(null)} aria-label="Fermer" disabled={busy}><Icon name="close"/></button></div>
-        <form onSubmit={async event => {
+        <div className="dialog__body">
+        <form className="admin-form admin-form--stack" onSubmit={async event => {
           event.preventDefault();
           if (await save({ action: 'user-settings', id: account.id, label: account.label, team: account.team || '',
             active: account.active !== 0, reporting_scope: 'own', ...(account.role === 'admin' ? {} : { role: account.role }) },
           'Accès et équipe mis à jour.')) setAccount(null);
         }}>
-          <label className="field">Nom affiché<input autoFocus value={account.label} onChange={e => setAccount({ ...account, label: e.target.value })}
+          <label className="field">Nom affiché<input data-autofocus value={account.label} onChange={e => setAccount({ ...account, label: e.target.value })}
             minLength={2} maxLength={80} required disabled={busy}/></label>
           <label className="field">Équipe<input value={account.team || ''} onChange={e => setAccount({ ...account, team: e.target.value })}
             maxLength={60} placeholder="Équipe Alger" disabled={busy}/></label>
@@ -96,27 +92,27 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
               disabled={busy || account.id === user.id} onChange={e => setAccount({ ...account, active: e.target.checked ? 1 : 0 })}/>Compte actif</label>
           </>}
           <p className="notice notice--info"><Icon name="info" className="notice__icon"/><span className="notice__text">Un changement de rôle ou une désactivation déconnecte les sessions du compte. Les résultats sont conservés.</span></p>
-          <div className="dialog__actions"><button type="submit" className="btn btn--primary" disabled={busy}>Enregistrer les accès</button></div>
+          <div className="admin-form__submit"><button type="submit" className="btn btn--primary" disabled={busy}>Enregistrer les accès</button></div>
         </form>
         {error && <p className="notice notice--danger" role="alert"><Icon name="alert" className="notice__icon"/><span className="notice__text">{error}</span></p>}
         {account.role !== 'admin' && <AccountPassword key={account.id} account={users.find(u => u.id === account.id) || account}
           enabled={passwordViewingEnabled} request={body => requestJson('', body)} saved={reload}/>}
-      </section>
-    </div>}
+        </div>
+    </Dialog>}
 
-    {removing && canRemoveAccount(user, removing) && <div className="modal-backdrop">
-      <section className="admin-dialog admin-dialog--confirm" role="dialog" aria-modal="true" aria-labelledby="remove-account-title">
-        <h2 id="remove-account-title" className="dialog__title">Supprimer cet utilisateur ?</h2>
+    {removing && canRemoveAccount(user, removing) && <Dialog open onClose={closeDialogs} labelledBy="remove-account-title" variant="confirm">
+        <h2 id="remove-account-title" className="dialog__title" data-dialog-title tabIndex={-1}>Supprimer {removing.label} ?</h2>
+        <div className="dialog__body">
         <p><b>{removing.label}</b> ({removing.username})</p>
         <p>Ce compte sera retiré de la liste et ne pourra plus se connecter. Ses sessions seront déconnectées. Ses appels, ventes et résultats resteront dans les rapports.</p>
         {error && <p className="notice notice--danger" role="alert"><Icon name="alert" className="notice__icon"/><span className="notice__text">{error}</span></p>}
+        </div>
         <div className="dialog__actions">
-          <button type="button" className="btn btn--secondary" autoFocus disabled={busy} onClick={() => setRemoving(null)}>Annuler</button>
+          <button type="button" className="btn btn--secondary" data-autofocus disabled={busy} onClick={() => setRemoving(null)}>Annuler</button>
           <button type="button" className="btn btn--danger" disabled={busy} onClick={async () => {
             if (await save({ action: 'remove-user', id: removing.id }, 'Utilisateur supprimé. Ses résultats sont conservés.')) setRemoving(null);
           }}>{busy ? 'Suppression…' : 'Supprimer l’utilisateur'}</button>
         </div>
-      </section>
-    </div>}
+    </Dialog>}
   </>;
 }

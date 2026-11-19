@@ -217,8 +217,8 @@
   .call-rail__head { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-5) var(--space-5) var(--space-3); border-block-end: 1px solid var(--color-border-hairline); }
   .call-rail__head > h2 { font-size: var(--text-h2); }
   .call-rail__meta { font-size: var(--text-caption); color: var(--color-text-secondary); }
-  /* Only the composition list gives up height on short screens. */
-  .call-basket { flex: 0 1 auto; min-block-size: 72px; overflow-y: auto; overscroll-behavior: contain; margin: 0; padding: 0; list-style: none; }
+  /* The rail scrolls as one column; the composition never becomes a nested scroller. */
+  .call-basket { flex: none; margin: 0; padding: 0; list-style: none; }
   .call-basket__item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--space-3); align-items: start; padding: var(--space-3) var(--space-5); }
   .call-basket__item + .call-basket__item { border-block-start: 1px solid var(--color-border-hairline); }
   .call-basket__main { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-inline-size: 0; }
