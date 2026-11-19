@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { canManageAccount, canManageWorkspace, canRemoveAccount } from '@touche/domain';
+import { MEMBER_ROLES, canManageAccount, canManageWorkspace, canRemoveAccount } from '@touche/domain';
 import { requestJson } from '../data/api';
 import AccountTable, { type AccountUser } from './AccountTable';
 import AccountPassword, { NewPasswordField } from './AccountPassword';
@@ -48,7 +48,7 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
   return <>
     <section className="admin-section account-section">
       <h2>Comptes et accès</h2>
-      <p>Créez un accès Conseillère ou Manager. Les managers disposent de tous les onglets et options de gestion, sauf la modification du compte Direction.</p>
+      <p>Créez un accès Call center, CM ou Manager. Les managers disposent de tous les onglets et options de gestion, sauf la modification du compte Direction.</p>
       <form className="account-form account-create-form" onSubmit={async event => {
         event.preventDefault();
         if (await save({ action: 'user', username, label, password, role }, 'Compte créé.')) {
@@ -59,7 +59,7 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
           pattern="[a-z0-9._-]{3,40}" required maxLength={40} disabled={busy}/></label>
         <label>Nom affiché<input value={label} onChange={e => setLabel(e.target.value)} required minLength={2} maxLength={80} disabled={busy}/></label>
         <label>Rôle<select value={role} onChange={e => setRole(e.target.value)} disabled={busy}>
-          <option value="advisor">Conseillère</option><option value="manager">Manager</option>
+          {MEMBER_ROLES.map(([value, name]) => <option key={value} value={value}>{name}</option>)}
         </select></label>
         <NewPasswordField label="Mot de passe initial" value={password} onChange={setPassword} disabled={busy}/>
         <button className="primary" disabled={busy}>Créer l’accès</button>
@@ -86,10 +86,11 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
           {account.role !== 'admin' && <>
             <label>Rôle<select value={account.role} onChange={e => setAccount({ ...account, role: e.target.value })}
               disabled={busy || account.id === user.id}>
-              <option value="advisor">Conseillère</option><option value="manager">Manager</option>
+              {MEMBER_ROLES.map(([value, name]) => <option key={value} value={value}>{name}</option>)}
             </select></label>
             <p className="private-account-note">{account.role === 'manager'
               ? 'Tous les onglets et options de gestion. Le compte Direction reste protégé.'
+              : account.role === 'cm' ? 'Un CM dispose des mêmes accès qu’un compte Call center : accès personnel uniquement.'
               : 'Accès personnel uniquement : les résultats des autres comptes ne sont pas accessibles.'}</p>
             <label className="check-row"><input type="checkbox" checked={account.active !== 0}
               disabled={busy || account.id === user.id} onChange={e => setAccount({ ...account, active: e.target.checked ? 1 : 0 })}/>Compte actif</label>
