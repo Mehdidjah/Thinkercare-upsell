@@ -1,0 +1,27 @@
+/* Login (§6.8): form column with the wordmark, photo on wide screens. Tokens only. */
+@layer areas {
+  .login { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); min-block-size: 100dvh; background: var(--color-bg-surface); }
+  .login-pane { display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: var(--space-10); padding: var(--space-10) var(--gutter) var(--space-8); }
+  .login-pane > * { inline-size: min(100%, 440px); }
+  .login-form { display: flex; flex-direction: column; gap: var(--space-2); }
+  .login-form__lead { color: var(--color-text-secondary); }
+  .login-form form { display: flex; flex-direction: column; gap: var(--space-5); margin-block-start: var(--space-6); }
+  .login-form__password { position: relative; }
+  .login-form__password > input { padding-inline-end: 6.5rem; }
+  .login-form__toggle { position: absolute; inset-block-start: 50%; inset-inline-end: var(--space-1); translate: 0 -50%; }
+  .login-form__toggle[aria-pressed="true"] { text-decoration: underline; text-underline-offset: 0.2em; }
+  .login-form__error { display: flex; align-items: flex-start; gap: var(--space-2); min-block-size: 1lh; margin-block: calc(-1 * var(--space-3)) 0; color: var(--color-danger-text); font-size: var(--text-ui); }
+  .login-form__error > svg { inline-size: var(--icon); block-size: var(--icon); flex: none; margin-block-start: 1px; }
+  .login-form__help { margin-block-start: var(--space-4); color: var(--color-text-secondary); font-size: var(--text-ui); }
+  .login-pane__privacy { display: flex; gap: var(--space-2); color: var(--color-text-tertiary); font-size: var(--text-caption); line-height: var(--leading-body); }
+  .login-pane__privacy > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); flex: none; margin-block-start: 2px; }
+  .login-art { position: relative; min-block-size: 100%; }
+  .login-art > img { position: absolute; inset: var(--space-4); inline-size: calc(100% - 2 * var(--space-4)); block-size: calc(100% - 2 * var(--space-4)); object-fit: cover; border-radius: var(--radius-sheet); }
+  @media (max-width: 1023px) {
+    .login { grid-template-columns: minmax(0, 1fr); }
+    .login-art { display: none; }
+    .login-pane { justify-content: flex-start; gap: var(--space-8); }
+    .login-pane__privacy { margin-block-start: auto; }
+  }
+  @media (max-width: 760px) { .login-pane { padding-block: var(--space-6); } }
+}

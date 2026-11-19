@@ -1,8 +1,37 @@
-import {useState,type FormEvent} from 'react';
+import {useId,useState,type FormEvent} from 'react';
 import {Icon} from '../shared/Icon';
 import {api} from '../shared/api';
 import {type State} from '../shared/types';
 
-export function Login({onSuccess}:{onSuccess:(state:State)=>void}){const [username,setUsername]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');async function submit(e:FormEvent){e.preventDefault();setError('');setBusy(true);try{const data=await api({action:'login',username,password,bootstrap:true});onSuccess(data.bootstrap);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- return <div className="login"><section className="login-story"><div className="login-logo"><span className="wordmark">touché</span><span className="brand-rule"/><span>CONSEIL</span></div><div className="login-copy"><span className="micro">L’ESPACE DES ÉQUIPES B2C</span><h1>Le bon conseil.<br/>La bonne routine.</h1><p>Écouter, personnaliser, proposer.<br/>Votre expertise, accompagnée à chaque appel.</p></div><img className="login-art" src="/assets/scene.jpg" alt="Composition de verre et de textures cosmétiques"/><div className="login-footer">SCIENCE DESIGNED FOR YOUR SKIN <span>01 / CONSEIL</span></div></section><section className="login-form"><div><span className="mini-icon"><Icon name="lock"/></span><h2>Votre espace conseil</h2><p className="muted">Connectez-vous avec votre accès d’équipe.</p><form onSubmit={submit}><label>Identifiant<input autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} required placeholder="Votre identifiant"/></label><label>Mot de passe<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required placeholder="Votre mot de passe"/></label>{error&&<p role="alert" className="alert">{error}</p>}<button className="primary login-submit" disabled={busy}>{busy?'Connexion…':'Ouvrir mon espace'}<Icon name="arrow"/></button></form><div className="login-note"><Icon name="shield" size={17}/><span>Accès réservé. Aucune donnée nominative de cliente n’est nécessaire.</span></div></div><span className="login-caption">TOUCHÉ SKINCARE LAB · CONSEIL ASSISTÉ</span></section></div>;
+export function Login({onSuccess}:{onSuccess:(state:State)=>void}){
+ const [username,setUsername]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[shown,setShown]=useState(false);
+ const userId=useId(),passwordId=useId(),errorId=useId();
+ async function submit(e:FormEvent){e.preventDefault();setError('');setBusy(true);try{const data=await api({action:'login',username,password,bootstrap:true});onSuccess(data.bootstrap);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ return <main className="login">
+  <div className="login-pane">
+   <div className="login-pane__brand"><span className="wordmark wordmark--lg">touché</span></div>
+   <div className="login-form">
+    <h1>Votre espace conseil</h1>
+    <p className="login-form__lead">Connectez-vous avec l’identifiant fourni par votre équipe.</p>
+    <form onSubmit={submit}>
+     <div className="field">
+      <label className="field__label" htmlFor={userId}>Identifiant</label>
+      <input id={userId} autoComplete="username" autoCapitalize="none" spellCheck={false} value={username} onChange={e=>setUsername(e.target.value)} required placeholder="prenom.nom" aria-invalid={error?true:undefined} aria-describedby={error?errorId:undefined}/>
+     </div>
+     <div className="field">
+      <label className="field__label" htmlFor={passwordId}>Mot de passe</label>
+      <div className="login-form__password">
+       <input id={passwordId} type={shown?'text':'password'} autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required aria-invalid={error?true:undefined} aria-describedby={error?errorId:undefined}/>
+       <button type="button" className="btn btn--ghost btn--sm login-form__toggle" aria-pressed={shown} aria-controls={passwordId} onClick={()=>setShown(v=>!v)}>Afficher</button>
+      </div>
+     </div>
+     <p id={errorId} className="login-form__error" role="alert">{error&&<><Icon name="alert"/><span>{error}</span></>}</p>
+     <button type="submit" className="btn btn--primary btn--lg btn--block" disabled={busy}>{busy?'Connexion…':'Se connecter'}</button>
+    </form>
+    <p className="login-form__help">{'Mot de passe oublié ? La direction peut le réinitialiser depuis Gestion.'}</p>
+   </div>
+   <p className="login-pane__privacy"><Icon name="shield"/><span>Accès réservé aux équipes conseil. Aucune donnée nominative de cliente n’est demandée.</span></p>
+  </div>
+  <div className="login-art"><img src="/assets/scene.jpg" alt=""/></div>
+ </main>;
 }

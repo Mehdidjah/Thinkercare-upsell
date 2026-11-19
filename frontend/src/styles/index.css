@@ -1,0 +1,12 @@
+/* ThinkerCare styles. Import order = cascade order; the layer statement fixes precedence
+   whatever the specificity (DESIGN-SYSTEM.md §4.2). */
+@layer tokens, base, components, shell, areas, utilities;
+@import "./tokens.css";
+@import "./base.css";
+@import "./components.css";
+@import "./shell.css";
+@import "./login.css";
+@import "./call.css";
+@import "./catalogue.css";
+@import "./pilotage.css";
+@import "./admin.css";

@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import './styles.css';
+import './styles/index.css';
 import { ErrorBoundary } from './ErrorBoundary';
 import Desk from './ui/App';
 

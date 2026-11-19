@@ -104,7 +104,7 @@ export default function Desk(){
  }
  function resume(call:any){if(baseId&&!saved&&!demo&&!confirm('Ouvrir un nouvel appel et quitter le dossier courant ?'))return;reset();setBaseQuantities(Object.fromEntries((call.meta?.originals||[call.meta?.original].filter(Boolean)).map((p:ItemSnapshot)=>[p.id,quantityOf(p)])));setBaseIds(call.meta?.originals?.length?call.meta.originals.map((p:ItemSnapshot)=>p.id):[call.base_id]);setOrderRef(call.meta?.orderRef||call.order_ref||'');setCustomerStage(call.meta?.customerStage||'unknown');setLinkedCallId(call.id);setStep(1);}
 
- if(loading)return <div className="loading-screen"><span className="wordmark">touché</span><span className="loading-bar"/><p>Ouverture de votre espace conseil…</p></div>;
+ if(loading)return <div className="shell-loading" role="status"><div className="shell-loading__inner"><span className="wordmark wordmark--lg">touché</span><span className="shell-loading__bar" aria-hidden="true"/><p>Ouverture de votre espace conseil…</p></div></div>;
  if(!state)return <>{fatal&&<OfflineBanner fatal={fatal} load={load}/>}<Login onSuccess={acceptState}/></>;
  const titles:Record<string,string>={coverage:'Parcours produits',call:'Appel guidé',catalogue:'Catalogue',results:'Pilotage',progress:'Ma progression',contributions:'Apports & primes',protocol:'Protocole',admin:canManageWorkspace(state.user)?'Gestion':'Mon compte'};
  const changeProfile=(patch:Partial<Profile>)=>{setProfile(p=>({...p,...patch}));setUpgradeId('');setAdds([]);clearRequests();setConsent(false);setChecked(false);};

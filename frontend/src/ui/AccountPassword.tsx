@@ -10,13 +10,13 @@ export function NewPasswordField({ value, onChange, disabled = false, label = 'N
     onChange(Array.from(crypto.getRandomValues(new Uint8Array(24)), byte => alphabet[byte % 64]).join(''));
     setVisible(true);
   }
-  return <div className="password-field">
-    <label htmlFor={id}>{label}<input id={id} type={visible ? 'text' : 'password'} autoComplete="new-password"
+  return <div className="field admin-password-field">
+    <label className="field__label" htmlFor={id}>{label}</label><input id={id} type={visible ? 'text' : 'password'} autoComplete="new-password"
       value={value} onChange={e => onChange(e.target.value)} maxLength={200}
-      placeholder="Votre nouveau mot de passe" required disabled={disabled}/></label>
-    <div className="password-actions">
-      <button type="button" className="text-button" onClick={generate} disabled={disabled}>Générer</button>
-      <button type="button" className="text-button" aria-controls={id} aria-pressed={visible}
+      placeholder="12 caractères ou plus" required disabled={disabled}/>
+    <div className="admin-actions">
+      <button type="button" className="link-btn" onClick={generate} disabled={disabled}>Générer</button>
+      <button type="button" className="link-btn" aria-controls={id} aria-pressed={visible}
         onClick={() => setVisible(!visible)} disabled={disabled}>{visible ? 'Masquer' : 'Afficher la saisie'}</button>
     </div>
   </div>;
@@ -65,39 +65,39 @@ export default function AccountPassword({ account, enabled, request, saved }: {
     finally { setBusy(false); }
   }
 
-  return <section className="account-password" aria-label="Mot de passe du compte">
+  return <section className="admin-password" aria-label="Mot de passe du compte">
     <h3>Mot de passe de {account.username}</h3>
     <p>{account.password_updated_at
       ? 'Dernier enregistrement : ' + new Date(account.password_updated_at).toLocaleString('fr-FR')
       : 'Mot de passe enregistré. Date du dernier changement non disponible.'}</p>
     {!enabled ? <p>La consultation des mots de passe n’est pas encore activée sur ce serveur. Vous pouvez définir un nouveau mot de passe ci-dessous.</p>
       : !account.password_available ? <p>Ce mot de passe ancien ne peut pas être récupéré. Il sera consultable après le prochain changement ou une réinitialisation.</p>
-      : password !== null ? <div className="password-revealed">
-        <output aria-label="Mot de passe enregistré">{password}</output>
-        <div className="password-actions">
-          <button type="button" className="text-button" onClick={async () => {
+      : password !== null ? <div className="admin-secret">
+        <output className="admin-secret__value" aria-label="Mot de passe enregistré">{password}</output>
+        <div className="admin-actions">
+          <button type="button" className="link-btn" onClick={async () => {
             try { await navigator.clipboard.writeText(password); setMessage('Mot de passe copié.'); }
             catch { setError('Copie indisponible. Sélectionnez le mot de passe affiché.'); }
           }}>Copier</button>
-          <button type="button" className="text-button" onClick={() => setPassword(null)}>Masquer</button>
+          <button type="button" className="link-btn" onClick={() => setPassword(null)}>Masquer</button>
         </div>
-        <small>Masqué après une minute ou lorsque vous quittez cet onglet.</small>
-      </div> : confirming ? <div className="password-confirmation">
-        <label>Votre mot de passe<input type="password" autoComplete="current-password"
+        <small className="caption">Masqué après une minute ou lorsque vous quittez cet onglet.</small>
+      </div> : confirming ? <div className="admin-confirm">
+        <label className="field">Votre mot de passe<input type="password" autoComplete="current-password"
           value={adminPassword} onChange={e => setAdminPassword(e.target.value)} maxLength={200} disabled={busy}
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (adminPassword && !busy) void reveal(); } }}/></label>
-        <div className="password-actions">
-          <button type="button" className="outline" onClick={() => void reveal()} disabled={busy || !adminPassword}>Confirmer et afficher</button>
-          <button type="button" className="text-button" disabled={busy} onClick={() => { setConfirming(false); setAdminPassword(''); }}>Annuler</button>
+        <div className="admin-actions">
+          <button type="button" className="btn btn--secondary btn--sm" onClick={() => void reveal()} disabled={busy || !adminPassword}>Confirmer et afficher</button>
+          <button type="button" className="link-btn" disabled={busy} onClick={() => { setConfirming(false); setAdminPassword(''); }}>Annuler</button>
         </div>
-      </div> : <button type="button" className="outline" disabled={busy} onClick={() => { setConfirming(true); setError(''); setMessage(''); }}>Voir le mot de passe enregistré</button>}
+      </div> : <button type="button" className="btn btn--secondary" disabled={busy} onClick={() => { setConfirming(true); setError(''); setMessage(''); }}>Voir le mot de passe enregistré</button>}
     {enabled && <p className="muted">La consultation est réservée à la direction et aux managers, et enregistrée dans le journal de traçabilité.</p>}
-    <form onSubmit={reset}>
+    <form className="admin-form admin-form--stack" onSubmit={reset}>
       <NewPasswordField value={replacement} onChange={setReplacement} disabled={busy}/>
-      <p>Le nouveau mot de passe remplace immédiatement l’ancien et déconnecte les sessions de ce compte.</p>
-      <button className="primary" disabled={busy}>{busy ? 'Enregistrement…' : 'Enregistrer le nouveau mot de passe'}</button>
+      <p className="field__help">Le nouveau mot de passe remplace immédiatement l’ancien et déconnecte les sessions de ce compte.</p>
+      <div className="admin-form__submit"><button type="submit" className="btn btn--primary" disabled={busy}>{busy ? 'Enregistrement…' : 'Enregistrer le nouveau mot de passe'}</button></div>
     </form>
-    {error && <p className="alert" role="alert">{error}</p>}
-    {message && <p className="notice" role="status">{message}</p>}
+    {error && <p className="notice notice--danger" role="alert"><span className="notice__text">{error}</span></p>}
+    {message && <p className="notice notice--info" role="status"><span className="notice__text">{message}</span></p>}
   </section>;
 }

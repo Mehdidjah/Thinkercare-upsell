@@ -1,0 +1,186 @@
+/* ThinkerCare tokens. The ONLY file allowed to contain raw colour, font, size, shadow,
+   radius, z-index and duration values. Every other file reads var(--…). */
+@layer tokens {
+  :root {
+    color-scheme: light;
+
+    /* ── Colour: neutrals (OKLCH hue 215, low chroma) ─────────────────────── */
+    --color-bg-page: #F5F8F9;               /* app background */
+    --color-bg-surface: #FFFFFF;            /* cards, rail, bars, inputs, dialogs */
+    --color-bg-sunken: #EEF3F5;             /* summaries, readout, hover fill, KPI tiles, table head */
+    --color-bg-fill: #E7EEF0;               /* neutral tags, disabled fill, tracks */
+    --color-border-hairline: #DBE4E6;       /* 1.29:1 on surface. Decorative only */
+    --color-border-strong: #C9D3D6;         /* 1.52:1. Decorative only: disabled dashed edges, step connectors */
+    --color-border-control: #828F92;        /* 3.34 surface, 3.13 page, 3.06 accent tint: every control edge */
+    --color-border-control-strong: #5C6A6E; /* 5.02 sunken: control hover, any control placed on sunken */
+    --color-text-primary: #142023;
+    --color-text-secondary: #445357;
+    --color-text-tertiary: #5C6A6E;
+    --color-text-on-accent: #FFFFFF;
+
+    /* ── Colour: accent (OKLCH hue 192) ─────────────────────────────────────
+       Means exactly four things: the primary action, a data selection,
+       the current location (nav, step, view) and keyboard focus. */
+    --color-accent-solid: #006967;
+    --color-accent-solid-hover: #005654;
+    --color-accent-solid-press: #004745;
+    --color-accent-text: #005654;
+    --color-accent-text-strong: #004745;
+    --color-accent-tint: #EAF8F7;
+    --color-accent-tint-hover: #D8F1F0;
+    --color-accent-border-soft: #A5D5D3;    /* 1.61:1. Decorative only */
+    --color-focus: #006967;
+
+    /* ── Colour: status (always paired with an icon and a word) ─────────── */
+    --color-danger-solid: #AA342E;
+    --color-danger-solid-hover: #8C2D28;
+    --color-danger-text: #8C2D28;
+    --color-danger-tint: #FEF1F0;
+    --color-danger-border: #EDAAA4;         /* decorative; an invalid field uses --color-danger-solid */
+    --color-warning-text: #7F4E15;
+    --color-warning-tint: #FFF5E0;
+    --color-warning-edge: #B5803A;          /* 3.44 surface, 3.17 warning tint */
+    --color-success-text: #2A6736;
+    --color-success-tint: #EBF9EC;
+    --color-success-border: #A0CBA5;        /* decorative */
+    --color-info-text: #36587B;
+    --color-info-tint: #EEF4FB;
+    --color-info-border: #BCCFE3;           /* decorative */
+
+    /* ── Colour: data (Pilotage charts only, on surface, never teal) ─────── */
+    --color-data-1: #2F6DB0;
+    --color-data-2: #D2802A;
+    --color-data-3: #A8436A;
+    --color-data-other: #828F92;
+    --color-data-track: #E7EEF0;
+    /* Calendar heat (Pilotage): primary text ≥9.8:1 and secondary text ≥4.77:1 on every step */
+    --color-heat-1: #EEF4FB;
+    --color-heat-2: #DCE8F5;
+    --color-heat-3: #C7DAEE;
+    --color-heat-4: #B1CBE6;
+
+    /* ── Colour: effects ────────────────────────────────────────────────── */
+    --color-image-outline: rgb(0 0 0 / 0.1);
+    --color-shadow-soft: rgb(20 32 35 / 0.05);
+    --color-shadow-mid: rgb(20 32 35 / 0.10);
+    --color-shadow-deep: rgb(20 32 35 / 0.18);
+    --color-scrim: rgb(20 32 35 / 0.40);
+
+    /* ── Inline icons drawn by CSS (native control glyphs) ─────────────── */
+    --glyph-check-on-accent: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 10.5 3.2 3.2L15 7'/%3E%3C/svg%3E");
+    --glyph-chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235C6A6E' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+
+    /* ── Type ───────────────────────────────────────────────────────────── */
+    --font-sans: "Source Sans 3", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --font-weight-regular: 400;
+    --font-weight-semibold: 600;
+
+    --text-nav: 0.75rem;          /* 12: nav labels only */
+    --text-caption: 0.8125rem;    /* 13 */
+    --text-label: 0.875rem;       /* 14 */
+    --text-ui: 0.9375rem;         /* 15 */
+    --text-body: 1rem;            /* 16 */
+    --text-h3: 1.125rem;          /* 18 */
+    --text-script: 1.125rem;      /* 18 */
+    --text-h2: 1.3125rem;         /* 21 */
+    --text-wordmark: 1.3125rem;   /* 21 */
+    --text-wordmark-lg: 1.5rem;   /* 24 */
+    --text-h1: 1.75rem;           /* 28 */
+    --text-price-md: 1.25rem;     /* 20 */
+    --text-price-lg: 2rem;        /* 32 */
+    --text-input-touch: 1rem;     /* 16: inputs, selects, textareas at <=760px */
+
+    --leading-price: 1.05;
+    --leading-tight: 1.15;
+    --leading-heading: 1.25;
+    --leading-ui: 1.35;
+    --leading-body: 1.5;
+    --leading-script: 1.55;
+
+    --tracking-h1: -0.012em;
+    --tracking-h2: -0.005em;
+    --tracking-wordmark: -0.015em;
+
+    --measure-text: 68ch;
+    --measure-script: 64ch;
+
+    /* ── Space (4 pt grid) ──────────────────────────────────────────────── */
+    --space-1: 0.25rem;   /* 4 */
+    --space-2: 0.5rem;    /* 8 */
+    --space-3: 0.75rem;   /* 12 */
+    --space-4: 1rem;      /* 16 */
+    --space-5: 1.25rem;   /* 20 */
+    --space-6: 1.5rem;    /* 24 */
+    --space-8: 2rem;      /* 32 */
+    --space-10: 2.5rem;   /* 40 */
+    --space-12: 3rem;     /* 48 */
+    --space-16: 4rem;     /* 64 */
+
+    /* ── Radius ─────────────────────────────────────────────────────────── */
+    --radius-checkbox: 5px;
+    --radius-tag: 6px;
+    --radius-control: 8px;     /* buttons, inputs, selects */
+    --radius-option: 12px;     /* option cards, rows, notices, price options */
+    --radius-card: 16px;       /* cards, rail, call bar, dialogs */
+    --radius-sheet: 20px;      /* top corners of a bottom sheet; login photo */
+    --radius-pill: 999px;      /* live-call chip, bottom-nav current pill, meter */
+
+    /* ── Elevation (shadows for elevation, borders for structure) ──────── */
+    --shadow-1: 0 1px 2px var(--color-shadow-soft), 0 1px 3px var(--color-shadow-soft);
+    --shadow-2: 0 2px 4px var(--color-shadow-soft), 0 8px 24px var(--color-shadow-mid);
+    --shadow-2-up: 0 -2px 4px var(--color-shadow-soft), 0 -8px 24px var(--color-shadow-mid);
+    --shadow-3: 0 4px 8px var(--color-shadow-mid), 0 24px 48px var(--color-shadow-deep);
+
+    /* ── Focus, control and icon sizes ──────────────────────────────────── */
+    --focus-width: 2px;
+    --focus-offset: 2px;
+    --control-height-sm: 32px;
+    --control-height: 40px;
+    --control-height-lg: 48px;
+    --control-height-touch: 44px;
+    --target-min: 24px;
+    --icon-sm: 16px;
+    --icon: 20px;
+    --icon-lg: 24px;
+    --indicator: 20px;
+
+    /* ── Layout ─────────────────────────────────────────────────────────── */
+    --sidebar-width: 248px;
+    --sidebar-width-compact: 96px;
+    --topbar-height: 64px;
+    --topbar-height-phone: 56px;
+    --bottom-nav-height: 64px;
+    --rail-width: 368px;
+    --rail-width-narrow: 320px;
+    --container-max: 1264px;
+    --gutter: 32px;
+    --call-bar-height: 0px;   /* written at runtime by <CallBar> (ResizeObserver) */
+
+    /* ── Z-order (dialogs and sheets use the native top layer) ─────────── */
+    --z-raised: 1;          /* a control layered over its own card */
+    --z-action-bar: 15;
+    --z-topbar: 30;
+    --z-sidebar: 35;
+    --z-call-bar: 40;
+    --z-bottom-nav: 41;
+    --z-menu: 50;
+    --z-toast: 60;
+    --z-skip-link: 70;
+
+    /* ── Motion ─────────────────────────────────────────────────────────── */
+    --duration-fast: 120ms;    /* colour, background, border */
+    --duration-press: 150ms;   /* press scale */
+    --duration-exit: 150ms;
+    --duration-enter: 200ms;   /* sheet, disclosure */
+    --duration-icon: 300ms;    /* icon cross-fade */
+    --duration-spin: 900ms;    /* busy spinner turn */
+    --ease-out: cubic-bezier(0.2, 0, 0, 1);
+    --press-scale: 0.96;
+  }
+
+  @media (max-width: 1199px) { :root { --gutter: 24px; } }
+  @media (max-width: 760px)  { :root { --gutter: 16px; } }
+
+  /* ::backdrop does not inherit custom properties in every engine yet. */
+  ::backdrop { --color-scrim: rgb(20 32 35 / 0.40); }
+}
