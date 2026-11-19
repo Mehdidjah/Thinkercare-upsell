@@ -4,6 +4,7 @@ import {reportCache} from '../data/report-cache';
 import Analytics from './Analytics';
 import {PersonalProgress,ContributionDashboard} from './Commission';
 import {ProductModal} from './shared/ProductModal';
+import {Wordmark} from './shared/Wordmark';
 import {normalize} from './shared/catalogue';
 import {api} from './shared/api';
 import {type State} from './shared/types';
@@ -104,7 +105,7 @@ export default function Desk(){
  }
  function resume(call:any){if(baseId&&!saved&&!demo&&!confirm('Ouvrir un nouvel appel et quitter le dossier courant ?'))return;reset();setBaseQuantities(Object.fromEntries((call.meta?.originals||[call.meta?.original].filter(Boolean)).map((p:ItemSnapshot)=>[p.id,quantityOf(p)])));setBaseIds(call.meta?.originals?.length?call.meta.originals.map((p:ItemSnapshot)=>p.id):[call.base_id]);setOrderRef(call.meta?.orderRef||call.order_ref||'');setCustomerStage(call.meta?.customerStage||'unknown');setLinkedCallId(call.id);setStep(1);}
 
- if(loading)return <div className="shell-loading" role="status"><div className="shell-loading__inner"><span className="wordmark wordmark--lg">touché</span><span className="shell-loading__bar" aria-hidden="true"/><p>Ouverture de votre espace conseil…</p></div></div>;
+ if(loading)return <div className="shell-loading" role="status"><div className="shell-loading__inner"><Wordmark size="lg"/><span className="shell-loading__bar" aria-hidden="true"/><p>Ouverture de votre espace conseil…</p></div></div>;
  if(!state)return <>{fatal&&<OfflineBanner fatal={fatal} load={load}/>}<Login onSuccess={acceptState}/></>;
  const titles:Record<string,string>={coverage:'Parcours produits',call:'Appel guidé',catalogue:'Catalogue',results:'Pilotage',progress:'Ma progression',contributions:'Apports & primes',protocol:'Protocole',admin:canManageWorkspace(state.user)?'Gestion':'Mon compte'};
  const changeProfile=(patch:Partial<Profile>)=>{setProfile(p=>({...p,...patch}));setUpgradeId('');setAdds([]);clearRequests();setConsent(false);setChecked(false);};

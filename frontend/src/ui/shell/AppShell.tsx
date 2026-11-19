@@ -16,7 +16,7 @@ export function AppShell({state,view,setView,titles,signingOut,signOut,baseId,sa
    <main className="shell-content" id="contenu" tabIndex={-1}>
     {children}
    </main>
-   <footer className="shell-footer"><p>Touché Conseil, espace des équipes B2C. Prix hors livraison. Aucun nom ni téléphone de cliente n’est collecté. Aucune connexion externe.</p></footer>
+   <footer className="shell-footer"><p>ThinkerCare, espace des équipes B2C. Prix hors livraison. Aucun nom ni téléphone de cliente n’est collecté.</p></footer>
   </div>
   {toast&&<Toast toast={toast} setToast={setToast}/>}
   {modal}

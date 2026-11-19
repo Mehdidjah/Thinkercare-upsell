@@ -38,7 +38,7 @@ export class DeskController {
     const params = new URL(req.originalUrl, 'http://desk.local').searchParams;
     const action = params.get('action');
     if (action === 'health')
-      return sendJson(res, { ok: true, app: 'Touché Conseil' });
+      return sendJson(res, { ok: true, app: 'ThinkerCare' });
     const user = await this.auth.resolveUser(req.headers.cookie);
     if (!user)
       return sendJson(

@@ -1,5 +1,6 @@
 import {canManageWorkspace,accountRoleLabel} from '@touche/domain';
 import {Icon} from '../shared/Icon';
+import {Wordmark} from '../shared/Wordmark';
 import {type State} from '../shared/types';
 
 /** Visible label when the sidebar is compact (761 to 1199px) or becomes the bottom bar (≤760px). */
@@ -14,8 +15,8 @@ export function Sidebar({state,view,setView,titles,signingOut,signOut}:{state:St
  const items=[...(manager?['results','contributions']:['progress']),'call','catalogue','coverage','protocol',...(manager?['admin']:[])];
  return <aside className="shell-sidebar">
   <div className="shell-sidebar__brand">
-   <button type="button" className="shell-brand" onClick={()=>setView('call')} aria-label="Touché Conseil, accueil"><span className="wordmark">touché</span></button>
-   <p className="shell-sidebar__context">Espace équipes B2C</p>
+   <button type="button" className="shell-brand" onClick={()=>setView('call')} aria-label="ThinkerCare, Appel guidé"><Wordmark/></button>
+   <p className="shell-sidebar__context">{manager?'Direction':'Espace conseil'}</p>
   </div>
   <nav className="shell-nav" aria-label="Navigation principale">
    <ul className="shell-nav__list" role="list">{items.map(v=><li key={v}>

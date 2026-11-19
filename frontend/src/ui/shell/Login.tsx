@@ -1,5 +1,6 @@
 import {useId,useState,type FormEvent} from 'react';
 import {Icon} from '../shared/Icon';
+import {Wordmark} from '../shared/Wordmark';
 import {api} from '../shared/api';
 import {type State} from '../shared/types';
 
@@ -9,7 +10,7 @@ export function Login({onSuccess}:{onSuccess:(state:State)=>void}){
  async function submit(e:FormEvent){e.preventDefault();setError('');setBusy(true);try{const data=await api({action:'login',username,password,bootstrap:true});onSuccess(data.bootstrap);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  return <main className="login">
   <div className="login-pane">
-   <div className="login-pane__brand"><span className="wordmark wordmark--lg">touché</span></div>
+   <div className="login-pane__brand"><Wordmark size="lg"/></div>
    <div className="login-form">
     <h1>Votre espace conseil</h1>
     <p className="login-form__lead">Connectez-vous avec l’identifiant fourni par votre équipe.</p>
