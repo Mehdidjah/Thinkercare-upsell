@@ -1,13 +1,14 @@
-import {quantityOf,lineTotal,isPack,expand,money} from '@touche/domain';
+import {quantityOf,lineTotal,isPack,expand,money,OUTCOMES} from '@touche/domain';
 import QuantityControl from '../QuantityControl';
 import {Icon} from '../shared/Icon';
 import {Photo} from '../shared/Photo';
 import {CATS} from '../shared/catalogue';
 import {useCall} from './callModel';
 
-/** Step 01 · Commande initiale: pick every product of the initial order. */
-export function StepOrder(){const {toStep,saved,busy,presenting,products,visible,search,setSearch,scope,setScope,category,setCategory,baseId,baseIds,base,initial,baseTotal,changeInitial,changeInitialQuantity,presented}=useCall();
- const locked=saved||presented.length>0;
+/** Step 01 · Commande initiale: pick every product of the initial order. Fixed once an offer is presented, once saved,
+ *  and in an example (X10: an example never turns into a real call that would not be saved). */
+export function StepOrder(){const {toStep,saved,demo,savedOutcome,orderLocked:locked,busy,presenting,products,visible,search,setSearch,scope,setScope,category,setCategory,baseId,baseIds,base,initial,baseTotal,changeInitial,changeInitialQuantity}=useCall();
+ const lockText=demo?'Mode exemple : la commande initiale est fixée. Quittez l’exemple pour démarrer un vrai appel.':saved?(savedOutcome==='initial'?'Commande initiale conservée pour cet appel.':`Appel enregistré (${OUTCOMES[savedOutcome]||'résultat enregistré'}) : la commande initiale ne change plus. Commencez le suivant pour une autre commande.`):'Commande initiale verrouillée : une offre a été présentée. Ouvrez un nouvel appel pour changer les produits de départ.';
  return <>
   <section className="card call-order" aria-labelledby="call-order-title">
    <div className="section-head"><div><h2 id="call-order-title">Quels produits a-t-elle commandés ?</h2><p>Sélectionnez chaque produit de la commande initiale. Cliquez à nouveau pour le retirer. Aucun système externe connecté.</p></div><span className="counter">{products.filter(p=>p.enabled).length} produits</span></div>
@@ -19,7 +20,7 @@ export function StepOrder(){const {toStep,saved,busy,presenting,products,visible
      <button className="icon-btn" type="button" disabled={locked||busy||presenting} onClick={()=>changeInitial(baseIds.filter(id=>id!==p.id))} aria-label={'Retirer '+p.name+' de la commande initiale'}><Icon name="close"/></button>
     </li>)}</ul>
     {initial.length>1&&<label>Produit qui guide les questions<select value={baseId} disabled={locked} onChange={e=>changeInitial([e.target.value,...baseIds.filter(id=>id!==e.target.value)])}>{initial.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><small>Choisissez le produit lié au besoin prioritaire. Toute la commande reste prise en compte.</small></label>}
-    {locked&&<p className="call-initial__locked"><Icon name="lock"/>Commande initiale conservée pour cet appel. Ouvrez un nouvel appel pour changer les produits de départ.</p>}
+    {locked&&<p className="call-initial__locked"><Icon name="lock"/>{lockText}</p>}
    </section>}
    <div className="call-order__filters">
     <div className="search-field"><Icon name="search"/><input type="search" aria-label="Rechercher un produit" placeholder="Ex. sérum, shampoing" value={search} onChange={e=>setSearch(e.target.value)}/></div>

@@ -53,7 +53,8 @@ test('Step 3 combines suggested and requested products without bypassing compati
   assert.ok(rail.length > 0 && railFile.includes('<aside className="call-rail"'));
   assert.ok(rail.includes("requestedIds.includes(p.id)?'Demandé par la cliente':`Complément ${adds.indexOf(p.id)+1}`"));
   assert.ok(rail.includes('removeComplement(p.id)'));
-  assert.ok(app.includes('setRequestedIds(a=>a.filter(x=>x!==id))'));
+  // Removing an addition also drops its « Demandé par la cliente » label (the transition lives in call/callState.ts).
+  assert.ok(ui('call/callState.ts').includes('requestedIds:d.requestedIds.filter(x=>x!==id)'));
   const css = styles('call.css'), components = styles('components.css');
   for (const rule of ['.call-picker__list {', '.call-product {', '.call-product[data-state="blocked"] {', '.call-product[data-state="check"] {', '.call-product__confirm {']) assert.ok(css.includes(rule), rule);
   assert.ok(components.includes('.tag--warning {'), 'requested products that need a check carry a warning tag');

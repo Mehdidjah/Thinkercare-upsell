@@ -1,7 +1,7 @@
 import {STAGES} from '@touche/domain';
 import {useCall} from './callModel';
 
-/** Call context: file reference, declared purchase stage, unreachable customer. */
+/** Call context: file reference, declared purchase stage, unreachable customer (asks before saving, A2). */
 export function CallContextPanel(){const {demo,saved,busy,orderRef,setOrderRef,customerStage,setCustomerStage,linkedCallId,base,presented,record}=useCall();
  return <section className="call-context" aria-labelledby="call-context-heading">
   <div className="call-context__intro"><h2 id="call-context-heading" className="call-context__title">Contexte de l’appel</h2><p>Pour le pilotage. Aucun nom, téléphone ou renseignement médical.</p></div>

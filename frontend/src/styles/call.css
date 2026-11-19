@@ -205,6 +205,8 @@
   .call-close__row > .btn { margin-block-start: calc(var(--text-label) * 1.35 + var(--space-2)); }
   @media (max-width: 760px) { .call-close__row > .btn, .call-close__accept-btn { flex: 1 1 100%; inline-size: 100%; margin-block-start: 0; } }
   .call-saved { align-items: center; }
+  /* Call notices (removed additions with « Annuler », catalogue reloaded in place): close button beside the text. */
+  .call-notice > .icon-btn { flex: none; align-self: flex-start; }
 
   /* ── Rail ─────────────────────────────────────────────────────────────── */
   .call-rail {

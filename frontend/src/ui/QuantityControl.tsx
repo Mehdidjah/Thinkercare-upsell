@@ -7,7 +7,8 @@ export default function QuantityControl({label,value,min=1,disabled=false,onChan
   const [draft,setDraft]=useState(String(value));
   useEffect(()=>setDraft(String(value)),[value]);
   function update(next:number){
-    if(!Number.isSafeInteger(next)||next<min||next>MAX_ITEM_QUANTITY)return;
+    // An unchanged value never reaches the call (CN1): retyping the same quantity changes nothing.
+    if(!Number.isSafeInteger(next)||next<min||next>MAX_ITEM_QUANTITY||next===value)return;
     setDraft(String(onChange(next)===false?value:next));
   }
   return <div className="quantity-control" role="group" aria-label={label}>
