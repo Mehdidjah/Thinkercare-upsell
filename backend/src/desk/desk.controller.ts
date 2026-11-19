@@ -23,6 +23,9 @@ import { ReportingService } from './reporting.service.js';
 const ACCOUNT_CHANGED =
   'Ce poste est maintenant connecté avec un autre compte. Rechargez la page pour continuer avec ce compte.';
 
+/** H1: the desk marks its automatic report refreshes; they are not activity and never slide the session. */
+const background = (req: Request) => req.headers['x-desk-background'] === '1';
+
 @Controller('api/desk')
 @UseFilters(DeskExceptionFilter)
 export class DeskController {
@@ -42,7 +45,7 @@ export class DeskController {
     const action = params.get('action');
     if (action === 'health')
       return sendJson(res, { ok: true, app: 'ThinkerCare' });
-    const session = await this.auth.resolveSession(req.headers.cookie);
+    const session = await this.auth.resolveSession(req.headers.cookie, background(req));
     if (!session)
       return sendJson(
         res,
@@ -97,7 +100,7 @@ export class DeskController {
       }
       return sendJson(res, { ok: true }, 200, { 'Set-Cookie': cookie });
     }
-    const session = await this.auth.resolveSession(req.headers.cookie);
+    const session = await this.auth.resolveSession(req.headers.cookie, background(req));
     if (session?.cookie) res.setHeader('Set-Cookie', session.cookie);
     const user = session?.user;
     // Signing out of a session that already ended still clears the browser cookie.
