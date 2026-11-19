@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { Sidebar, navItems } from '../src/ui/shell/Sidebar';
+import { clearance } from '../src/ui/shell/AppShell';
 import { type State } from '../src/ui/shared/types';
 
 const titles: Record<string, string> = { coverage: 'Parcours produits', call: 'Appel guidé', catalogue: 'Catalogue', results: 'Pilotage', progress: 'Ma progression', contributions: 'Apports & primes', protocol: 'Protocole', admin: 'Gestion', account: 'Mon compte' };
@@ -63,4 +64,13 @@ test('the phone bar shows « Plus » while hiding the destinations it holds', ()
   const css = readFileSync(new URL('../src/styles/shell.css', import.meta.url), 'utf8');
   expect(css).toContain('.shell-nav__list > li:not([data-phone]):not(.shell-nav__plus) { display: none; }');
   expect(css).toContain('.shell-nav__list > .shell-nav__plus { display: block; }');
+});
+
+test('a focused control clears the bars of its scrolling box and of the page (callux-4)', () => {
+  // Rail 0..600 with its pinned total from 420: a price option at 400..456 scrolls up by 52 so it ends 16px above it.
+  expect(clearance({ top: 400, bottom: 456 }, 0, 420)).toBe(52);
+  expect(clearance({ top: 100, bottom: 156 }, 0, 420)).toBe(0);
+  expect(clearance({ top: 70, bottom: 120 }, 72, 420)).toBe(-18);
+  // Taller than the space between the bars: left alone.
+  expect(clearance({ top: 0, bottom: 500 }, 0, 420)).toBe(0);
 });

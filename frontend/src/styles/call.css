@@ -245,6 +245,10 @@
     position: sticky; inset-block-start: calc(var(--topbar-height) + var(--space-6));
     display: flex; flex-direction: column; max-block-size: calc(100dvh - var(--topbar-height) - var(--space-6) - var(--space-4));
     overflow-y: auto; scrollbar-width: thin;
+    /* RAILFOCUS: a price option or the delivery field scrolled into view stops above the pinned total and « Copier »
+       (the bar's height from its tokens: paddings, readout lines, gaps and the button). */
+    --call-total-bar-block: calc(var(--space-3) * 4 + var(--space-4) + var(--space-1) * 2 + var(--text-label) * var(--leading-ui) + var(--text-price-lg) * var(--leading-price) + var(--text-caption) * var(--leading-body) + var(--control-height));
+    scroll-padding-block-end: var(--call-total-bar-block);
     background: var(--color-bg-surface); border: 1px solid transparent; border-radius: var(--radius-card); box-shadow: var(--shadow-1);
   }
   .call-rail > * { flex: none; }

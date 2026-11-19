@@ -17,7 +17,7 @@ import { CallContextPanel } from '../src/ui/call/CallContextPanel';
 import { CopyFallback } from '../src/ui/call/CopyFallback';
 import { SalesCoach } from '../src/ui/call/SalesCoach';
 import { Photo } from '../src/ui/shared/Photo';
-import { readQuantity } from '../src/ui/QuantityControl';
+import { readQuantity, typeQuantity, settleQuantity } from '../src/ui/QuantityControl';
 
 // Call screens rendered from a plain model (no DOM library), plus the source guards of the call flow.
 const catalogue: Product[] = JSON.parse(readFileSync(new URL('../../shared/test/fixtures/catalogue.json', import.meta.url), 'utf8'));
@@ -262,13 +262,27 @@ describe('step 0 and call context (DUPPACK, SEARCH, C3, ORDERREF, X12, QTY, COPY
     expect(readFileSync(new URL('../src/ui/shared/ProductModal.tsx', import.meta.url), 'utf8')).toContain('<Photo product={detail} alt={detail.name}/>');
   });
 
-  it('a typed quantity out of range is never kept: it goes back with a reason', () => {
+  it('a typed quantity that can never be valid goes back at once with a reason; one below the minimum waits (QTY, callux-3)', () => {
     expect(readQuantity('', 1)).toEqual({ wait: true });
     expect(readQuantity('4', 1)).toEqual({ apply: 4 });
-    expect(readQuantity('0', 1)).toEqual({ hint: '1 au minimum.' });
-    expect(readQuantity('2', 3)).toEqual({ hint: '3 au minimum : la quantité de la commande initiale.' });
+    expect(readQuantity('0', 1)).toEqual({ pending: '1 au minimum.' });
+    expect(readQuantity('2', 3)).toEqual({ pending: '3 au minimum : la quantité de la commande initiale.' });
     expect(readQuantity('150', 1)).toEqual({ hint: `${MAX_ITEM_QUANTITY} au maximum.` });
     expect(readQuantity('1.5', 1)).toEqual({ hint: 'Nombre entier uniquement.' });
+    expect(readQuantity('1e1', 1)).toEqual({ hint: 'Nombre entier uniquement.' });
+  });
+
+  it('typing « 12 » with a minimum of 2 keeps the « 1 » on the way, applies 12, and a « 1 » left alone goes back on blur (callux-3)', () => {
+    const one = typeQuantity('1', 2, 2);
+    expect(one).toEqual({ field: { draft: '1', hint: '' }, apply: undefined });
+    expect(typeQuantity('12', 2, 2)).toEqual({ field: { draft: '12', hint: '' }, apply: 12 });
+    expect(settleQuantity(one.field, 2, 2)).toEqual({ draft: '2', hint: '2 au minimum : la quantité de la commande initiale.' });
+    // Leaving an applied or empty field shows the current quantity, without a reason.
+    expect(settleQuantity({ draft: '12', hint: '' }, 2, 12)).toEqual({ draft: '12', hint: '' });
+    expect(settleQuantity({ draft: '', hint: '' }, 2, 3)).toEqual({ draft: '3', hint: '' });
+    // Above the maximum or not a whole number: back at once, with the reason.
+    expect(typeQuantity('100', 2, 3)).toEqual({ field: { draft: '3', hint: `${MAX_ITEM_QUANTITY} au maximum.` } });
+    expect(typeQuantity('2.', 1, 3).field.draft).toBe('3');
   });
 
   it('a refused copy opens the text in a dialog; each copy names what it copied', () => {
@@ -319,6 +333,14 @@ describe('source guards', () => {
   it('on the call, notices open bottom left over the call column, never over the rail (TOASTRAIL)', () => {
     const components = readFileSync(new URL('../src/styles/components.css', import.meta.url), 'utf8');
     expect(components).toMatch(/@media \(min-width: 1024px\) \{\s*:root:has\(\.call-layout\) \.toast-region \{ inset-block: auto calc\(var\(--call-bar-height\) \+ var\(--space-8\)\); inset-inline: calc\(var\(--sidebar-width\) \+ var\(--gutter\)\) auto; \}/);
+  });
+  it('the rail keeps a focused price option above its pinned total (callux-4)', () => {
+    const css = readFileSync(new URL('../src/styles/call.css', import.meta.url), 'utf8');
+    const rail = css.slice(css.indexOf('  .call-rail {'), css.indexOf('}', css.indexOf('  .call-rail {')));
+    expect(rail).toContain('scroll-padding-block-end: var(--call-total-bar-block);');
+    expect(rail).toMatch(/--call-total-bar-block: calc\((var\(--[a-z0-9-]+\)( \* (\d|var\(--[a-z-]+\)))?( \+ )?)+\);/);
+    const shell = readFileSync(new URL('../src/ui/shell/AppShell.tsx', import.meta.url), 'utf8');
+    expect(shell).toContain('clearInside(el);');
   });
   it('each view has its own error boundary inside the shell (X6)', () => {
     expect(readFileSync(new URL('../src/ui/shell/AppShell.tsx', import.meta.url), 'utf8')).toContain('<ViewBoundary key={view}');

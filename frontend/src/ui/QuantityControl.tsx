@@ -1,15 +1,33 @@
 import {useEffect,useId,useState} from 'react';
 import {MAX_ITEM_QUANTITY} from '@touche/domain';
 
-/** What a typed quantity does (QTY): '' waits for the next digit; a whole number in range applies; anything else is
- *  never shown, the field goes back to the current quantity and says why. */
-export function readQuantity(text:string,min:number):{apply:number}|{wait:true}|{hint:string}{
+const below=(min:number)=>min>1?`${min} au minimum : la quantité de la commande initiale.`:`${min} au minimum.`;
+
+/** What a typed quantity does (QTY): '' waits for the next digit; a whole number in range applies. A number below the
+ *  minimum may be the start of a valid one (« 1 » on the way to « 12 » with a minimum of 2): it stays in the field and
+ *  waits (`pending`, with the reason shown if the field is left that way). Only what can never become valid (not a whole
+ *  number, above the maximum) goes back at once with the reason. */
+export function readQuantity(text:string,min:number):{apply:number}|{wait:true}|{pending:string}|{hint:string}{
   if(text==='')return {wait:true};
   const next=Number(text);
-  if(!Number.isSafeInteger(next))return {hint:'Nombre entier uniquement.'};
-  if(next<min)return {hint:min>1?`${min} au minimum : la quantité de la commande initiale.`:`${min} au minimum.`};
+  if(!/^\d+$/.test(text)||!Number.isSafeInteger(next))return {hint:'Nombre entier uniquement.'};
   if(next>MAX_ITEM_QUANTITY)return {hint:`${MAX_ITEM_QUANTITY} au maximum.`};
+  if(next<min)return {pending:below(min)};
   return {apply:next};
+}
+
+/** The field as typed, and the hint under it. */
+export type QuantityField={draft:string;hint:string};
+/** A keystroke: the field to show, and the quantity to apply if any. */
+export function typeQuantity(text:string,min:number,value:number):{field:QuantityField;apply?:number}{
+  const read=readQuantity(text,min);
+  if('hint' in read)return {field:{draft:String(value),hint:read.hint}};
+  return {field:{draft:text,hint:''},apply:'apply' in read?read.apply:undefined};
+}
+/** Leaving the field (blur or Enter): it shows the current quantity again; a number left below the minimum says why. */
+export function settleQuantity(field:QuantityField,min:number,value:number):QuantityField{
+  const read=readQuantity(field.draft,min);
+  return {draft:String(value),hint:'pending' in read?read.pending:''};
 }
 
 export default function QuantityControl({label,value,min=1,disabled=false,onChange}:{
@@ -24,17 +42,17 @@ export default function QuantityControl({label,value,min=1,disabled=false,onChan
     setDraft(String(onChange(next)===false?value:next));
   }
   function type(text:string){
-    const read=readQuantity(text,min);
-    if('hint' in read){setDraft(String(value));setHint(read.hint);return;}
-    setDraft(text);setHint('');
-    if('apply' in read)update(read.apply);
+    const {field,apply}=typeQuantity(text,min,value);
+    setDraft(field.draft);setHint(field.hint);
+    if(apply!==undefined)update(apply);
   }
+  function settle(){const field=settleQuantity({draft,hint},min,value);setDraft(field.draft);setHint(field.hint);}
   return <>
     <div className="quantity-control" role="group" aria-label={label}>
       <button type="button" disabled={disabled||value<=min} aria-label={label+' : diminuer'} onClick={()=>{setHint('');update(value-1);}}>−</button>
       <input type="number" inputMode="numeric" min={min} max={MAX_ITEM_QUANTITY} step={1} value={draft} disabled={disabled} aria-label={label} aria-describedby={hint?hintId:undefined} aria-invalid={hint?true:undefined}
         onChange={event=>type(event.target.value)}
-        onBlur={()=>{setDraft(String(value));setHint('');}} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur();}}/>
+        onBlur={settle} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur();}}/>
       <button type="button" disabled={disabled||value>=MAX_ITEM_QUANTITY} aria-label={label+' : augmenter'} onClick={()=>{setHint('');update(value+1);}}>+</button>
     </div>
     {hint&&<p id={hintId} className="quantity-hint" role="status">{hint}</p>}
