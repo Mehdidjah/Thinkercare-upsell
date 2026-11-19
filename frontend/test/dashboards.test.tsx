@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { bonusEstimate, type BonusRule } from '@touche/domain';
 import { ReminderTable, isDue, type Reminder } from '../src/ui/pages/Reminders';
 import { ProgressCard } from '../src/ui/Commission';
-import Analytics, { auditDetail, auditLabel } from '../src/ui/Analytics';
+import Analytics, { CallDetail, analyticsQuery, auditDetail, auditLabel } from '../src/ui/Analytics';
 
 const ui = (path: string) => readFileSync(new URL('../src/ui/' + path, import.meta.url), 'utf8');
 const reminder = (over: Partial<Reminder> = {}): Reminder => ({ id: 'c1aaaaaaaa', user_id: 'u1', operator: 'Lina', base_id: 'antiacne', outcome: 'callback', created_at: '2026-11-01T10:00:00Z', callback_at: '2026-11-02T10:00:00Z', order_ref: 'DOS-1', meta: { originals: [{ id: 'antiacne', name: 'Gel anti-acné', price: 1000, quantity: 2 }] }, ...over });
@@ -33,9 +33,13 @@ test('a reminder is due today or late, in Alger days (X7)', () => {
 test('« Marquer traité » undoes with reopen-reminder when the server has it, otherwise asks first (PN5)', () => {
   const source = ui('pages/Reminders.tsx');
   expect(source).toContain("features?.includes('reopen-reminder')");
-  expect(source).toContain("action:'reopen-reminder',id:r.id");
-  expect(source).toContain("action:{label:'Annuler'");
+  expect(source).toContain("action:'reopen-reminder',id:o.id");
   expect(source).toContain("title:'Marquer ce rappel comme traité ?'");
+  // « Annuler » is the view's own notice (15 s, gone with the view), not a toast that stays forever.
+  expect(source).not.toContain("action:{label:'Annuler'");
+  expect(ui('Analytics.tsx')).toContain('{sideState}{reminderDone.notice}');
+  expect(ui('Analytics.tsx')).toContain("useEffect(()=>{if(tab!=='reminders')reminderDone.dismiss();},[tab]);");
+  expect(ui('Commission.tsx')).toContain('{reminderDone.notice}{reminders.length?');
 });
 
 const rule: BonusRule = { effectiveMonth: '2026-01', threshold: 60, rateDzd: 45, mode: 'all_month', version: 1 };
@@ -93,7 +97,6 @@ test('Traçabilité speaks French, one readable line per event (N9)', () => {
   expect(auditLabel('user.created')).toBe('Compte créé');
   expect(auditLabel('something.new')).toBe('something.new');
   expect(auditDetail('bonus.rule.updated', { threshold: 60, rateDzd: 45, mode: 'all_month', version: 2 })).toMatch(/^Seuil : 60 upsells · 45\sDA par upsell · tous les upsells dès le seuil · version 2$/);
-  expect(auditDetail('call.voided', { reason: 'Mauvais dossier', call: { outcome: 'duo' }, meta: { orderRef: 'DOS-9' } })).toBe('Motif : Mauvais dossier · Résultat annulé : Duo accepté · Dossier DOS-9');
   expect(auditDetail('call.closed', { outcome: 'noanswer' })).toBe('Résultat : Sans réponse');
   expect(auditDetail('account.updated', { role: 'manager', team: '', active: false })).toBe('Rôle : Manager · Équipe : sans équipe · Compte désactivé');
   expect(auditDetail('reminder.closed', {})).toBe('');
@@ -106,4 +109,46 @@ test('the filter card hides on views that ignore it; Pilotage opens on the view 
   expect(overview).toMatch(/aria-current="page">Vue d’ensemble</);
   for (const tab of ['reminders', 'definitions', 'audit']) expect(renderToStaticMarkup(<Analytics user={admin} users={[]} products={[]} resume={() => {}} initialTab={tab} />)).not.toContain('Filtres du rapport');
   expect(renderToStaticMarkup(<Analytics user={admin} users={[]} products={[]} resume={() => {}} initialTab="journal" />)).toMatch(/aria-current="page">Journal</);
+});
+
+// The call.voided audit detail as the backend writes it: tc_calls row, tc_call_meta row, accepted-dossier row or null.
+const voidSnapshot = (meta: unknown, dossier: unknown = null) => ({
+  reason: 'Mauvais dossier', reminderClosed: false,
+  call: { id: 'c1', user_id: 'u1', operator: 'Lina', outcome: 'duo', base_id: 'antiacne', created_at: '2026-11-19T09:00:00.000Z', voided_at: null },
+  meta, dossier,
+});
+test('Traçabilité reads the voided call’s dossier from the real snapshot (compat-4)', () => {
+  const line = 'Motif : Mauvais dossier · Résultat annulé : Duo accepté · Dossier DOS-9';
+  expect(auditDetail('call.voided', voidSnapshot({ call_id: 'c1', order_ref: 'DOS-9', callback_at: null, callback_done: 0, data: { orderRef: 'DOS-9', version: 3 } }))).toBe(line);
+  // Older meta rows have no order_ref column value: the reference inside data.
+  expect(auditDetail('call.voided', voidSnapshot({ call_id: 'c1', order_ref: null, data: { orderRef: 'DOS-9' } }))).toBe(line);
+  // No meta row: the accepted dossier still names it.
+  expect(auditDetail('call.voided', { ...voidSnapshot(null, { call_id: 'c1', order_ref: 'DOS-9', voided_at: null }), reopenedReminderId: 'c0' })).toBe(line);
+  expect(auditDetail('call.voided', voidSnapshot({ call_id: 'c1', order_ref: null, data: {} }))).toBe('Motif : Mauvais dossier · Résultat annulé : Duo accepté');
+});
+
+test('Pilotage asks for voided calls only from a server that has them, under its own cache key (voided=1)', () => {
+  expect(analyticsQuery('2026-11-01', '2026-11-19', true)).toBe('action=analytics&from=2026-11-01&to=2026-11-19&voided=1');
+  expect(analyticsQuery('2026-11-01', '2026-11-19', false)).toBe('action=analytics&from=2026-11-01&to=2026-11-19');
+  expect(analyticsQuery('2026-11-01', '2026-11-19', true, 'abc')).toBe('action=analytics&from=2026-11-01&to=2026-11-19&voided=1&cursor=abc');
+  const analytics = ui('Analytics.tsx');
+  expect(analytics).toContain("const withVoided=!!features?.includes('void-call');");
+  expect(analytics).toContain("useLiveReport<ActivityCall[]>('analytics:'+from+':'+to+(withVoided?':voided':''),");
+  expect(analytics).toContain('const q=analyticsQuery(from,to,withVoided,cursor);');
+});
+
+const journalCall = { id: 'c1aaaaaaaa', user_id: 'u1', operator: 'Lina', base_id: 'antiacne', outcome: 'duo', refusal: '', created_at: '2026-11-19T09:00:00.000Z', base_total: 2000, offered_total: 3500, extra: 1500, pilot: 0, proposals: [], meta: { orderRef: 'DOS-9', version: 3, originals: [{ id: 'antiacne', name: 'Gel anti-acné', price: 1000, quantity: 2 }] } } as any;
+test('voiding from the call detail confirms inside the dialog and gives the focus back (pages-3)', () => {
+  const html = renderToStaticMarkup(<CallDetail call={journalCall} actor="Direction" canVoid onClose={() => {}} onVoided={() => {}} resume={() => {}} />);
+  expect(html).toContain('>Annuler ce résultat…</button>');
+  expect(renderToStaticMarkup(<CallDetail call={{ ...journalCall, voided_at: '2026-11-19T10:00:00.000Z', void_reason: 'Doublon' }} actor="Direction" canVoid onClose={() => {}} onVoided={() => {}} resume={() => {}} />)).not.toContain('Annuler ce résultat…');
+  const analytics = ui('Analytics.tsx');
+  const detail = analytics.slice(analytics.indexOf('export function CallDetail'), analytics.indexOf('export default function Analytics'));
+  expect(detail).not.toContain('notify(');
+  expect(detail).toContain('setVoiding(false);setReason(\'\');setDone(true);');
+  expect(detail).toContain('{done?<p ref={doneRef} tabIndex={-1} className="notice notice--success" role="status">');
+  expect(detail).toContain('useEffect(()=>{if(done)doneRef.current?.focus();},[done]);');
+  expect(detail).toContain("onClick={()=>{backToVoid.current=true;setVoiding(false);setError('');}}>Garder le résultat</button>");
+  expect(detail).toContain('<button ref={voidRef} type="button" className="btn btn--secondary" onClick={()=>setVoiding(true)}>Annuler ce résultat…</button>');
+  expect(detail).toContain('useEffect(()=>{if(!voiding&&backToVoid.current){backToVoid.current=false;voidRef.current?.focus();}},[voiding]);');
 });

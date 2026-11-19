@@ -1,6 +1,6 @@
 import {useEffect,useId,useMemo,useState,useRef,useSyncExternalStore,type FormEvent,type ReactNode} from 'react';
 import {requestJson} from '../data/api';
-import {useLiveReport} from '../data/use-live-report';
+import {useLiveReport,reportRequest} from '../data/use-live-report';
 import ReportFreshness,{StaleNotice} from './ReportFreshness';
 import {Icon} from './shared/Icon';
 import {Dialog} from './shared/Dialog';
@@ -16,10 +16,11 @@ type Props={user:User;users:User[];products:Product[];resume:(call:any)=>void;in
  /** Server capabilities (state.features): 'void-call' offers « Annuler ce résultat », 'reopen-reminder' the undo of « Marquer traité ». */
  features?:string[]};
 type AuditEvent={id:string;at:string;action:string;target:string;detail:unknown;user_id:string;label?:string|null};
-function request(query:string,body?:unknown,signal?:AbortSignal){return requestJson(query,body,signal);}
 function download(name:string,body:string,mime='text/csv;charset=utf-8'){const u=URL.createObjectURL(new Blob([body],{type:mime})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
 const rate=(x:number|null)=>x===null?'Non mesuré':x.toFixed(1).replace('.',',')+' %';
 const dt=(x:string)=>new Date(x).toLocaleString('fr-FR',{timeZone:'Africa/Algiers',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+/** One page of GET ?action=analytics; `voided=1` only for a server that lists voided calls (features: 'void-call'). */
+export function analyticsQuery(from:string,to:string,voided:boolean,cursor?:string|null){const q=new URLSearchParams({action:'analytics',from,to});if(voided)q.set('voided','1');if(cursor)q.set('cursor',cursor);return q.toString();}
 const dayLabel=(d:string)=>d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4);
 function Empty({text='Les premiers appels enregistrés alimenteront cette vue.'}:{text?:string}){return <div className="empty"><Icon name="chart"/><h3>Aucune donnée sur cette sélection.</h3><p>{text}</p></div>;}
 function Metric({title,value,note}:{title:string;value:string|number;note:string}){return <div className="kpi"><span className="kpi__label">{title}</span><strong className={'kpi__value'+(String(value).length>12?' kpi__value--md':'')}>{value}</strong><small className="kpi__note">{note}</small></div>;}
@@ -46,7 +47,9 @@ export function auditDetail(action:string,detail:unknown):string{
  switch(auditAction(action)){
   case 'call.closed':return line(d.outcome&&'Résultat : '+(OUTCOMES[d.outcome]||d.outcome));
   case 'offer.presented':return line(d.callId&&'Appel '+String(d.callId).slice(0,8));
-  case 'call.voided':{const call=d.call||{},ref=d.meta?.orderRef||call.order_ref||d.dossier?.order_ref;return line(d.reason&&'Motif : '+d.reason,call.outcome&&'Résultat annulé : '+(OUTCOMES[call.outcome]||call.outcome),ref&&'Dossier '+ref);}
+  // Snapshot {reason, call, meta, dossier, reminderClosed, reopenedReminderId?}: `meta` is the tc_call_meta row
+  // (order_ref column, data.orderRef), `dossier` the accepted-dossier row or null.
+  case 'call.voided':{const call=d.call||{},ref=d.meta?.order_ref||d.meta?.data?.orderRef||d.dossier?.order_ref;return line(d.reason&&'Motif : '+d.reason,call.outcome&&'Résultat annulé : '+(OUTCOMES[call.outcome]||call.outcome),ref&&'Dossier '+ref);}
   case 'account.created':return line(d.role&&'Rôle : '+role(d.role));
   case 'account.updated':return line(d.role&&'Rôle : '+role(d.role),'team' in d&&'Équipe : '+(d.team||'sans équipe'),'active' in d&&(d.active?'Compte actif':'Compte désactivé'));
   case 'account.removed':return line(d.label&&d.label+(d.username?` (${d.username})`:''),d.role&&role(d.role));
@@ -70,23 +73,27 @@ function ViewStrip({views,tab,setTab}:{views:[string,string][];tab:string;setTab
 }
 
 /** Call detail (Journal): offers, traceability, and « Annuler ce résultat » with a required reason when the
- *  server supports it (H5). A voided call stays here and in the journal; it leaves every figure and bonus. */
-function CallDetail({call,actor,canVoid,onClose,onVoided,resume}:{call:ActivityCall;actor:string;canVoid:boolean;onClose:()=>void;onVoided:(call:ActivityCall)=>void;resume:(call:any)=>void}){
- const [voiding,setVoiding]=useState(false),[reason,setReason]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
- const helpId=useId(),{notify}=useNotify();
+ *  server supports it (H5). A voided call stays here and in the journal; it leaves every figure and bonus.
+ *  The confirmation shows in the dialog (a toast would sit behind the modal backdrop) and takes the focus;
+ *  « Garder le résultat » gives the focus back to « Annuler ce résultat… ». */
+export function CallDetail({call,actor,canVoid,onClose,onVoided,resume}:{call:ActivityCall;actor:string;canVoid:boolean;onClose:()=>void;onVoided:(call:ActivityCall)=>void;resume:(call:any)=>void}){
+ const [voiding,setVoiding]=useState(false),[reason,setReason]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(false);
+ const helpId=useId(),doneRef=useRef<HTMLParagraphElement>(null),voidRef=useRef<HTMLButtonElement>(null),backToVoid=useRef(false);
+ useEffect(()=>{if(done)doneRef.current?.focus();},[done]);
+ useEffect(()=>{if(!voiding&&backToVoid.current){backToVoid.current=false;voidRef.current?.focus();}},[voiding]);
  async function submit(event:FormEvent){
   event.preventDefault();const text=reason.trim();
   if(text.length<3){setError('Indiquez le motif de l’annulation (3 caractères minimum).');return;}
   setBusy(true);setError('');
-  try{const r=await request('',{action:'void-call',id:call.id,reason:text});
+  try{const r=await requestJson('',{action:'void-call',id:call.id,reason:text});
    onVoided({...call,voided_at:r.call?.voided_at??new Date().toISOString(),voided_by:r.call?.voided_by??null,voided_by_label:actor,void_reason:r.call?.void_reason??text});
-   setVoiding(false);setReason('');notify({kind:'success',title:'Résultat annulé.',detail:'L’appel reste au journal. Il ne compte plus dans les chiffres ni dans les primes, et son dossier est libéré.'});
+   setVoiding(false);setReason('');setDone(true);
   }catch(e){setError((e as Error).message);}finally{setBusy(false);}
  }
  return <Dialog open onClose={()=>{if(!busy)onClose()}} labelledBy="pilot-detail-title" dismissOnBackdrop={!voiding} className="dialog--wide pilot-detail"><div className="dialog__head"><div><p className="caption">Dossier {call.meta.orderRef||call.id.slice(0,8)}</p><h2 id="pilot-detail-title" className="dialog__title" data-dialog-title tabIndex={-1}>{call.operator}, {dt(call.created_at)}</h2></div><button type="button" className="icon-btn dialog__close" onClick={onClose} disabled={busy} aria-label="Fermer le détail"><Icon name="close"/></button></div>
- <div className="dialog__body">{isVoided(call)&&<div className="notice notice--danger"><Icon name="alert" className="notice__icon"/><p className="notice__text"><b>Résultat annulé</b> le {dt(call.voided_at!)} par {call.voided_by_label||'un responsable'}. Motif : {call.void_reason||'non renseigné'}. L’appel reste au journal ; il ne compte plus dans les chiffres ni dans les primes.</p></div>}<p><b>{OUTCOMES[call.outcome]}</b>. {STAGES[call.meta.customerStage||'unknown']}. {call.meta.team||'Sans équipe'}.</p><div className="kpi-grid kpi-grid--3"><Metric title="Commande initiale" value={money(call.base_total)} note={initialItems(call).map(quantityLabel).join(' + ')}/><Metric title="Panier déclaré" value={money(call.offered_total)} note="Hors livraison"/><Metric title="Supplément accepté" value={money(call.extra)} note="Pas un encaissement"/></div><h3>Chronologie des offres présentées</h3>{call.proposals.length?call.proposals.map(p=><div className="pilot-event" key={p.id}><p className="caption">{dt(p.created_at)}, {TIERS[p.tier]}</p><b>{p.products.map(quantityLabel).join(' + ')}</b><p><span className="num">{money(p.offerTotal)}</span>, supplément <span className="num">{money(p.extra)}</span>{call.meta.acceptedProposalId===p.id&&<> <span className="tag tag--success"><Icon name="check"/>Acceptée</span></>}</p><p className="caption">Livraison : {p.delivery===null?'non renseignée':money(p.delivery)}</p></div>):<div className="notice notice--info">{call.meta.version===3?'Aucune offre marquée présentée.':'Appel historique : les offres présentées ne sont pas connues.'}</div>}<div className="pilot-definition"><h3>Traçabilité</h3><p className="caption">ID appel : {call.id}<br/>Source : saisie interne, version {call.meta.version||'historique'}<br/>Protocole : {call.pilot?'pilote':'validé en interne'}<br/>Objections traitées : {call.meta.objections?.map(objectionLabel).join(', ')||'Non renseignées'}<br/>Motif du refus : {REASONS[call.refusal]||call.refusal||'Sans objet'}</p></div>
- {voiding&&<form className="pilot-void" onSubmit={submit}><h3>Annuler ce résultat</h3><p>Pour une erreur de saisie : mauvais dossier, mauvais résultat ou appel enregistré deux fois. Rien n’est supprimé ; l’annulation est tracée avec son motif.</p><label className="field">Motif de l’annulation<textarea autoFocus value={reason} onChange={e=>setReason(e.target.value)} required minLength={3} maxLength={300} disabled={busy} aria-describedby={helpId} aria-invalid={!!error||undefined}/><small id={helpId}>3 à 300 caractères, visible dans le journal et la traçabilité.</small></label>{error&&<p className="notice notice--danger" role="alert"><Icon name="alert" className="notice__icon"/><span className="notice__text">{error}</span></p>}<div className="toolbar"><button type="button" className="btn btn--secondary" disabled={busy} onClick={()=>{setVoiding(false);setError('');}}>Garder le résultat</button><button type="submit" className="btn btn--danger" disabled={busy} aria-busy={busy||undefined}>{busy?'Annulation…':'Confirmer l’annulation'}</button></div></form>}
- </div><div className="dialog__actions">{canVoid&&!isVoided(call)&&!voiding&&<button type="button" className="btn btn--secondary" onClick={()=>setVoiding(true)}>Annuler ce résultat…</button>}<button type="button" className="btn btn--secondary" onClick={()=>{onClose();resume(call)}}>Préparer un nouvel appel lié</button></div></Dialog>;
+ <div className="dialog__body">{done?<p ref={doneRef} tabIndex={-1} className="notice notice--success" role="status"><Icon name="check" className="notice__icon"/><span className="notice__text"><b>Résultat annulé.</b> L’appel reste au journal. Il ne compte plus dans les chiffres ni dans les primes, et son dossier est libéré.{call.void_reason?` Motif : ${call.void_reason}.`:''}</span></p>:isVoided(call)&&<div className="notice notice--danger"><Icon name="alert" className="notice__icon"/><p className="notice__text"><b>Résultat annulé</b> le {dt(call.voided_at!)} par {call.voided_by_label||'un responsable'}. Motif : {call.void_reason||'non renseigné'}. L’appel reste au journal ; il ne compte plus dans les chiffres ni dans les primes.</p></div>}<p><b>{OUTCOMES[call.outcome]}</b>. {STAGES[call.meta.customerStage||'unknown']}. {call.meta.team||'Sans équipe'}.</p><div className="kpi-grid kpi-grid--3"><Metric title="Commande initiale" value={money(call.base_total)} note={initialItems(call).map(quantityLabel).join(' + ')}/><Metric title="Panier déclaré" value={money(call.offered_total)} note="Hors livraison"/><Metric title="Supplément accepté" value={money(call.extra)} note="Pas un encaissement"/></div><h3>Chronologie des offres présentées</h3>{call.proposals.length?call.proposals.map(p=><div className="pilot-event" key={p.id}><p className="caption">{dt(p.created_at)}, {TIERS[p.tier]}</p><b>{p.products.map(quantityLabel).join(' + ')}</b><p><span className="num">{money(p.offerTotal)}</span>, supplément <span className="num">{money(p.extra)}</span>{call.meta.acceptedProposalId===p.id&&<> <span className="tag tag--success"><Icon name="check"/>Acceptée</span></>}</p><p className="caption">Livraison : {p.delivery===null?'non renseignée':money(p.delivery)}</p></div>):<div className="notice notice--info">{call.meta.version===3?'Aucune offre marquée présentée.':'Appel historique : les offres présentées ne sont pas connues.'}</div>}<div className="pilot-definition"><h3>Traçabilité</h3><p className="caption">ID appel : {call.id}<br/>Source : saisie interne, version {call.meta.version||'historique'}<br/>Protocole : {call.pilot?'pilote':'validé en interne'}<br/>Objections traitées : {call.meta.objections?.map(objectionLabel).join(', ')||'Non renseignées'}<br/>Motif du refus : {REASONS[call.refusal]||call.refusal||'Sans objet'}</p></div>
+ {voiding&&<form className="pilot-void" onSubmit={submit}><h3>Annuler ce résultat</h3><p>Pour une erreur de saisie : mauvais dossier, mauvais résultat ou appel enregistré deux fois. Rien n’est supprimé ; l’annulation est tracée avec son motif.</p><label className="field">Motif de l’annulation<textarea autoFocus value={reason} onChange={e=>setReason(e.target.value)} required minLength={3} maxLength={300} disabled={busy} aria-describedby={helpId} aria-invalid={!!error||undefined}/><small id={helpId}>3 à 300 caractères, visible dans le journal et la traçabilité.</small></label>{error&&<p className="notice notice--danger" role="alert"><Icon name="alert" className="notice__icon"/><span className="notice__text">{error}</span></p>}<div className="toolbar"><button type="button" className="btn btn--secondary" disabled={busy} onClick={()=>{backToVoid.current=true;setVoiding(false);setError('');}}>Garder le résultat</button><button type="submit" className="btn btn--danger" disabled={busy} aria-busy={busy||undefined}>{busy?'Annulation…':'Confirmer l’annulation'}</button></div></form>}
+ </div><div className="dialog__actions">{canVoid&&!isVoided(call)&&!voiding&&<button ref={voidRef} type="button" className="btn btn--secondary" onClick={()=>setVoiding(true)}>Annuler ce résultat…</button>}<button type="button" className="btn btn--secondary" onClick={()=>{onClose();resume(call)}}>Préparer un nouvel appel lié</button></div></Dialog>;
 }
 
 export default function Analytics({user,users,products,resume,initialOperator='',initialTab,onOperatorUsed,features}:Props){
@@ -96,19 +103,23 @@ export default function Analytics({user,users,products,resume,initialOperator=''
  const phone=usePhone(),{announce}=useNotify(),manager=canManageWorkspace(user);
  useEffect(()=>{if(initialTab)setTab(initialTab)},[initialTab]);
  useEffect(()=>{if(initialOperator){setOperator(initialOperator);onOperatorUsed?.();}},[initialOperator]);
- const report=useLiveReport<ActivityCall[]>('analytics:'+from+':'+to,async signal=>{
+ // The new server lists voided calls only when asked (voided=1); the old one has none. The key names the query.
+ const withVoided=!!features?.includes('void-call');
+ const report=useLiveReport<ActivityCall[]>('analytics:'+from+':'+to+(withVoided?':voided':''),async(signal,o)=>{
   let cursor:string|null=null;const all:ActivityCall[]=[];let pages=0;
   do{
-   const q=new URLSearchParams({action:'analytics',from,to});if(cursor)q.set('cursor',cursor);
-   const d=await request('?'+q,undefined,signal);all.push(...d.calls);cursor=d.nextCursor;pages++;
+   const q=analyticsQuery(from,to,withVoided,cursor);
+   const d=await reportRequest('?'+q,signal,o);all.push(...d.calls);cursor=d.nextCursor;pages++;
    if(pages>=200&&cursor)throw new Error('Plus de 100 000 appels. Réduisez la période pour charger un rapport complet.');
   }while(cursor);
   return all;
  });
  const sideKey=tab==='reminders'||(tab==='audit'&&manager)?'action='+tab:null;
- const side=useLiveReport<{reminders?:Reminder[];events?:AuditEvent[]}>(sideKey,signal=>request('?'+sideKey,undefined,signal));
+ const side=useLiveReport<{reminders?:Reminder[];events?:AuditEvent[]}>(sideKey,(signal,o)=>reportRequest('?'+sideKey,signal,o));
  const rows=report.data??[],reminders=side.data?.reminders??[],audit=side.data?.events??[];
- const complete=useCompleteReminder(features,setError);
+ const reminderDone=useCompleteReminder(features,setError);
+ // « Annuler » belongs to the Rappels view: leaving it withdraws the offer.
+ useEffect(()=>{if(tab!=='reminders')reminderDone.dismiss();},[tab]);
  function refreshReports(){setError('');report.refresh();}
  const previousDay=useRef(today);
  useEffect(()=>{const before=previousDay.current;if(before===today)return;previousDay.current=today;
@@ -153,7 +164,7 @@ export default function Analytics({user,users,products,resume,initialOperator=''
  const salesNote=<div className="notice notice--info"><Icon name="info" className="notice__icon"/><p className="notice__text"><b>Ventes déclarées.</b> Livraison, encaissement et réachat vérifié : non raccordés. Aucun montant n’est présenté comme du cash reçu.</p></div>;
  const sideState=side.stale?<StaleNotice at={side.updatedAt}/>:!side.data&&side.error?<div role="alert" className="notice notice--danger"><Icon name="alert" className="notice__icon"/><p className="notice__text">{side.error}</p></div>:!side.data?<p className="muted" role="status">Chargement…</p>:null;
  const unfilteredView=<>
- {tab==='reminders'&&<section className="card pilot-panel"><h2>Les rappels à effectuer</h2><p>Vue de tous les rappels ouverts autorisés, indépendamment des filtres de dates du rapport. Aucun appel ni message n’est envoyé automatiquement.</p>{sideState}{reminders.length?<ReminderTable reminders={reminders} products={products} showOperator caption="Rappels ouverts, du plus ancien au plus récent" resume={resume} canComplete={r=>manager||r.user_id===user.id} complete={complete}/>:side.data&&<Empty text="Les rappels programmés lors de la clôture d’un appel apparaîtront ici."/>}</section>}
+ {tab==='reminders'&&<section className="card pilot-panel"><h2>Les rappels à effectuer</h2><p>Vue de tous les rappels ouverts autorisés, indépendamment des filtres de dates du rapport. Aucun appel ni message n’est envoyé automatiquement.</p>{sideState}{reminderDone.notice}{reminders.length?<ReminderTable reminders={reminders} products={products} showOperator caption="Rappels ouverts, du plus ancien au plus récent" resume={resume} canComplete={r=>manager||r.user_id===user.id} complete={reminderDone.complete}/>:side.data&&<Empty text="Les rappels programmés lors de la clôture d’un appel apparaîtront ici."/>}</section>}
  {tab==='definitions'&&<section className="card pilot-panel"><h2>Lire les chiffres sans ambiguïté</h2>{defs.map(([name,body])=><div key={name} className="pilot-definition"><h3>{name}</h3><p>{body}</p></div>)}</section>}
  {tab==='audit'&&manager&&<section className="card pilot-panel"><h2>Journal de traçabilité</h2><p>200 derniers événements. Aucun mot de passe ni réponse cutanée conservé dans ce journal.</p>{sideState}{audit.length?<div className="data-table"><table><caption className="sr-only">Journal de traçabilité, 200 derniers événements</caption><thead><tr><th scope="col">Date (Alger)</th><th scope="col">Compte</th><th scope="col">Action</th><th scope="col">Cible</th><th scope="col">Détail</th></tr></thead><tbody>{audit.map(a=>{const action=auditAction(a.action),call=action.startsWith('call.')||action.startsWith('reminder.')?rows.find(c=>c.id===a.target):undefined;
   const target=action.startsWith('account.')?people.get(a.target)||a.target:action==='catalogue.updated'?products.find(p=>p.id===a.target)?.name||a.target:action==='bonus.rule.updated'?'Mois '+a.target:action==='offer.presented'?'Offre '+a.target.slice(0,8):call?.meta.orderRef?'Dossier '+call.meta.orderRef:action.startsWith('call.')||action.startsWith('reminder.')?'Appel '+a.target.slice(0,8):a.target;

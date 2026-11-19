@@ -1,6 +1,34 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { requestJson } from './api';
 import { reportCache } from './report-cache';
 import { reportUpdates } from './report-updates';
+
+/** What a loader is told about its load: `background` for the silent 30 s, focus, online and cross-tab refreshes. */
+export type LoadOptions = { background: boolean };
+export type ReportLoader<T> = (signal: AbortSignal, options: LoadOptions) => Promise<T>;
+
+/** GET one report from a live-report loader, forwarding the background marker (every Pages loader goes through here). */
+export function reportRequest(query: string, signal: AbortSignal, options: LoadOptions): Promise<any> {
+  // integrator: pass o to requestJson once its 4th parameter exists: return requestJson(query, undefined, signal, options);
+  void options;
+  return requestJson(query, undefined, signal);
+}
+
+/** The inputs that started a load. */
+export type LoadTrigger = { key: string; revision: number; refreshKey: number };
+
+/**
+ * Whether a load is a background refresh: the same report as the last load (same key and `refreshKey`), started
+ * because the revision moved (30 s clock, focus, online, another tab, a save) without the user asking. A first
+ * load, another selection, a `refreshKey` bump and « Actualiser » are not. Replaying the same trigger (React runs
+ * an effect twice in development) keeps the first answer.
+ */
+export function nextLoad(last: { trigger: LoadTrigger; background: boolean } | null, trigger: LoadTrigger, askedRevision: number) {
+  const previous = last?.trigger;
+  if (previous && previous.key === trigger.key && previous.revision === trigger.revision && previous.refreshKey === trigger.refreshKey) return last!;
+  const background = !!previous && previous.key === trigger.key && previous.refreshKey === trigger.refreshKey && askedRevision !== trigger.revision;
+  return { trigger, background };
+}
 
 export type ReportState<T> = { key: string | null; data?: T; loading: boolean; asked: boolean; error: string; updatedAt: string };
 
@@ -39,21 +67,25 @@ export function reportView<T>(state: Pick<ReportState<T>, 'data' | 'loading' | '
 }
 
 /** Keep a complete snapshot visible while replacing it with a fresh, complete report. */
-export function useLiveReport<T>(key: string | null, loader: (signal: AbortSignal) => Promise<T>, refreshKey = 0) {
+export function useLiveReport<T>(key: string | null, loader: ReportLoader<T>, refreshKey = 0) {
   const revision = useSyncExternalStore(reportUpdates.subscribe, reportUpdates.getSnapshot, () => 0);
   const loadRef = useRef(loader);
   loadRef.current = loader;
   // The revision a user click produced: idempotent if the effect runs twice for it.
   const askedRevision = useRef(-1);
+  const lastLoad = useRef<ReturnType<typeof nextLoad> | null>(null);
   const [result, setResult] = useState<ReportState<T>>({ key: null, loading: false, asked: false, error: '', updatedAt: '' });
   useEffect(() => {
-    if (key === null) return;
+    // A report that comes back after being switched off (another Pilotage view) is opened, not refreshed.
+    if (key === null) { lastLoad.current = null; return; }
     let active = true;
     const load = loadRef.current;
+    lastLoad.current = nextLoad(lastLoad.current, { key, revision, refreshKey }, askedRevision.current);
+    const options: LoadOptions = { background: lastLoad.current.background };
     const cached = reportCache.peek<T>(key);
     setResult(previous => startLoad(previous, key, askedRevision.current === revision, cached, reportCache.loadedAt(key)));
     // Also revalidate on navigation; cached data makes opening a tab immediate.
-    reportCache.load<T>(key, load, true).then(data => {
+    reportCache.load<T>(key, signal => load(signal, options), true).then(data => {
       if (active) setResult({ key, data, loading: false, asked: false, error: '', updatedAt: new Date().toISOString() });
     }).catch(error => {
       if (active) setResult(previous => failLoad(previous, error));
