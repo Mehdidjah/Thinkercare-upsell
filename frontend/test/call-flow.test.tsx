@@ -316,6 +316,10 @@ describe('source guards', () => {
     expect(css).not.toMatch(/\.call-basket \{ overflow/);
     expect(css).toContain('.call-layout:has(.call-offer) .call-rail > :is(.call-totals, .call-total-bar) { display: none; }');
   });
+  it('on the call, notices open bottom left over the call column, never over the rail (TOASTRAIL)', () => {
+    const components = readFileSync(new URL('../src/styles/components.css', import.meta.url), 'utf8');
+    expect(components).toMatch(/@media \(min-width: 1024px\) \{\s*:root:has\(\.call-layout\) \.toast-region \{ inset-block: auto calc\(var\(--call-bar-height\) \+ var\(--space-8\)\); inset-inline: calc\(var\(--sidebar-width\) \+ var\(--gutter\)\) auto; \}/);
+  });
   it('each view has its own error boundary inside the shell (X6)', () => {
     expect(readFileSync(new URL('../src/ui/shell/AppShell.tsx', import.meta.url), 'utf8')).toContain('<ViewBoundary key={view}');
   });

@@ -390,6 +390,14 @@
   .toast--error .toast__icon, .toast--error .toast__title { color: var(--color-danger-text); }
   @media (prefers-reduced-motion: no-preference) { .toast { animation: tc-dialog-in var(--duration-enter) var(--ease-out); } }
   @media (prefers-reduced-motion: reduce) { .toast { animation: tc-fade-in var(--duration-exit) var(--ease-out); } }
+  /* TOASTRAIL: on the call the rail holds the basket and the total on the right, so notices open bottom left, over the
+     call column and above its action bar. 26rem fits beside the narrow rail from 1024px. */
+  @media (min-width: 1024px) {
+    :root:has(.call-layout) .toast-region { inset-block: auto calc(var(--call-bar-height) + var(--space-8)); inset-inline: calc(var(--sidebar-width) + var(--gutter)) auto; }
+  }
+  @media (min-width: 1024px) and (max-width: 1199px) {
+    :root:has(.call-layout) .toast-region { inset-inline-start: calc(var(--sidebar-width-compact) + var(--gutter)); }
+  }
   @media (max-width: 760px) {
     .toast-region { inset-block-start: auto; inset-block-end: calc(var(--call-bar-height) + var(--bottom-nav-height) + env(safe-area-inset-bottom) + var(--space-3)); inset-inline: var(--gutter); inline-size: auto; }
   }
