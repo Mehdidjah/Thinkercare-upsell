@@ -43,7 +43,7 @@ export const tcSessions = pgTable(
       .notNull()
       .references(() => tcUsers.id),
     expires_at: timestamptz('expires_at').notNull(),
-    // Sign-in time, for the absolute session cap; null for sessions opened before migration 0004.
+    // Sign-in time, for the absolute session cap; null for sessions opened before migration 0005.
     created_at: timestamptz('created_at'),
   },
   (t) => [index('tc_session_expiry').on(t.expires_at)],

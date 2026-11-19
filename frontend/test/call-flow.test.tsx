@@ -356,6 +356,7 @@ describe('review follow-ups on the call screens', () => {
 
   it('the catalogue message and the notice share their words (callux-2, recording-8)', () => {
     expect(catalogueNoticeText({ kind: 'price', names: [] }, 3700, 400)).toEqual({ title: 'Prix mis à jour dans le catalogue.', detail: `Annoncez désormais ${money(3700)} plus ${money(400)} de livraison à la cliente, puis présentez de nouveau l’offre. Votre saisie est conservée.` });
+    expect(catalogueNoticeText({ kind: 'disabled', names: ['Anti-Acné'], initial: true }, 0, null).detail).toMatch(/commande initiale est désactivé/);
     expect(catalogueNoticeText({ kind: 'disabled', names: ['Gel', 'SPF'] }, 0, null)).toEqual({ title: 'Gel, SPF : références désactivées dans le catalogue.', detail: 'Retirez-les de la routine, puis présentez de nouveau l’offre. Votre saisie est conservée.' });
     const html = render(<CallNotices/>, { catalogueNotice: { kind: 'price', names: [] }, offer: 3700, fee: 400 });
     for (const text of Object.values(catalogueNoticeText({ kind: 'price', names: [] }, 3700, 400))) expect(html).toContain(text);

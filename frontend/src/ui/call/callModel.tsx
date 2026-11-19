@@ -8,7 +8,8 @@ export type CallRequest={product:Product;check:ManualAddCheck;suggestion:Candida
 /** Additions removed by a change of answers, order or verification, with « Annuler » while it still applies. */
 export type RemovalNotice={id:number;names:string[];undo:(()=>void)|null};
 /** The catalogue changed under the call (price or disabled product): reloaded in place, the call kept (H2). */
-export type CatalogueNotice={kind:'price'|'disabled';names:string[]};
+/** `initial`: a disabled product of the customer's own order, which a server without the M3 fix refuses for every outcome. */
+export type CatalogueNotice={kind:'price'|'disabled';names:string[];initial?:boolean};
 /** A copy the browser refused: the text is shown in a dialog to select by hand (COPY). */
 export type CopyFallback={text:string;label:string};
 

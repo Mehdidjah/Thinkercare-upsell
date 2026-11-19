@@ -282,8 +282,10 @@ export default function Desk(){
    if(fresh.user.id!==stateRef.current?.user.id){lock();return;}
    const before=stateRef.current.products;
    putState(fresh);keepAgreementHonest(before,fresh.products);
-   // Only the lines the call adds can block the offer (recording-8): an initial product stays in the order as it is.
-   const notice:CatalogueNotice={kind,names:kind==='disabled'?callState.disabledAdditions(current(),fresh.products).map(p=>p.short||p.name):[]};
+   // With the M3 server only the lines the call adds can block the offer (recording-8); an older server also refuses a
+   // disabled product of the customer's own order, for every outcome, so name it and say what that means.
+   const additionsOnly=!!fresh.features?.includes('price-codes'),lines=kind!=='disabled'?[]:additionsOnly?callState.disabledAdditions(current(),fresh.products):callState.disabledLines(current(),fresh.products);
+   const notice:CatalogueNotice={kind,names:lines.map(p=>p.short||p.name),initial:!additionsOnly&&lines.some(p=>current().baseIds.includes(p.id))};
    setCatalogueNotice(notice);
    // The notice may sit above the screen: the same words come as a message, and focus moves to the notice.
    const now=current(),text=catalogueNoticeText(notice,callState.offerOf(now,fresh.products)??0,now.delivery===''?null:Number(now.delivery));
@@ -341,7 +343,7 @@ export default function Desk(){
    // The screen shows what the server recorded, even if a field was touched during the request: for a call id already
    // recorded (a retry, another tab), the stored outcome, never the button just clicked; a date not sent is not kept.
    const recorded=callState.recordedOutcome(outcome,result);
-   const keptCallback=recorded.duplicate?recorded.outcome==='callback':withCallback;
+   const keptCallback=recorded.duplicate?recorded.outcome==='callback'||(recorded.outcome===outcome&&withCallback):withCallback;
    const store=callState.applyToCall(storeRef.current,now.callId,()=>callState.markSaved({...now,callbackAt:keptCallback?now.callbackAt:''},recorded.outcome,new Date().toISOString()));
    const onScreen=current().callId===now.callId;
    if(store)replaceStore(store);

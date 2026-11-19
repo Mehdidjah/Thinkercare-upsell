@@ -56,3 +56,8 @@ test('voided calls are kept but not counted',()=>{
  const calls=[{voided_at:null},{voided_at:'2026-11-19T10:00:00Z'},{}] as any[];
  assert.equal(c.countedCalls(calls).length,2);
 });
+
+test('open callbacks count stop-panel callbacks recorded as review with a date',()=>{
+ const call=(outcome:string,meta:any={},done=0)=>({id:outcome,user_id:'u',operator:'U',created_at:'2026-11-19T10:00:00Z',outcome,base_id:'antiacne',products:[],catalogue_total:0,base_total:0,offered_total:0,extra:0,delivery:null,tier:'catalogue',pilot:0,refusal:'',meta,proposals:[],callback_done:done}) as any;
+ assert.equal(c.summary([call('callback'),call('review',{callbackAt:'2026-11-20T10:00:00Z'}),call('review'),call('callback',{},1)]).callback,2);
+});

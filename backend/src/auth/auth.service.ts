@@ -37,7 +37,7 @@ export class AuthService {
    * and never past 24 h after sign-in; `cookie` is then the re-issued cookie with its new Max-Age.
    * A `background` request (the desk's automatic report refresh) is not activity: it never slides
    * the session, so an unattended open tab still ends after 8 hours.
-   * Sessions opened before migration 0004 (no sign-in time) keep their fixed expiry.
+   * Sessions opened before migration 0005 (no sign-in time) keep their fixed expiry.
    */
   async resolveSession(
     cookieHeader?: string,

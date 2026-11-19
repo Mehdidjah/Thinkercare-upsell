@@ -129,6 +129,8 @@ function revalidate(before:CallDraft,after:CallDraft,products:Product[],lost:(p:
   })();
   if(keep)kept.push(p!);else removed.push(id);
  }
+ // A targeted stop also drops extra units of the initial products: say so (with « Annuler ») like any other removal.
+ if(stop)for(const [id,n] of Object.entries(after.quantities))if(after.baseIds.includes(id)&&n>(after.baseQuantities[id]||1)&&!removed.includes(id))removed.push(id);
  const adds=kept.map(p=>p.id),draft={...after,upgradeId,adds,requestedIds:after.requestedIds.filter(id=>adds.includes(id))};
  // A targeted stop also drops extra units of the initial products: nothing is added during a stop, and the rail's
  // quantities are locked then, so they could not be lowered by hand.
@@ -337,6 +339,8 @@ export function afterCatalogueChange(d:CallDraft,before:Product[],after:Product[
 }
 /** The lines the call adds (a product outside the initial order, or units above its initial quantity) that the catalogue
  *  now lists as disabled: only those block the offer and must be removed. */
+/** Every disabled line of the call, initial products included: what a server without the M3 fix refuses. */
+export function disabledLines(d:CallDraft,products:Product[]):OrderItem[]{return basketOf(d,products).basket.filter(p=>!p.enabled);}
 export function disabledAdditions(d:CallDraft,products:Product[]):OrderItem[]{
  const {initial,basket}=basketOf(d,products);
  return basket.filter(p=>{const before=initial.find(x=>x.id===p.id);return !p.enabled&&(!before||quantityOf(p)>quantityOf(before));});

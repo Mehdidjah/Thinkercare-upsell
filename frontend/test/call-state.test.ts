@@ -408,6 +408,7 @@ describe('review follow-ups (state, recording, callux)', () => {
     const r = cs.changeProfile(d, { safety: ['urgent'] }, catalogue)!;
     expect(r.draft.quantities).toEqual({});
     expect(cs.basketOf(r.draft, catalogue).basket[0]!.quantity).toBe(1);
+    expect(r.removed).toContain('antiacne'); // announced with « Annuler » (final review call-4)
     // Without a stop the extra units stay.
     expect(cs.changeProfile(d, { skin: 'dry' }, catalogue)!.draft.quantities).toEqual({ antiacne: 3 });
   });
@@ -429,6 +430,8 @@ describe('review follow-ups (state, recording, callux)', () => {
     const off = (ids: string[]) => catalogue.map(x => ids.includes(x.id) ? { ...x, enabled: false } : x);
     expect(cs.disabledAdditions(d, off(['wcspf', 'wcgel'])).map(x => x.id)).toEqual(['wcgel']);
     expect(cs.disabledAdditions(d, off(['wcspf']))).toEqual([]);
+    // A server without the M3 fix refuses a disabled initial product too: that list names it (final review call-1).
+    expect(cs.disabledLines(d, off(['antiacne'])).map(x => x.id)).toEqual(['antiacne']);
     // Units above the initial quantity are an addition too.
     expect(cs.disabledAdditions({ ...d, quantities: { wcspf: 2 } }, off(['wcspf'])).map(x => x.id)).toEqual(['wcspf']);
   });

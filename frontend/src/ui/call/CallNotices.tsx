@@ -7,7 +7,7 @@ export function catalogueNoticeText(notice:CatalogueNotice,offer:number,fee:numb
  if(notice.kind==='price')return {title:'Prix mis à jour dans le catalogue.',detail:`Annoncez désormais ${money(offer)}${fee!==null?` plus ${money(fee)} de livraison`:''} à la cliente, puis présentez de nouveau l’offre. Votre saisie est conservée.`};
  const n=notice.names.length;
  return {title:n?`${notice.names.join(', ')} : référence${n>1?'s':''} désactivée${n>1?'s':''} dans le catalogue.`:'Une référence de l’offre a été désactivée dans le catalogue.',
-  detail:`Retirez-${n>1?'les':'la'} de la routine, puis présentez de nouveau l’offre. Votre saisie est conservée.`};
+  detail:notice.initial?'Un produit de la commande initiale est désactivé : l’appel ne pourra pas être enregistré tant que la direction ne l’a pas réactivé. Votre saisie est conservée.':`Retirez-${n>1?'les':'la'} de la routine, puis présentez de nouveau l’offre. Votre saisie est conservée.`};
 }
 
 /** Persistent notices about the call itself, shown at every step until dismissed:
