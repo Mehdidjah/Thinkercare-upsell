@@ -1,7 +1,17 @@
 import type { ItemSnapshot, Product, Proposal } from '@touche/domain';
 import { sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { check, index, integer, jsonb, pgTable, primaryKey, text, timestamp } from 'drizzle-orm/pg-core';
+import {
+  check,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 
 const timestamptz = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 
@@ -33,6 +43,8 @@ export const tcSessions = pgTable(
       .notNull()
       .references(() => tcUsers.id),
     expires_at: timestamptz('expires_at').notNull(),
+    // Sign-in time, for the absolute session cap; null for sessions opened before migration 0004.
+    created_at: timestamptz('created_at'),
   },
   (t) => [index('tc_session_expiry').on(t.expires_at)],
 );
@@ -73,6 +85,10 @@ export const tcCalls = pgTable(
     extra: integer('extra').notNull(),
     refusal: text('refusal').notNull().default(''),
     pilot: integer('pilot').notNull().default(1),
+    // A voided call stays recorded but no longer counts anywhere (null while active).
+    voided_at: timestamptz('voided_at'),
+    voided_by: text('voided_by'),
+    void_reason: text('void_reason'),
   },
   (t) => [index('tc_calls_created').on(t.created_at)],
 );
@@ -145,11 +161,18 @@ export const tcExternalSales = pgTable(
   (t) => [primaryKey({ columns: [t.source, t.external_order_id] })],
 );
 
-export const tcAcceptedDossiers = pgTable('tc_accepted_dossiers', {
-  order_ref: text('order_ref').primaryKey(),
-  call_id: text('call_id').notNull().unique(),
-  user_id: text('user_id').notNull(),
-});
+// One active accepted add-on per dossier reference. Voiding the sale keeps its row (voided_at set)
+// and frees the reference for the correct sale.
+export const tcAcceptedDossiers = pgTable(
+  'tc_accepted_dossiers',
+  {
+    order_ref: text('order_ref').notNull(),
+    call_id: text('call_id').primaryKey().unique(),
+    user_id: text('user_id').notNull(),
+    voided_at: timestamptz('voided_at'),
+  },
+  (t) => [uniqueIndex('tc_accepted_dossiers_active_ref').on(t.order_ref).where(sql`voided_at IS NULL`)],
+);
 
 export const tcBonusRules = pgTable(
   'tc_bonus_rules',

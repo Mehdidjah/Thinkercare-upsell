@@ -11,7 +11,8 @@ import type { Db } from '../db/schema.js';
  * single product replaced by its pack of 2 adds 1, plus 1 per further product; an initial pack
  * of 2 or two separate initial products completed into a trio add 1. Only the dossier's rank-1 call counts, and only when it is
  * an accepted routine with a positive extra and an offer above the initial order. `without_ref` and
- * `duplicates` are expressed in the same unit (added products).
+ * `duplicates` are expressed in the same unit (added products). A voided call counts nowhere:
+ * it neither earns nor blocks the dossier's rank.
  */
 export async function contributions(
   db: Db,
@@ -52,6 +53,7 @@ WITH ranked AS (
   ) AS added_units
  FROM tc_calls c LEFT JOIN tc_call_meta m ON m.call_id = c.id
  WHERE c.created_at >= ${start}::timestamptz AND c.created_at < ${end}::timestamptz
+  AND c.voided_at IS NULL
 ), tagged AS (
  SELECT *,
   CASE WHEN sale_rank = 1 AND outcome IN ('duo','trio','routine','initial','refused') AND offered_total > 0 THEN 1 ELSE 0 END AS confirmed,

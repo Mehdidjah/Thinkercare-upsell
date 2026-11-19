@@ -130,8 +130,13 @@ describe('pilotage analytics', () => {
         'callback_done',
         'meta',
         'proposals',
+        'voided_at',
+        'voided_by',
+        'voided_by_label',
+        'void_reason',
       ].sort(),
     );
+    expect(a).toMatchObject({ voided_at: null, voided_by: null, voided_by_label: null, void_reason: null });
     expect(a.created_at.endsWith('Z')).toBe(true);
     expect(a.callback_done).toBe(0);
     expect(a.meta).toEqual({

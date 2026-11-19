@@ -15,10 +15,10 @@ import {
   sameOrder,
   orderSignature,
 } from '@touche/domain';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { isUniqueViolation } from '../common/db-errors.js';
 import { DeskError } from '../common/http.js';
-import type { Db } from '../db/schema.js';
+import type { Db, Tx } from '../db/schema.js';
 import {
   tcAcceptedDossiers,
   tcAudit,
@@ -30,7 +30,14 @@ import {
 import { auditRow } from './audit.js';
 import { loadProducts, snapshot } from './catalogue.js';
 import type { DeskUser } from './desk.types.js';
-import { completeReminderSchema, proposalSchema, saveCallSchema } from './schemas.js';
+import { VOID_WINDOW_MINUTES } from './features.js';
+import {
+  completeReminderSchema,
+  proposalSchema,
+  reopenReminderSchema,
+  saveCallSchema,
+  voidCallSchema,
+} from './schemas.js';
 
 // Keep baseId for older clients and reports; baseIds is the complete original order.
 function withQuantities(items: Product[], quantities: Record<string, number> = {}): OrderItem[] {
@@ -203,7 +210,10 @@ export class CallsService {
   }
 
   /** Port of api.server.ts lines 53-100, with the 2026-11-19 recording rules (H2-H4, M3-M5). */
-  async saveCall(user: DeskUser, body: unknown): Promise<{ ok: true; duplicate?: true }> {
+  async saveCall(
+    user: DeskUser,
+    body: unknown,
+  ): Promise<{ ok: true; duplicate?: true; closedReminderId?: string }> {
     const v = saveCallSchema.parse(body);
     // A retry of a call already recorded answers as before, whatever the catalogue became since.
     const retry = await this.existingCall(user, v.id);
@@ -363,6 +373,7 @@ export class CallsService {
             and(
               eq(tcCallMeta.order_ref, v.meta.orderRef.toUpperCase()),
               inArray(tcCalls.outcome, ['duo', 'trio', 'routine']),
+              isNull(tcCalls.voided_at),
             ),
           )
           .limit(1);
@@ -388,6 +399,7 @@ export class CallsService {
         ? lockedBase
         : 0;
     const meta = v.meta;
+    let closedReminderId: string | undefined;
     // One transaction: a unique violation on tc_accepted_dossiers (concurrent double-accept)
     // propagates, rolls every write back, and DeskExceptionFilter answers 409.
     try {
@@ -440,6 +452,10 @@ export class CallsService {
             user_id: user.id,
           });
         }
+        // M2: the follow-up call made from a reminder closes that reminder.
+        if (meta?.linkedCallId && meta.linkedCallId !== v.id) {
+          closedReminderId = await this.closeLinkedReminder(tx, user, meta.linkedCallId, v.id);
+        }
       });
     } catch (error) {
       // A concurrent save of the same id passed the existing-call check too and committed first:
@@ -450,7 +466,38 @@ export class CallsService {
       }
       throw error;
     }
-    return { ok: true };
+    return closedReminderId ? { ok: true, closedReminderId } : { ok: true };
+  }
+
+  /** Closes the linked call's open reminder when this user may handle it; returns its id if closed. */
+  private async closeLinkedReminder(
+    tx: Tx,
+    user: DeskUser,
+    linkedCallId: string,
+    callId: string,
+  ): Promise<string | undefined> {
+    const [linked] = await tx
+      .select({ user_id: tcCalls.user_id })
+      .from(tcCalls)
+      .innerJoin(tcCallMeta, eq(tcCallMeta.call_id, tcCalls.id))
+      .where(
+        and(
+          eq(tcCalls.id, linkedCallId),
+          isNull(tcCalls.voided_at),
+          isNotNull(tcCallMeta.callback_at),
+          eq(tcCallMeta.callback_done, 0),
+        ),
+      )
+      .limit(1);
+    if (!linked || (linked.user_id !== user.id && !canManageWorkspace(user))) return undefined;
+    const closed = await tx
+      .update(tcCallMeta)
+      .set({ callback_done: 1 })
+      .where(and(eq(tcCallMeta.call_id, linkedCallId), eq(tcCallMeta.callback_done, 0)))
+      .returning({ id: tcCallMeta.call_id });
+    if (!closed.length) return undefined;
+    await tx.insert(tcAudit).values(auditRow(user, 'reminder.closed', linkedCallId, { callId }));
+    return linkedCallId;
   }
 
   /** Existing-call check of save-call: the owner's retry is a duplicate, another account's id is 409. */
@@ -468,21 +515,127 @@ export class CallsService {
     return { ok: true, duplicate: true };
   }
 
-  /** Port of activity.server.ts lines 35-39. */
-  async completeReminder(user: DeskUser, body: unknown): Promise<{ ok: true }> {
-    const v = completeReminderSchema.parse(body);
+  /** A call with a reminder this user may handle: 404, 403 or 400 otherwise. */
+  private async reminderCall(user: DeskUser, id: string) {
     const [row] = await this.db
-      .select({ user_id: tcCalls.user_id })
+      .select({
+        user_id: tcCalls.user_id,
+        voided_at: tcCalls.voided_at,
+        callback_at: tcCallMeta.callback_at,
+      })
       .from(tcCalls)
-      .where(eq(tcCalls.id, v.callId))
+      .leftJoin(tcCallMeta, eq(tcCallMeta.call_id, tcCalls.id))
+      .where(eq(tcCalls.id, id))
       .limit(1);
-    if (!row || (!canManageWorkspace(user) && row.user_id !== user.id)) {
+    if (!row) throw new DeskError(404, 'Appel introuvable.');
+    if (!canManageWorkspace(user) && row.user_id !== user.id) {
       throw new DeskError(403, 'Accès non autorisé.');
     }
-    await this.db.transaction(async (tx) => {
-      await tx.update(tcCallMeta).set({ callback_done: 1 }).where(eq(tcCallMeta.call_id, v.callId));
+    if (!row.callback_at) throw new DeskError(400, 'Cet appel n’a pas de rappel.');
+    return row;
+  }
+
+  /** Port of activity.server.ts lines 35-39; closing twice is answered without a second audit row. */
+  async completeReminder(user: DeskUser, body: unknown): Promise<{ ok: true; alreadyDone?: true }> {
+    const v = completeReminderSchema.parse(body);
+    await this.reminderCall(user, v.callId);
+    return this.db.transaction(async (tx) => {
+      const closed = await tx
+        .update(tcCallMeta)
+        .set({ callback_done: 1 })
+        .where(and(eq(tcCallMeta.call_id, v.callId), eq(tcCallMeta.callback_done, 0)))
+        .returning({ id: tcCallMeta.call_id });
+      if (!closed.length) return { ok: true as const, alreadyDone: true as const };
       await tx.insert(tcAudit).values(auditRow(user, 'reminder.closed', v.callId));
+      return { ok: true as const };
     });
-    return { ok: true };
+  }
+
+  /** Undoes complete-reminder (M2). A voided call's reminder stays closed. */
+  async reopenReminder(user: DeskUser, body: unknown): Promise<{ ok: true; alreadyOpen?: true }> {
+    const v = reopenReminderSchema.parse(body);
+    const row = await this.reminderCall(user, v.id);
+    if (row.voided_at) {
+      throw new DeskError(
+        409,
+        'Ce résultat a été annulé : son rappel ne peut pas être rouvert.',
+        'already-voided',
+      );
+    }
+    return this.db.transaction(async (tx) => {
+      const reopened = await tx
+        .update(tcCallMeta)
+        .set({ callback_done: 0 })
+        .where(and(eq(tcCallMeta.call_id, v.id), eq(tcCallMeta.callback_done, 1)))
+        .returning({ id: tcCallMeta.call_id });
+      if (!reopened.length) return { ok: true as const, alreadyOpen: true as const };
+      await tx.insert(tcAudit).values(auditRow(user, 'reminder.reopened', v.id));
+      return { ok: true as const };
+    });
+  }
+
+  /**
+   * H5: void a recorded outcome. Nothing is deleted: the call, its meta, its proposals and its
+   * dossier row stay, flagged; the dossier reference is freed for the correct sale and the call
+   * no longer counts in contributions, bonus, progress or reminders.
+   */
+  async voidCall(user: DeskUser, body: unknown) {
+    const v = voidCallSchema.parse(body);
+    return this.db.transaction(async (tx) => {
+      const [call] = await tx.select().from(tcCalls).where(eq(tcCalls.id, v.id)).for('update');
+      if (!call) throw new DeskError(404, 'Appel introuvable.');
+      const manager = canManageWorkspace(user);
+      if (!manager && call.user_id !== user.id) throw new DeskError(403, 'Accès non autorisé.');
+      if (call.voided_at) throw new DeskError(409, 'Ce résultat est déjà annulé.', 'already-voided');
+      if (!manager && Date.now() - call.created_at.getTime() > VOID_WINDOW_MINUTES * 60_000) {
+        throw new DeskError(
+          403,
+          'Ce résultat ne peut plus être annulé par la conseillère : demandez à la direction.',
+        );
+      }
+      const [meta] = await tx
+        .select()
+        .from(tcCallMeta)
+        .where(eq(tcCallMeta.call_id, v.id))
+        .for('update');
+      const [dossier] = await tx
+        .select()
+        .from(tcAcceptedDossiers)
+        .where(eq(tcAcceptedDossiers.call_id, v.id))
+        .for('update');
+      const voidedAt = new Date();
+      await tx
+        .update(tcCalls)
+        .set({ voided_at: voidedAt, voided_by: user.id, void_reason: v.reason })
+        .where(eq(tcCalls.id, v.id));
+      if (dossier && !dossier.voided_at) {
+        await tx
+          .update(tcAcceptedDossiers)
+          .set({ voided_at: voidedAt })
+          .where(eq(tcAcceptedDossiers.call_id, v.id));
+      }
+      const reminderClosed = !!meta?.callback_at && !meta.callback_done;
+      if (reminderClosed) {
+        await tx.update(tcCallMeta).set({ callback_done: 1 }).where(eq(tcCallMeta.call_id, v.id));
+      }
+      await tx.insert(tcAudit).values(
+        auditRow(user, 'call.voided', v.id, {
+          reason: v.reason,
+          call,
+          meta: meta ?? null,
+          dossier: dossier ?? null,
+          reminderClosed,
+        }),
+      );
+      return {
+        ok: true as const,
+        call: {
+          id: v.id,
+          voided_at: voidedAt.toISOString(),
+          voided_by: user.id,
+          void_reason: v.reason,
+        },
+      };
+    });
   }
 }

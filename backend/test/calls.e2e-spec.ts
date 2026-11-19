@@ -292,7 +292,7 @@ describe('save-call', () => {
     expect(data.acceptedProposalId).toBe(p.id);
     expect(data.completedAt).toBe(call!.created_at.toISOString());
     expect(await ctx.db.select().from(tcAcceptedDossiers)).toEqual([
-      { order_ref: 'DOS-001', call_id: p.callId, user_id: linaUser.id },
+      { order_ref: 'DOS-001', call_id: p.callId, user_id: linaUser.id, voided_at: null },
     ]);
     const [audit] = await auditRows('call.closed');
     expect(audit!.target).toBe(p.callId);
@@ -543,7 +543,7 @@ describe('save-call', () => {
     expect(calls.map((c) => c.id)).toEqual([winner.callId]);
     expect(metas.map((m) => m.call_id)).toEqual([winner.callId]);
     expect(await ctx.db.select().from(tcAcceptedDossiers)).toEqual([
-      { order_ref: 'DOS-777', call_id: winner.callId, user_id: winnerUser.id },
+      { order_ref: 'DOS-777', call_id: winner.callId, user_id: winnerUser.id, voided_at: null },
     ]);
     expect((await auditRows('call.closed')).map((a) => a.target)).toEqual([winner.callId]);
   });

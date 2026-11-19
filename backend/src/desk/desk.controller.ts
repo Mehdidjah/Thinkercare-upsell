@@ -119,12 +119,17 @@ export class DeskController {
     }
     if (body.action === 'bonus-rule')
       return sendJson(res, await this.bonus.saveRule(user, body));
-    // POST order after the session check: logout, bonus-rule, present-offer and complete-reminder (T7),
-    // user-settings, save-call (T7), password, non-management -> 403, then product, clinical and account management.
+    // POST order after the session check: logout, bonus-rule, present-offer, complete-reminder,
+    // reopen-reminder and void-call (each checks its own access), user-settings, save-call, password,
+    // non-management -> 403, then product, clinical and account management.
     if (body.action === 'present-offer')
       return sendJson(res, await this.calls.presentOffer(user, body));
     if (body.action === 'complete-reminder')
       return sendJson(res, await this.calls.completeReminder(user, body));
+    if (body.action === 'reopen-reminder')
+      return sendJson(res, await this.calls.reopenReminder(user, body));
+    if (body.action === 'void-call')
+      return sendJson(res, await this.calls.voidCall(user, body));
     if (body.action === 'user-settings')
       return sendJson(res, await this.admin.updateUserSettings(user, body));
     if (body.action === 'save-call')

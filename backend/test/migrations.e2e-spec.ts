@@ -69,6 +69,19 @@ describe('migrations', () => {
     ).rejects.toMatchObject({ cause: { code: '23505' } });
   });
 
+  it('a voided dossier frees its reference and every row stays', async () => {
+    await db.execute(sql`INSERT INTO tc_accepted_dossiers (order_ref, call_id, user_id) VALUES ('DOS-1', 'c1', 'u1')`);
+    await db.execute(sql`UPDATE tc_accepted_dossiers SET voided_at = now() WHERE call_id = 'c1'`);
+    await db.execute(sql`INSERT INTO tc_accepted_dossiers (order_ref, call_id, user_id) VALUES ('DOS-1', 'c2', 'u1')`);
+    await expect(
+      db.execute(sql`INSERT INTO tc_accepted_dossiers (order_ref, call_id, user_id) VALUES ('DOS-1', 'c3', 'u1')`),
+    ).rejects.toMatchObject({ cause: { code: '23505', constraint: 'tc_accepted_dossiers_active_ref' } });
+    await expect(
+      db.execute(sql`INSERT INTO tc_accepted_dossiers (order_ref, call_id, user_id) VALUES ('DOS-2', 'c2', 'u1')`),
+    ).rejects.toMatchObject({ cause: { code: '23505' } });
+    expect(await count('tc_accepted_dossiers')).toBe(2);
+  });
+
   it('migrations are idempotent', async () => {
     await expect(runMigrations(testDatabaseUrl())).resolves.toBeUndefined();
     expect(await count('tc_products')).toBe(32);

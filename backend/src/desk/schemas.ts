@@ -277,6 +277,18 @@ export const completeReminderSchema = z
   .object({ action: z.literal('complete-reminder'), callId: z.string().uuid() })
   .strict();
 
+export const reopenReminderSchema = z
+  .object({ action: z.literal('reopen-reminder'), id: z.string().uuid() })
+  .strict();
+
+export const voidCallSchema = z
+  .object({
+    action: z.literal('void-call'),
+    id: z.string().uuid(),
+    reason: z.string().trim().min(3).max(300),
+  })
+  .strict();
+
 export const bonusRuleSchema = z
   .object({
     action: z.literal('bonus-rule'),

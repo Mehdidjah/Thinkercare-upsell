@@ -7,7 +7,7 @@ import type { Db } from '../db/schema.js';
 import { tcCalls, tcSettings, tcUsers } from '../db/schema.js';
 import { loadProducts } from './catalogue.js';
 import type { DeskUser } from './desk.types.js';
-import { FEATURES } from './features.js';
+import { FEATURES, VOID_WINDOW_MINUTES } from './features.js';
 
 @Injectable()
 export class BootstrapService {
@@ -55,6 +55,7 @@ export class BootstrapService {
       users,
       password_viewing_enabled: admin && !!this.env.accountPasswordKey,
       features: [...FEATURES],
+      void_window_minutes: VOID_WINDOW_MINUTES,
     };
   }
 }
