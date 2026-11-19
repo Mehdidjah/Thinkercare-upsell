@@ -70,23 +70,59 @@ const addedLines = (initial: OrderItem[], basket: OrderItem[]) => basket.filter(
   return !before || quantityOf(p) > quantityOf(before);
 });
 
+/**
+ * How the desk handles a catalogue change. Desks that read the error `code` reload the catalogue in
+ * place and send `expectedUserId`; an older open tab does neither, so its message must also say to
+ * reload the page.
+ */
+export type DeskClient = { reloadsCatalogue: boolean };
+const NEW_DESK: DeskClient = { reloadsCatalogue: true };
+
 /** M3: only what an accepted offer adds must still be on sale. */
-function requireAvailable(added: OrderItem[]): void {
+function requireAvailable(added: OrderItem[], client: DeskClient): void {
   const disabled = added.find((p) => !p.enabled);
   if (disabled) {
     throw new DeskError(
       400,
-      `« ${disabled.name} » n’est plus disponible dans le catalogue : retirez-le de l’offre et présentez-la de nouveau.`,
+      `« ${disabled.name} » n’est plus disponible dans le catalogue : retirez-le de l’offre et présentez-la de nouveau.` +
+        (client.reloadsCatalogue ? '' : ' Rechargez la page pour mettre le catalogue à jour.'),
       'product-disabled',
     );
   }
 }
 
+/** H2: 409 with the amount the offer is now worth. */
+function priceChanged(offer: number, client: DeskClient): DeskError {
+  return new DeskError(
+    409,
+    `Le tarif a changé : cette offre vaut maintenant ${money(offer)}. ` +
+      (client.reloadsCatalogue
+        ? 'Le catalogue a été mis à jour, annoncez le nouveau montant.'
+        : 'Rechargez la page pour mettre les prix à jour, puis annoncez le nouveau montant.'),
+    'price-changed',
+  );
+}
+
 /** Presented snapshots keep price, quantity and category: enough for the shared pricing rules. */
 const snapshotOrder = (items: ItemSnapshot[]) => items as unknown as OrderItem[];
 
-/** M4: a call cannot have started more than a day before it is recorded. */
-const MAX_CALL_AGE_MS = 86_400_000;
+/**
+ * A presented offer as an order with its own catalogue: its products, packs keeping the components
+ * stored at presentation, so the basket rules do not depend on later catalogue edits.
+ */
+function presentedOrder(items: ItemSnapshot[]): { basket: OrderItem[]; catalogue: Product[] } {
+  const basket = items.map((p) => ({ ...p, components: p.components?.map((c) => c.id) }));
+  const catalogue = [...basket, ...items.flatMap((p) => p.components ?? [])];
+  return { basket: basket as unknown as OrderItem[], catalogue: catalogue as unknown as Product[] };
+}
+
+/** The unit count an accepted outcome stands for: duo 2, trio 3, routine 4 or more. */
+function countMatches(outcome: string, count: number): boolean {
+  return outcome === 'duo' ? count === 2 : outcome === 'trio' ? count === 3 : outcome === 'routine' ? count >= 4 : true;
+}
+
+/** A call cannot have started more than 7 days before it is recorded (unchanged by M4). */
+const MAX_CALL_AGE_MS = 7 * 86_400_000;
 
 @Injectable()
 export class CallsService {
@@ -96,6 +132,7 @@ export class CallsService {
   async presentOffer(
     user: DeskUser,
     body: unknown,
+    client: DeskClient = NEW_DESK,
   ): Promise<{ ok: true; proposal: Proposal; duplicate?: true }> {
     const v = proposalSchema.parse(body);
     const all = await loadProducts(this.db);
@@ -153,7 +190,7 @@ export class CallsService {
     if (!preservesOriginals(initial, b, v.upgradeId)) {
       throw new DeskError(400, 'Tous les produits de la commande initiale doivent être conservés.');
     }
-    requireAvailable(addedLines(initial, b));
+    requireAvailable(addedLines(initial, b), client);
     const problem = basketProblem(b, all);
     if (problem) throw new DeskError(400, problem);
     if (sameOrder(initial, b) && !v.upgradeId) {
@@ -166,18 +203,13 @@ export class CallsService {
         'Confirmez les vérifications spécifiques de la référence avant de la proposer.',
       );
     }
+    // H2: the catalogue changed under the call; the desk reloads it in place and keeps the call.
+    // Checked before M5, so a desk with stale prices first gets the current ones.
+    const serverOffer = basketOffer(b, v.tier);
+    if (serverOffer !== v.agreedTotal) throw priceChanged(serverOffer, client);
     // M5: an add-on offer must raise the order.
     const lowOffer = offerProblem(initial, b, v.tier);
     if (lowOffer) throw new DeskError(400, lowOffer);
-    // H2: the catalogue changed under the call; the desk reloads it in place and keeps the call.
-    const serverOffer = basketOffer(b, v.tier);
-    if (serverOffer !== v.agreedTotal) {
-      throw new DeskError(
-        409,
-        `Le tarif a changé : cette offre vaut maintenant ${money(serverOffer)}. Le catalogue a été mis à jour, annoncez le nouveau montant.`,
-        'price-changed',
-      );
-    }
     const createdAt = new Date();
     const proposal: Proposal = {
       id: v.id,
@@ -213,6 +245,7 @@ export class CallsService {
   async saveCall(
     user: DeskUser,
     body: unknown,
+    client: DeskClient = NEW_DESK,
   ): Promise<{ ok: true; duplicate?: true; closedReminderId?: string }> {
     const v = saveCallSchema.parse(body);
     // A retry of a call already recorded answers as before, whatever the catalogue became since.
@@ -255,22 +288,18 @@ export class CallsService {
     }
     // H3: same pack rule as present-offer; a non-recommendable pack needs its verification only
     // when it is sold (checked with the other added lines below), never to record another outcome.
-    if (v.upgradeId && (!isPack(first) || !first.components?.includes(v.baseId))) {
+    // A sale checks the pack it was presented with (below).
+    const packFits = (pack: OrderItem) => isPack(pack) && !!pack.components?.includes(v.baseId);
+    if (v.upgradeId && !accepted && !packFits(first)) {
       throw new DeskError(400, 'Pack de remplacement non compatible avec le produit initial.');
     }
-    // Preserve existing orders; new additions must pass pack-content and duplicate checks.
-    const problem = altered ? basketProblem(b, all) : null;
+    // Preserve existing orders; new additions must pass pack-content and duplicate checks. An
+    // accepted sale is checked below on the presented offer instead (its stored pack contents).
+    const problem = altered && !accepted ? basketProblem(b, all) : null;
     if (problem) throw new DeskError(400, problem);
-    const count = physicalCount(b, all);
-    if ((v.outcome === 'duo' && count !== 2) || (v.outcome === 'trio' && count !== 3) || (v.outcome === 'routine' && count < 4)) {
-      throw new DeskError(
-        400,
-        'Le résultat doit correspondre aux soins physiques, composants des packs inclus.',
-      );
-    }
     if (accepted) {
       const added = addedLines(initial, b);
-      requireAvailable(added);
+      requireAvailable(added, client);
       if (added.some((p) => !p.recommendable && !v.verifiedProducts?.includes(p.id))) {
         throw new DeskError(
           400,
@@ -354,6 +383,20 @@ export class CallsService {
           throw new DeskError(
             409,
             'La composition ou le tarif a changé. Présentez de nouveau l’offre exacte.',
+          );
+        }
+        // Pack contents and the unit count come from the presented offer too, so a pack edited in
+        // the catalogue after the presentation does not block the sale.
+        const shown = presentedOrder(presentation.products);
+        if (v.upgradeId && !packFits(shown.basket[0]!)) {
+          throw new DeskError(400, 'Pack de remplacement non compatible avec le produit initial.');
+        }
+        const shownProblem = basketProblem(shown.basket, shown.catalogue);
+        if (shownProblem) throw new DeskError(400, shownProblem);
+        if (!countMatches(v.outcome, physicalCount(shown.basket, shown.catalogue))) {
+          throw new DeskError(
+            400,
+            'Le résultat doit correspondre aux soins physiques, composants des packs inclus.',
           );
         }
         // M5: an accepted add-on must raise the order.
@@ -452,8 +495,9 @@ export class CallsService {
             user_id: user.id,
           });
         }
-        // M2: the follow-up call made from a reminder closes that reminder.
-        if (meta?.linkedCallId && meta.linkedCallId !== v.id) {
+        // M2: the follow-up call made from a reminder closes that reminder once the customer was
+        // reached; with no answer the reminder stays open (a callback follow-up opens its own).
+        if (meta?.linkedCallId && meta.linkedCallId !== v.id && v.outcome !== 'noanswer') {
           closedReminderId = await this.closeLinkedReminder(tx, user, meta.linkedCallId, v.id);
         }
       });
@@ -618,6 +662,11 @@ export class CallsService {
       if (reminderClosed) {
         await tx.update(tcCallMeta).set({ callback_done: 1 }).where(eq(tcCallMeta.call_id, v.id));
       }
+      const linkedCallId = (meta?.data as { linkedCallId?: unknown } | undefined)?.linkedCallId;
+      const reopenedReminderId =
+        typeof linkedCallId === 'string' && linkedCallId !== v.id
+          ? await this.reopenClosedBy(tx, user, v.id, linkedCallId)
+          : undefined;
       await tx.insert(tcAudit).values(
         auditRow(user, 'call.voided', v.id, {
           reason: v.reason,
@@ -625,6 +674,7 @@ export class CallsService {
           meta: meta ?? null,
           dossier: dossier ?? null,
           reminderClosed,
+          reopenedReminderId: reopenedReminderId ?? null,
         }),
       );
       return {
@@ -635,7 +685,52 @@ export class CallsService {
           voided_by: user.id,
           void_reason: v.reason,
         },
+        ...(reopenedReminderId ? { reopenedReminderId } : {}),
       };
     });
+  }
+
+  /**
+   * M2 undone by H5: the reminder that the voided call's save closed is open again, provided its
+   * own call is not voided and it is still closed by that save (not reopened or handled since).
+   * Locks the reminder's call then its meta, the order voidCall uses, so concurrent voids queue.
+   */
+  private async reopenClosedBy(
+    tx: Tx,
+    user: DeskUser,
+    callId: string,
+    reminderId: string,
+  ): Promise<string | undefined> {
+    const [reminder] = await tx
+      .select({ voided_at: tcCalls.voided_at })
+      .from(tcCalls)
+      .where(eq(tcCalls.id, reminderId))
+      .for('update');
+    if (!reminder || reminder.voided_at) return undefined;
+    const [reminderMeta] = await tx
+      .select({ callback_done: tcCallMeta.callback_done })
+      .from(tcCallMeta)
+      .where(eq(tcCallMeta.call_id, reminderId))
+      .for('update');
+    if (reminderMeta?.callback_done !== 1) return undefined;
+    const [last] = await tx
+      .select({ action: tcAudit.action, detail: tcAudit.detail })
+      .from(tcAudit)
+      .where(
+        and(
+          eq(tcAudit.target, reminderId),
+          inArray(tcAudit.action, ['reminder.closed', 'reminder.reopened']),
+        ),
+      )
+      .orderBy(desc(tcAudit.at))
+      .limit(1);
+    if (last?.action !== 'reminder.closed' || (last.detail as { callId?: unknown }).callId !== callId) {
+      return undefined;
+    }
+    await tx.update(tcCallMeta).set({ callback_done: 0 }).where(eq(tcCallMeta.call_id, reminderId));
+    await tx
+      .insert(tcAudit)
+      .values(auditRow(user, 'reminder.reopened', reminderId, { callId, reason: 'void' }));
+    return reminderId;
   }
 }

@@ -105,11 +105,30 @@ describe('login throttle (F6)', () => {
     }
     expect(await ctx.db.select().from(tcThrottle)).toEqual([]);
   });
-  it('a successful sign-in clears that identifier’s failures', async () => {
+  it('a successful sign-in clears that identifier’s failures and leaves the address its failures only', async () => {
     await fail(USER, 9);
     expect((await login(USER, PASSWORD, IP)).status).toBe(200);
+    expect(await ctx.db.select({ bucket: tcThrottle.bucket, count: tcThrottle.count }).from(tcThrottle)).toEqual([
+      { bucket: sha256Hex('login-ip|' + IP), count: 9 },
+    ]);
     await fail(USER, 10);
     expect((await login(USER, 'faux', IP)).status).toBe(429);
+  });
+  it('concurrent attempts cannot pass the limit: each takes its slot before the password is checked', async () => {
+    const results = await Promise.all(Array.from({ length: 15 }, () => login(USER, 'faux', IP)));
+    expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([...Array(10).fill(401), ...Array(5).fill(429)]);
+    expect(results.filter((r) => r.status === 429).map((r) => r.body)).toEqual(Array(5).fill(WAIT));
+    // The refused attempts gave their slots back: only the ten evaluated failures are counted.
+    expect((await ctx.db.select().from(tcThrottle)).map((t) => t.count)).toEqual([10, 10]);
+    expect((await login(USER, PASSWORD, IP)).status).toBe(429);
+  });
+  it('concurrent attempts across identifiers cannot pass the address ceiling', async () => {
+    const bucket = sha256Hex('login-ip|' + IP);
+    await ctx.db.insert(tcThrottle).values({ bucket, count: 95, expires_at: new Date(Date.now() + 600_000) });
+    const results = await Promise.all(Array.from({ length: 12 }, (_, i) => login(`inconnu-${i}`, 'faux', IP)));
+    expect(results.filter((r) => r.status === 401)).toHaveLength(5);
+    expect(results.filter((r) => r.status === 429)).toHaveLength(7);
+    expect((await ctx.db.select().from(tcThrottle).where(eq(tcThrottle.bucket, bucket)))[0]!.count).toBe(100);
   });
   it('an address is stopped after 100 failures, whatever the identifiers', async () => {
     await ctx.db.insert(tcThrottle).values({ bucket: sha256Hex('login-ip|' + IP), count: 99, expires_at: new Date(Date.now() + 600_000) });
@@ -277,6 +296,24 @@ describe('sliding session (H1)', () => {
     const res = await deskPost(ctx, { action: 'password', current: 'faux', next: 'x' }, { cookie });
     expect(res.status).toBe(400);
     expect(res.headers['set-cookie']![0]).toMatch(COOKIE);
+  });
+  it('an automatic refresh (X-Desk-Background: 1) never slides the session; any other request does', async () => {
+    const cookie = await loginCookie(ctx, USER, PASSWORD);
+    await shift('7 hours', '1 hour');
+    const before = await session();
+    for (const query of ['?compact=1', '?action=reminders', '?action=my-progress']) {
+      const res = await deskGet(ctx, query, cookie).set('X-Desk-Background', '1');
+      expect(res.status, query).toBe(200);
+      expect(res.headers['set-cookie'], query).toBeUndefined();
+    }
+    const write = await deskPost(ctx, { action: 'nope' }, { cookie }).set('X-Desk-Background', '1');
+    expect(write.status).toBe(400);
+    expect(write.headers['set-cookie']).toBeUndefined();
+    expect(await session()).toEqual(before);
+    const res = await deskGet(ctx, '?action=reminders', cookie).set('X-Desk-Background', '0');
+    expect(res.status).toBe(200);
+    expect(res.headers['set-cookie']![0]).toMatch(COOKIE);
+    expect((await session()).expires_at.getTime()).toBeGreaterThan(Date.now() + 28_790_000);
   });
   it('requests within 5 minutes of the last extension write nothing', async () => {
     const cookie = await loginCookie(ctx, USER, PASSWORD);
