@@ -163,19 +163,19 @@
 
   :where(input[type="checkbox"]) {
     appearance: none; display: inline-grid; place-items: center; flex: none;
-    inline-size: var(--indicator); block-size: var(--indicator); margin: 2px 0 0;
+    inline-size: var(--target-min); block-size: var(--target-min); margin: 0;
     border: 1.5px solid var(--color-border-control); border-radius: var(--radius-checkbox); background-color: var(--color-bg-surface);
     cursor: pointer; transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
   }
-  :where(input[type="checkbox"]):checked { background: var(--color-accent-solid) var(--glyph-check-on-accent) center / 16px no-repeat; border-color: var(--color-accent-solid); }
+  :where(input[type="checkbox"]):checked { background: var(--color-accent-solid) var(--glyph-check-on-accent) center / 18px no-repeat; border-color: var(--color-accent-solid); }
   :where(input[type="checkbox"]):disabled { background-color: var(--color-bg-fill); border-color: var(--color-border-strong); cursor: not-allowed; }
   :where(input[type="checkbox"]):checked:disabled { background-color: var(--color-text-tertiary); border-color: var(--color-text-tertiary); }
   :where(input[type="radio"]) {
     appearance: none; display: inline-grid; place-items: center; flex: none;
-    inline-size: var(--indicator); block-size: var(--indicator); margin: 2px 0 0;
+    inline-size: var(--target-min); block-size: var(--target-min); margin: 0;
     border: 1.5px solid var(--color-border-control); border-radius: var(--radius-pill); background-color: var(--color-bg-surface); cursor: pointer;
   }
-  :where(input[type="radio"]):checked { border-color: var(--color-accent-solid); background: radial-gradient(circle, var(--color-text-on-accent) 0 3.5px, var(--color-accent-solid) 4.5px); }
+  :where(input[type="radio"]):checked { border-color: var(--color-accent-solid); background: radial-gradient(circle, var(--color-text-on-accent) 0 4.5px, var(--color-accent-solid) 5.5px); }
   @media (forced-colors: active) { :where(input[type="checkbox"], input[type="radio"]) { appearance: auto; } }
 
   /* A label that wraps its control reads as a field: label text above, control below. */

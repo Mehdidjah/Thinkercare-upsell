@@ -126,7 +126,7 @@
     .shell-nav__item[aria-current="page"] > svg { background: var(--color-accent-tint-hover); }
     .shell-nav__full { display: none; }
     .shell-nav__short { display: block; }
-    .shell-nav__list > li:not([data-phone]) { display: none; }
+    .shell-nav__list > li:not([data-phone]):not(.shell-nav__plus) { display: none; }
     .shell-nav__list > .shell-nav__plus { display: block; }
     .shell-nav__item[data-current] { color: var(--color-accent-text-strong); font-weight: var(--font-weight-semibold); }
     .shell-nav__item[data-current] > svg { background: var(--color-accent-tint-hover); }

@@ -44,3 +44,9 @@ test('every view change sets the tab title, scrolls to the top and focuses the h
   expect(app).toContain('window.scrollTo(0,0)');
   expect(app).toContain("document.querySelector<HTMLElement>('#contenu h1')");
 });
+
+test('the phone bar shows « Plus » while hiding the destinations it holds', () => {
+  const css = readFileSync(new URL('../src/styles/shell.css', import.meta.url), 'utf8');
+  expect(css).toContain('.shell-nav__list > li:not([data-phone]):not(.shell-nav__plus) { display: none; }');
+  expect(css).toContain('.shell-nav__list > .shell-nav__plus { display: block; }');
+});
