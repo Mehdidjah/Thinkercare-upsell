@@ -614,7 +614,7 @@ describe('commission progress', () => {
     const stale = await deskPost(ctx, rule(1), { cookie: admin });
     expect(stale.status).toBe(409);
     expect(stale.body).toEqual({
-      error: 'Cette règle a changé. Actualisez avant de l’enregistrer.',
+      error: 'Cette règle vient d’être modifiée par un autre compte. Rechargez la règle enregistrée, vérifiez-la, puis enregistrez de nouveau.',
     });
     const [row] = await ctx.db
       .select()

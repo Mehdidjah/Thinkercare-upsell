@@ -236,6 +236,16 @@ describe('clinical', () => {
     expect(got.body.clinical.by).toBe('Dr Benali');
     expect(got.body.clinical.version).toBe(3);
   });
+  it('every protocol validation change is audited with what it replaced', async () => {
+    expect((await post({ action: 'clinical', validated: true, by: 'Dr Benali' })).status).toBe(200);
+    expect((await post({ action: 'clinical', validated: false, by: '' })).status).toBe(200);
+    const rows = await ctx.db.select().from(tcAudit).where(eq(tcAudit.action, 'clinical.updated'));
+    const [direction] = await ctx.db.select().from(tcUsers).where(eq(tcUsers.username, 'direction'));
+    expect(rows.map((r) => [r.target, r.user_id])).toEqual([['clinical', direction!.id], ['clinical', direction!.id]]);
+    const detail = (validated: boolean) => rows.find((r) => (r.detail as { validated: boolean }).validated === validated)!.detail;
+    expect(detail(true)).toEqual({ validated: true, by: 'Dr Benali', previous: { validated: false, by: '', at: '' } });
+    expect(detail(false)).toMatchObject({ validated: false, by: '', previous: { validated: true, by: 'Dr Benali', version: 3 } });
+  });
 });
 
 describe('accounts', () => {

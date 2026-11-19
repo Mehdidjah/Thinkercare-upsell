@@ -192,7 +192,7 @@ export class BonusService {
       if (!changed)
         throw new DeskError(
           409,
-          'Cette règle a changé. Actualisez avant de l’enregistrer.',
+          'Cette règle vient d’être modifiée par un autre compte. Rechargez la règle enregistrée, vérifiez-la, puis enregistrez de nouveau.',
         );
       await tx.insert(tcAudit).values(
         auditRow(user, 'bonus.rule.updated', v.month, {
