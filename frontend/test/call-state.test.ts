@@ -339,3 +339,119 @@ describe('step 3 picker and labels (B5, DBL, STEP3, F4, F5)', () => {
     expect(cs.replacedConcern({ ...face, concerns: ['acne'] }, 'dull')).toBeNull();
   });
 });
+
+describe('review follow-ups (state, recording, callux)', () => {
+  const snap = (id: string, quantity = 1) => ({ id, name: p(id).name, price: p(id).price, quantity });
+  const offerOn = (id: string, offerTotal: number, extra: Partial<Proposal> = {}) => ({ id, call_id: 'call-1', user_id: 'u', created_at: T0, base: snap('antiacne'), originals: [snap('antiacne')], products: [snap('antiacne'), snap('wcgel')], catalogueTotal: 3300, offerTotal, extra: offerTotal - 1800, tier: 'duo', delivery: null, version: 3, ...extra }) as Proposal;
+  const screen = (offer: number) => ({ initial: [{ ...p('antiacne'), quantity: 1 }], basket: [{ ...p('antiacne'), quantity: 1 }, { ...p('wcgel'), quantity: 1 }], tier: 'duo' as const, fee: null, offer });
+
+  it('the presented offer keeps matching after a catalogue reload when the server keeps the presented price (state-3)', () => {
+    const presented = [offerOn('o-1', 3000)];
+    // Same prices: both modes match.
+    expect(cs.matchingOffer(presented, screen(3000), false)?.id).toBe('o-1');
+    expect(cs.matchingOffer(presented, screen(3000), true)?.id).toBe('o-1');
+    // The catalogue moved the current price to 3100: only the 'price-codes' mode keeps the presented offer (at 3000).
+    expect(cs.matchingOffer(presented, screen(3100), false)).toBeUndefined();
+    expect(cs.matchingOffer(presented, screen(3100), true)?.offerTotal).toBe(3000);
+    // Composition, quantities, price level and delivery still decide, in both modes; the latest match wins.
+    expect(cs.matchingOffer(presented, { ...screen(3000), tier: 'final' }, true)).toBeUndefined();
+    expect(cs.matchingOffer(presented, { ...screen(3000), fee: 400 }, true)).toBeUndefined();
+    expect(cs.matchingOffer(presented, { ...screen(3000), basket: [{ ...p('antiacne'), quantity: 1 }, { ...p('wcgel'), quantity: 2 }] }, true)).toBeUndefined();
+    expect(cs.matchingOffer([...presented, offerOn('o-2', 2950)], screen(3100), true)?.id).toBe('o-2');
+  });
+
+  it('a recomputed price unticks the agreement, an unchanged one keeps it (state-3)', () => {
+    const d = liveCall({ adds: ['wcgel'], consent: true });
+    const dearer = catalogue.map(x => x.id === 'wcgel' ? { ...x, price: 1700 } : x);
+    expect(cs.offerOf(d, catalogue)).not.toBe(cs.offerOf(d, dearer));
+    expect(cs.afterCatalogueChange(d, catalogue, dearer)).toMatchObject({ consent: false, checked: true, callId: 'call-1' });
+    expect(cs.afterCatalogueChange(d, catalogue, catalogue.map(x => x.id === 'vitc' ? { ...x, price: 9 } : x))).toBeNull();
+    expect(cs.afterCatalogueChange({ ...d, consent: false }, catalogue, dearer)).toBeNull();
+    expect(cs.afterCatalogueChange(cs.markSaved(d, 'duo', T0), catalogue, dearer)).toBeNull();
+  });
+
+  it('a duplicate save shows the stored outcome, or none when an older server does not say it (state-2)', () => {
+    expect(cs.recordedOutcome('duo', { ok: true })).toEqual({ outcome: 'duo', duplicate: false });
+    expect(cs.recordedOutcome('duo', { ok: true, duplicate: true, outcome: 'initial' })).toEqual({ outcome: 'initial', duplicate: true });
+    expect(cs.recordedOutcome('duo', { ok: true, duplicate: true })).toEqual({ outcome: '', duplicate: true });
+    expect(cs.recordedOutcome('duo', { ok: true, duplicate: true, outcome: 'nonsense' })).toEqual({ outcome: '', duplicate: true });
+  });
+
+  it('a save or a presentation answered after an example started lands on the call set aside (state-4)', () => {
+    const live = liveCall();
+    const store = cs.startExample({ draft: live, parked: null }, 'face');
+    const saved = cs.applyToCall(store, 'call-1', d => cs.markSaved(d, 'initial', T0))!;
+    expect(saved.parked).toMatchObject({ callId: 'call-1', saved: true, savedOutcome: 'initial' });
+    expect(saved.draft).toBe(store.draft);
+    expect(cs.applyToCall({ draft: live, parked: null }, 'call-1', d => ({ ...d, presented: [proposal] }))!.draft.presented).toEqual([proposal]);
+    expect(cs.applyToCall(store, 'other', d => d)).toBeNull();
+  });
+
+  it('a change of the initial order after an unanswered « J’ai présenté » continues under a new call id (state-3, recording-6)', () => {
+    const pending = liveCall({ presentationKeys: { sig: 'key-1' } });
+    const r = cs.changeInitialOrder(pending, ['antiacne', 'wcspf'], catalogue, T0, () => 'call-2')!;
+    expect(r.draft).toMatchObject({ callId: 'call-2', presentationKeys: {}, startedAt: T0, profile: face });
+    const q = cs.changeInitialQuantity(pending, 'antiacne', 2, () => 'call-3')!;
+    expect(q).toMatchObject({ callId: 'call-3', presentationKeys: {}, startedAt: T0, baseQuantities: { antiacne: 2 } });
+    // Nothing sent under this id: the id stays.
+    expect(cs.changeInitialOrder(liveCall(), ['antiacne', 'wcspf'], catalogue, T0, () => 'call-x')!.draft.callId).toBe('call-1');
+    expect(cs.changeInitialQuantity(liveCall(), 'antiacne', 2, () => 'call-x')!.callId).toBe('call-1');
+    // « Annuler » on the removal notice still works under the renewed id.
+    const undone = cs.undoRemoval(r.draft, pending)!;
+    expect(undone).toMatchObject({ callId: 'call-2', baseIds: ['antiacne'], adds: ['wcgel', 'wcspf'] });
+    expect(cs.undoRemoval({ ...r.draft, callId: 'unrelated' }, liveCall())).toBeNull();
+  });
+
+  it('a targeted stop also drops extra units of the initial order (callux-5)', () => {
+    const d = liveCall({ adds: [], quantities: { antiacne: 3 } });
+    expect(cs.basketOf(d, catalogue).basket[0]!.quantity).toBe(3);
+    const r = cs.changeProfile(d, { safety: ['urgent'] }, catalogue)!;
+    expect(r.draft.quantities).toEqual({});
+    expect(cs.basketOf(r.draft, catalogue).basket[0]!.quantity).toBe(1);
+    // Without a stop the extra units stay.
+    expect(cs.changeProfile(d, { skin: 'dry' }, catalogue)!.draft.quantities).toEqual({ antiacne: 3 });
+  });
+
+  it('an example sets aside a saved call while it may still be voided, never as a call at stake (state-7)', () => {
+    const saved = cs.markSaved(liveCall(), 'duo', T0);
+    const kept = cs.startExample({ draft: saved, parked: null }, 'face', { keepSaved: true });
+    expect(kept.parked).toBe(saved);
+    expect(cs.leavePlan(kept, 'new')).toBe('go');
+    expect(cs.leavePlan(kept, 'leave')).toBe('go');
+    expect(cs.needsUnloadPrompt(kept)).toBe(false);
+    expect(cs.exitExample(kept)).toEqual({ draft: saved, parked: null });
+    expect(cs.startExample({ draft: saved, parked: null }, 'face').parked).toBeNull();
+    expect(cs.startExample({ draft: liveCall(), parked: null }, 'face', { keepSaved: true }).parked!.saved).toBe(false);
+  });
+
+  it('a catalogue notice names only the lines the call adds (recording-8)', () => {
+    const d = liveCall({ adds: ['wcgel'], baseIds: ['antiacne', 'wcspf'], baseQuantities: { antiacne: 1, wcspf: 1 } });
+    const off = (ids: string[]) => catalogue.map(x => ids.includes(x.id) ? { ...x, enabled: false } : x);
+    expect(cs.disabledAdditions(d, off(['wcspf', 'wcgel'])).map(x => x.id)).toEqual(['wcgel']);
+    expect(cs.disabledAdditions(d, off(['wcspf']))).toEqual([]);
+    // Units above the initial quantity are an addition too.
+    expect(cs.disabledAdditions({ ...d, quantities: { wcspf: 2 } }, off(['wcspf'])).map(x => x.id)).toEqual(['wcspf']);
+  });
+
+  it('a duplicated tab continues its copy of the call under a new id, nothing presented (state-2)', () => {
+    const copy = { draft: cs.newDraft({ example: 'face', id: 'demo' }), parked: liveCall({ presented: [proposal], presentationKeys: { a: 'k' } }) };
+    expect(cs.heldCallIds(copy)).toEqual(['call-1']);
+    expect(cs.restoredCallIds(copy)).toEqual(['call-1']);
+    const r = cs.forkCopies(copy, ['call-1'], () => 'call-2')!;
+    expect(r.hadOffers).toBe(true);
+    expect(r.store.draft).toBe(copy.draft);
+    expect(r.store.parked).toMatchObject({ callId: 'call-2', presented: [], presentationKeys: {}, adds: ['wcgel', 'wcspf'], startedAt: T0 });
+    expect(cs.orderLocked(r.store.parked!)).toBe(false);
+    expect(cs.forkCopies(copy, ['other'])).toBeNull();
+    // A saved call is not asked about and never forked: it is the record of what the server holds.
+    const saved = { draft: cs.markSaved(liveCall(), 'duo', T0), parked: null };
+    expect(cs.restoredCallIds(saved)).toEqual([]);
+    expect(cs.heldCallIds(saved)).toEqual(['call-1']);
+    expect(cs.forkCopies(saved, ['call-1'])).toBeNull();
+  });
+
+  it('the void comment describes the server: the reminder link is kept for a follow-up', () => {
+    const src = readFileSync(new URL('../src/ui/call/callState.ts', import.meta.url), 'utf8');
+    expect(src).toContain('void-call reopens it and answers `reopenedReminderId`');
+  });
+});

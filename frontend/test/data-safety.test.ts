@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ACCOUNT_CHANGED, NETWORK_ERROR, lockRequests, requestJson, resetRequestState, setExpectedUser } from '../src/data/api';
 import { announceSession, closeSessionChannel, onSessionMessage, parseSessionMessage, sessionReaction } from '../src/data/session-channel';
-import { allowedView, landingView, viewFromEntry, viewFromSearch, viewHref } from '../src/data/view-history';
+import { allowedView, backFromGuard, landingView, viewFromEntry, viewFromSearch, viewHref } from '../src/data/view-history';
+import { CALL_CHANNEL, claimAnswer, parseClaim, startCallClaims } from '../src/data/call-claims';
 
 // Requests, other tabs and history: what keeps a live call safe outside the call screen.
 const reply = (body: unknown, status = 200) => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status });
@@ -96,6 +97,60 @@ describe('views and history (BACK, ROLES)', () => {
     expect(allowedView(true, 'admin')).toBe(true);
     expect(allowedView(false, 'call')).toBe(true);
     expect([landingView(true), landingView(false)]).toEqual(['results', 'call']);
+  });
+});
+
+describe('Back from the first page (state-5)', () => {
+  const run = async (atStake: boolean, answer: boolean) => {
+    const calls: string[] = [];
+    const result = await backFromGuard({ atStake, confirm: async () => { calls.push('confirm'); return answer; }, back: () => calls.push('back'), restoreView: () => calls.push('restore') });
+    return { result, calls };
+  };
+  it('nothing at stake: Back leaves, no question and no view put back (so it never loops)', async () => {
+    expect(await run(false, true)).toEqual({ result: 'left', calls: ['back'] });
+  });
+  it('an open call: asks; staying puts the view back, leaving steps back', async () => {
+    expect(await run(true, false)).toEqual({ result: 'stayed', calls: ['confirm', 'restore'] });
+    expect(await run(true, true)).toEqual({ result: 'left', calls: ['confirm', 'back'] });
+  });
+});
+
+describe('duplicated tabs (state-2)', () => {
+  const wait = () => new Promise(resolve => setTimeout(resolve, 30));
+  it('only well-formed messages count; the tab that held the call first answers, ties go to the smaller tab id', () => {
+    expect(parseClaim({ type: 'ask', tab: 'b', since: 2, ids: ['x'] })).toEqual({ type: 'ask', tab: 'b', since: 2, ids: ['x'] });
+    expect(parseClaim({ type: 'taken', to: 'b', ids: ['x'] })).toEqual({ type: 'taken', to: 'b', ids: ['x'] });
+    for (const bad of [null, 'x', { type: 'ask', tab: 'b', ids: ['x'] }, { type: 'ask', tab: 'b', since: 1, ids: [] }, { type: 'taken', ids: ['x'] }, { type: 'login', userId: 'u' }]) expect(parseClaim(bad)).toBeNull();
+    const ask = { type: 'ask' as const, tab: 'b', since: 200, ids: ['x', 'y'] };
+    expect(claimAnswer({ tab: 'a', since: 100, ids: ['x', 'z'] }, ask)).toEqual({ type: 'taken', to: 'b', ids: ['x'] });
+    expect(claimAnswer({ tab: 'a', since: 300, ids: ['x'] }, ask)).toBeNull();
+    expect(claimAnswer({ tab: 'a', since: 100, ids: ['z'] }, ask)).toBeNull();
+    expect(claimAnswer({ tab: 'a', since: 200, ids: ['x'] }, ask)).toEqual({ type: 'taken', to: 'b', ids: ['x'] });
+    expect(claimAnswer({ tab: 'c', since: 200, ids: ['x'] }, ask)).toBeNull();
+    expect(claimAnswer({ tab: 'b', since: 100, ids: ['x'] }, ask)).toBeNull();
+  });
+  it('the copy hears that its restored call is held by the older tab; the older tab is never told to fork', async () => {
+    const takenA: string[][] = [], takenB: string[][] = [];
+    const original = startCallClaims({ tab: 'a', since: 100, held: () => ['call-1'], onTaken: ids => takenA.push(ids) });
+    const copy = startCallClaims({ tab: 'b', since: 200, held: () => ['call-1'], onTaken: ids => takenB.push(ids) });
+    try {
+      copy.ask(['call-1']);
+      await wait();
+      expect(takenB).toEqual([['call-1']]);
+      original.ask(['call-1']);
+      await wait();
+      expect(takenA).toEqual([]);
+      copy.ask(['call-9']);
+      await wait();
+      expect(takenB).toEqual([['call-1']]);
+    } finally { original.stop(); copy.stop(); }
+    expect(CALL_CHANNEL).toBe('thinkercare-calls');
+  });
+  it('without BroadcastChannel nothing is asked and nothing breaks', () => {
+    const claims = startCallClaims({ held: () => ['x'], onTaken: () => { throw new Error('never'); }, open: () => null });
+    expect(() => { claims.ask(['x']); claims.stop(); }).not.toThrow();
+    const failing = startCallClaims({ held: () => ['x'], onTaken: () => {}, open: () => { throw new Error('denied'); } });
+    expect(() => failing.ask(['x'])).not.toThrow();
   });
 });
 

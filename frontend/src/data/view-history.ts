@@ -32,3 +32,15 @@ export function viewHref(view: string | null, location: { pathname: string; sear
   const query = params.toString();
   return location.pathname + (query ? '?' + query : '') + location.hash;
 }
+
+/**
+ * Back has landed on the guard entry. Nothing at stake: one more step back, as the browser would have done (at the tab's
+ * first entry there is nowhere to go, and the next Back leaves the app). An open call: ask first; staying puts the view
+ * entry back on top of the guard, leaving steps back. The view entry is put back only when the adviser chose to stay, so
+ * Back can never loop on the guard.
+ */
+export async function backFromGuard({ atStake, confirm, back, restoreView }: { atStake: boolean; confirm: () => Promise<boolean>; back: () => void; restoreView: () => void }): Promise<'left' | 'stayed'> {
+  if (atStake && !(await confirm())) { restoreView(); return 'stayed'; }
+  back();
+  return 'left';
+}
