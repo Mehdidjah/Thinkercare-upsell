@@ -1,0 +1,297 @@
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { EMPTY_PROFILE, recommend, type Product, type Profile, type Proposal } from '@touche/domain';
+import * as cs from '../src/ui/call/callState';
+
+// Call-state transitions as plain objects in, plain objects out (X13). Every wipe of the scan (A1, A3, CN1, SPEC) has a case here.
+const catalogue: Product[] = JSON.parse(readFileSync(new URL('../../shared/test/fixtures/catalogue.json', import.meta.url), 'utf8'));
+const p = (id: string) => { const x = catalogue.find(y => y.id === id); if (!x) throw new Error('missing fixture ' + id); return x; };
+const face: Profile = { ...EMPTY_PROFILE, concerns: ['acne'], severity: 'mild', skin: 'mixed', sensitive: 'no', routineKnown: true, routine: [], safety: ['none'] };
+const hair: Profile = { ...face, concerns: ['growth'], severity: '' };
+const T0 = '2026-11-19T09:00:00.000Z';
+/** A live call at step 3 on Anti-acné with answers, two additions and both ticks. */
+function liveCall(extra: Partial<cs.CallDraft> = {}): cs.CallDraft {
+  return { ...cs.newDraft({ id: 'call-1', now: T0 }), step: 2, baseIds: ['antiacne'], baseQuantities: { antiacne: 1 }, profile: face, profileDomain: 'face', adds: ['wcgel', 'wcspf'], consent: true, checked: true, orderRef: 'DOS-1', ...extra };
+}
+const proposal = { id: 'offer-1' } as Proposal;
+
+describe('leave guard (A1)', () => {
+  it('asks before leaving an open live call, and only then', () => {
+    const open = { draft: liveCall(), parked: null };
+    for (const reason of ['new', 'resume', 'signout', 'leave'] as const) expect(cs.leavePlan(open, reason)).toBe('confirm');
+    expect(cs.leavePlan(open, 'example')).toBe('park');
+    expect(cs.leavePlan({ draft: cs.newDraft(), parked: null }, 'new')).toBe('go');
+    expect(cs.leavePlan({ draft: cs.markSaved(liveCall(), 'noanswer', T0), parked: null }, 'signout')).toBe('go');
+    expect(cs.leavePlan({ draft: cs.newDraft({ example: 'face' }), parked: null }, 'new')).toBe('go');
+  });
+
+  it('an example keeps the live call aside, « Quitter l’exemple » brings it back', () => {
+    const live = liveCall();
+    const example = cs.startExample({ draft: live, parked: null }, 'hair', { id: 'demo-1' });
+    expect(example.draft.demo).toBe(true);
+    expect(example.draft.baseIds).toEqual(['shpousse']);
+    expect(example.parked).toBe(live);
+    // Switching example keeps the same call aside; leaving the parked call during an example still asks.
+    const other = cs.startExample(example, 'face');
+    expect(other.parked).toBe(live);
+    expect(cs.leavePlan(other, 'new')).toBe('confirm');
+    expect(cs.leavePlan(other, 'example')).toBe('go');
+    expect(cs.exitExample(other)).toEqual({ draft: live, parked: null });
+    // Nothing set aside: leaving the example opens an empty call.
+    const empty = cs.exitExample(cs.startExample({ draft: cs.newDraft(), parked: null }, 'face'));
+    expect(empty.draft.demo).toBe(false);
+    expect(empty.draft.baseIds).toEqual([]);
+  });
+
+  it('the browser asks before closing while a live call is open, never for an example alone', () => {
+    expect(cs.needsUnloadPrompt({ draft: liveCall(), parked: null })).toBe(true);
+    expect(cs.needsUnloadPrompt({ draft: cs.newDraft({ example: 'face' }), parked: null })).toBe(false);
+    expect(cs.needsUnloadPrompt({ draft: cs.newDraft({ example: 'face' }), parked: liveCall() })).toBe(true);
+    expect(cs.needsUnloadPrompt({ draft: cs.markSaved(liveCall(), 'initial', T0), parked: null })).toBe(false);
+  });
+});
+
+describe('answers (A3)', () => {
+  it('re-tapping a selected answer changes nothing', () => {
+    const d = liveCall();
+    expect(cs.changeProfile(d, { skin: 'mixed' }, catalogue)).toBeNull();
+    expect(cs.changeProfile(d, { concerns: ['acne'], severity: 'mild' }, catalogue)).toBeNull();
+    expect(cs.changeProfile(d, { redState: '', scalpProtocol: false }, catalogue)).toBeNull();
+  });
+
+  it('a real change keeps the additions still allowed and removes only the others', () => {
+    const r = cs.changeProfile(liveCall({ requestedIds: ['wcgel'], quantities: { wcgel: 2 } }), { skin: 'dry' }, catalogue)!;
+    // Water Complex Gel is not indicated for a dry skin; the sun protection still fits.
+    expect(r.removed).toEqual(['wcgel']);
+    expect(r.draft.adds).toEqual(['wcspf']);
+    expect(r.draft.requestedIds).toEqual([]);
+    expect(r.draft.quantities).toEqual({});
+    expect(r.draft.profile.skin).toBe('dry');
+    expect(r.draft.callId).toBe('call-1');
+    expect(r.draft.consent).toBe(false);
+  });
+
+  it('a change that leaves every addition valid removes nothing and keeps the agreement', () => {
+    const r = cs.changeProfile(liveCall(), { concerns: ['acne', 'oil'] }, catalogue)!;
+    expect(r.removed).toEqual([]);
+    expect(r.draft.adds).toEqual(['wcgel', 'wcspf']);
+    expect(r.draft.consent).toBe(true);
+    expect(r.draft.checked).toBe(false); // the compatibility tick is about the answers
+  });
+
+  it('a targeted stop removes every addition and the pack', () => {
+    const r = cs.changeProfile(liveCall(), { safety: ['irritation'] }, catalogue)!;
+    expect(r.removed).toEqual(['wcgel', 'wcspf']);
+    expect(r.draft.adds).toEqual([]);
+  });
+
+  it('« Annuler » restores the answers and additions', () => {
+    const before = liveCall();
+    const r = cs.changeProfile(before, { skin: 'dry' }, catalogue)!;
+    const undone = cs.undoRemoval(r.draft, before)!;
+    expect(undone.profile).toEqual(before.profile);
+    expect(undone.adds).toEqual(before.adds);
+    expect(cs.undoRemoval(cs.markSaved(r.draft, 'initial', T0), before)).toBeNull();
+  });
+
+  it('a third concern replaces the second and drops its follow-up', () => {
+    expect(cs.concernPatch({ ...face, concerns: ['acne', 'marks'], marks: 'flat' }, 'dull')).toEqual({ concerns: ['acne', 'dull'], severity: 'mild', marks: '', hairPattern: '', redState: '' });
+  });
+
+  it('a saved call is read-only', () => {
+    const saved = cs.markSaved(liveCall(), 'duo', T0);
+    expect(cs.changeProfile(saved, { skin: 'dry' }, catalogue)).toBeNull();
+    expect(cs.addComplement(saved, 'total', [], false)).toBeNull();
+    expect(cs.removeComplement(saved, 'wcgel')).toBeNull();
+    expect(cs.toggleVerification(saved, p('nia12'), true, catalogue)).toBeNull();
+    expect(cs.chooseTier(saved, 'final')).toBeNull();
+    expect(cs.changeDelivery(saved, '300')).toBeNull();
+  });
+});
+
+describe('initial order (CN1, A3, X10)', () => {
+  it('a quantity change keeps answers, additions, verifications and the call id', () => {
+    const d = liveCall({ verifiedProducts: ['nia12'], quantities: { antiacne: 2, wcgel: 2 } });
+    const next = cs.changeInitialQuantity(d, 'antiacne', 3)!;
+    expect(next.baseQuantities).toEqual({ antiacne: 3 });
+    expect(next.profile).toBe(d.profile);
+    expect(next.adds).toEqual(d.adds);
+    expect(next.verifiedProducts).toEqual(['nia12']);
+    expect(next.callId).toBe('call-1');
+    expect(next.startedAt).toBe(T0);
+    expect([next.consent, next.checked]).toEqual([false, false]);
+    // A basket quantity below the new initial quantity goes; the others stay.
+    expect(next.quantities).toEqual({ wcgel: 2 });
+  });
+
+  it('an unchanged or invalid quantity, or a locked order, changes nothing', () => {
+    const d = liveCall();
+    expect(cs.changeInitialQuantity(d, 'antiacne', 1)).toBeNull();
+    expect(cs.changeInitialQuantity(d, 'antiacne', 0)).toBeNull();
+    expect(cs.changeInitialQuantity(d, 'antiacne', 100)).toBeNull();
+    expect(cs.changeInitialQuantity({ ...d, presented: [proposal] }, 'antiacne', 2)).toBeNull();
+    expect(cs.changeInitialQuantity(cs.newDraft({ example: 'face' }), 'antiacne', 2)).toBeNull();
+  });
+
+  it('another product of the same domain keeps the answers and re-checks the additions', () => {
+    const r = cs.changeInitialOrder(liveCall(), ['antiacne', 'wcgel'], catalogue)!;
+    expect(cs.initialNeedsConfirm(liveCall(), ['antiacne', 'wcgel'], catalogue)).toBe(false);
+    expect(r.draft.profile).toEqual(face);
+    expect(r.draft.callId).toBe('call-1');
+    expect(r.draft.baseQuantities).toEqual({ antiacne: 1, wcgel: 1 });
+    expect(r.removed).toEqual(['wcgel']); // now part of the initial order
+    expect(r.draft.adds).toEqual(['wcspf']);
+  });
+
+  it('a guiding product of another domain asks first, then clears the answers', () => {
+    const d = liveCall();
+    expect(cs.initialNeedsConfirm(d, ['shpousse'], catalogue)).toBe(true);
+    const r = cs.changeInitialOrder(d, ['shpousse'], catalogue)!;
+    expect(r.draft.profile).toEqual(EMPTY_PROFILE);
+    expect(r.draft.adds).toEqual([]);
+    expect(r.draft.callId).toBe('call-1');
+    // No answers yet: nothing to ask.
+    expect(cs.initialNeedsConfirm({ ...d, profile: { ...EMPTY_PROFILE }, profileDomain: '' }, ['shpousse'], catalogue)).toBe(false);
+  });
+
+  it('the order is fixed in an example and once an offer is presented', () => {
+    expect(cs.changeInitialOrder(cs.newDraft({ example: 'hair' }), ['antiacne'], catalogue)).toBeNull();
+    expect(cs.changeInitialOrder(liveCall({ presented: [proposal] }), ['wcgel'], catalogue)).toBeNull();
+    expect(cs.orderLocked(cs.newDraft({ example: 'face' }))).toBe(true);
+  });
+});
+
+describe('specific verifications (SPEC)', () => {
+  it('ticking clears nothing', () => {
+    const d = liveCall();
+    const r = cs.toggleVerification(d, p('sal10'), true, catalogue)!;
+    expect(r.removed).toEqual([]);
+    expect(r.draft.verifiedProducts).toEqual(['sal10']);
+    expect(r.draft.adds).toEqual(d.adds);
+    expect([r.draft.consent, r.draft.checked]).toEqual([true, true]);
+    expect(cs.toggleVerification(r.draft, p('sal10'), true, catalogue)).toBeNull();
+  });
+
+  it('a pack verification covers its components', () => {
+    expect(cs.toggleVerification(cs.newDraft(), p('packpso'), true, catalogue)!.draft.verifiedProducts).toEqual(['packpso', 'shpso', 'serumpso']);
+  });
+
+  it('unticking removes only the additions that needed that verification', () => {
+    const d = cs.addComplement(liveCall({ adds: ['wcspf'] }), 'nia12', ['nia12'], true)!;
+    expect(d.verifiedProducts).toEqual(['nia12']);
+    const r = cs.toggleVerification(d, p('nia12'), false, catalogue)!;
+    expect(r.removed).toEqual(['nia12']);
+    expect(r.draft.adds).toEqual(['wcspf']);
+    expect(r.draft.requestedIds).toEqual([]);
+    expect(cs.undoRemoval(r.draft, d)!.adds).toEqual(['wcspf', 'nia12']);
+  });
+
+  it('unticking a verification nothing depends on removes nothing', () => {
+    const d = liveCall({ verifiedProducts: ['sal10'] });
+    const r = cs.toggleVerification(d, p('sal10'), false, catalogue)!;
+    expect(r.removed).toEqual([]);
+    expect(r.draft.adds).toEqual(d.adds);
+  });
+});
+
+describe('routine', () => {
+  it('re-choosing the selected price keeps the agreement', () => {
+    expect(cs.chooseTier(liveCall(), 'duo')).toBeNull();
+    expect(cs.chooseTier(liveCall(), 'final')).toMatchObject({ tier: 'final', consent: false, checked: true });
+  });
+  it('delivery is clamped and an unchanged fee changes nothing', () => {
+    expect(cs.changeDelivery(liveCall(), '12000.7')!.delivery).toBe('10000');
+    expect(cs.changeDelivery(liveCall({ delivery: '400' }), '400')).toBeNull();
+  });
+  it('quantity: verification and duplicates are checked before raising it', () => {
+    expect(cs.changeQuantity(liveCall({ adds: ['nia12'] }), 'nia12', 2, catalogue)).toEqual({ error: 'Confirmez la vérification de cette référence avant d’augmenter la quantité.' });
+    expect(cs.changeQuantity(liveCall(), 'wcgel', 3, catalogue)).toMatchObject({ draft: { quantities: { wcgel: 3 }, consent: false } });
+    expect(cs.changeQuantity(liveCall(), 'antiacne', 1, catalogue)).toBeNull();
+  });
+  it('back to separate products keeps the additions still allowed with the single product', () => {
+    const packed = { ...liveCall({ baseIds: ['shpousse'], baseQuantities: { shpousse: 1 }, profile: hair, profileDomain: 'hair', adds: ['serumhair'], quantities: { packpousse: 2 } }), upgradeId: 'packpousse' };
+    const r = cs.clearUpgrade(packed, catalogue)!;
+    expect(r.draft.upgradeId).toBe('');
+    expect(r.removed).toEqual([]);
+    expect(r.draft.adds).toEqual(['serumhair']);
+    expect(r.draft.quantities).toEqual({});
+    // Choosing a pack replaces the single product: additions chosen for it go.
+    expect(cs.chooseUpgrade(liveCall({ baseIds: ['shpousse'], adds: ['serumhair'] }), 'packpousse')).toMatchObject({ upgradeId: 'packpousse', adds: [] });
+  });
+  it('the suggested additions of the fixture stay suggested for these answers', () => {
+    // Guards the scenarios above: wcgel and wcspf are genuine suggestions for Anti-acné with these answers.
+    const ids = recommend(catalogue, p('antiacne'), face).map(c => c.product.id);
+    expect(ids).toEqual(expect.arrayContaining(['wcgel', 'wcspf']));
+  });
+});
+
+describe('void and catalogue changes (H5, H2)', () => {
+  it('reopens the same answers and basket under a new id linked to the voided call', () => {
+    const saved = cs.markSaved(liveCall({ presented: [proposal], presentationKeys: { a: 'k' } }), 'duo', T0);
+    const reopened = cs.reopenAfterVoid(saved, 'call-2');
+    expect(reopened).toMatchObject({ callId: 'call-2', linkedCallId: 'call-1', saved: false, savedOutcome: '', presented: [], presentationKeys: {}, consent: false, checked: false });
+    expect(reopened.adds).toEqual(saved.adds);
+    expect(reopened.profile).toEqual(saved.profile);
+  });
+  it('« Annuler ce résultat » is offered only with the server feature, within the window', () => {
+    const saved = cs.markSaved(liveCall(), 'noanswer', T0);
+    expect(cs.voidDeadline(saved, ['void-call'], 30)).toBe(Date.parse(T0) + 30 * 60_000);
+    expect(cs.voidDeadline(saved, [], 30)).toBeNull();
+    expect(cs.voidDeadline(saved, undefined, 30)).toBeNull();
+    expect(cs.voidDeadline(liveCall(), ['void-call'], 30)).toBeNull();
+  });
+  it('recognises a catalogue change by code, or by the message of an older server', () => {
+    expect(cs.catalogueChange({ code: 'price-changed', message: 'Le prix a changé.' })).toBe('price');
+    expect(cs.catalogueChange({ code: 'product-disabled' })).toBe('disabled');
+    expect(cs.catalogueChange({ code: 'account-changed', message: 'Le tarif a changé.' })).toBeNull();
+    expect(cs.catalogueChange({ message: 'Le tarif a changé. Actualisez et annoncez le montant corrigé.' })).toBe('price');
+    expect(cs.catalogueChange({ message: 'Le catalogue a changé : actualisez puis faites confirmer le nouveau montant.' })).toBe('price');
+    expect(cs.catalogueChange({ message: 'Un produit a été désactivé. Actualisez le catalogue.' })).toBe('disabled');
+    expect(cs.catalogueChange({ message: 'Appel déjà clôturé. Ouvrez un nouvel appel.' })).toBeNull();
+  });
+});
+
+describe('draft in sessionStorage (A4)', () => {
+  const memory = () => { const m = new Map<string, string>(); return { m, getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) }; };
+
+  it('round-trips the call and the call set aside', () => {
+    const store = { draft: cs.newDraft({ example: 'face', id: 'demo', now: T0 }), parked: liveCall({ presented: [proposal], callbackAt: '2026-11-20T10:00', handledObjections: ['budget'], verifiedProducts: ['nia12'], quantities: { wcgel: 2 }, requestedIds: ['wcgel'], linkedCallId: 'old', tier: 'final', delivery: '400', refusal: 'budget' }) };
+    expect(cs.parseStore(cs.serializeStore(store))).toEqual(store);
+    const saved = { draft: cs.markSaved(liveCall(), 'callback', T0), parked: null };
+    expect(cs.parseStore(cs.serializeStore(saved))).toEqual(saved);
+  });
+
+  it('is kept per account, under a versioned key, and removed when empty', () => {
+    const storage = memory();
+    cs.saveCallStore('nadia', { draft: liveCall(), parked: null }, storage);
+    expect([...storage.m.keys()]).toEqual(['thinkercare:appel:v1:nadia']);
+    expect(cs.loadCallStore('nadia', storage)!.draft.callId).toBe('call-1');
+    expect(cs.loadCallStore('samir', storage)).toBeNull();
+    cs.saveCallStore('nadia', { draft: cs.newDraft(), parked: null }, storage);
+    expect(storage.m.size).toBe(0);
+    cs.saveCallStore('nadia', { draft: liveCall(), parked: null }, storage);
+    cs.clearCallStore('nadia', storage);
+    expect(storage.m.size).toBe(0);
+  });
+
+  it('ignores broken, foreign or older data and never throws', () => {
+    expect(cs.parseStore('{')).toBeNull();
+    expect(cs.parseStore(JSON.stringify({ v: 0, draft: liveCall() }))).toBeNull();
+    expect(cs.parseStore(JSON.stringify({ v: 1, draft: { callId: '' } }))).toBeNull();
+    expect(cs.parseStore(JSON.stringify({ v: 1, draft: { ...liveCall(), step: 7 } }))).toBeNull();
+    // A field of the wrong type falls back to a new call's value; the rest is kept.
+    const repaired = cs.parseStore(JSON.stringify({ v: 1, draft: { ...liveCall(), adds: 'wcgel', consent: 'yes' } }))!;
+    expect(repaired.draft.adds).toEqual([]);
+    expect(repaired.draft.consent).toBe(false);
+    expect(repaired.draft.baseIds).toEqual(['antiacne']);
+    const broken = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('full'); }, removeItem: () => { throw new Error('denied'); } };
+    expect(cs.loadCallStore('nadia', broken)).toBeNull();
+    expect(() => cs.saveCallStore('nadia', { draft: liveCall(), parked: null }, broken)).not.toThrow();
+    expect(() => cs.clearCallStore('nadia', broken)).not.toThrow();
+  });
+
+  it('a follow-up call from a reminder starts at the questions, linked to it', () => {
+    const d = cs.resumeDraft({ id: 'old-call', base_id: 'antiacne', meta: { originals: [{ id: 'antiacne', name: 'Anti-acné', price: 1800, quantity: 2 }, { id: 'wcgel', name: 'Gel', price: 1500 }], orderRef: 'DOS-9', customerStage: 'returning' } });
+    expect(d).toMatchObject({ step: 1, baseIds: ['antiacne', 'wcgel'], baseQuantities: { antiacne: 2, wcgel: 1 }, orderRef: 'DOS-9', customerStage: 'returning', linkedCallId: 'old-call', demo: false });
+  });
+});
