@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { canManageAccount, canManageWorkspace, canRemoveAccount } from '@touche/domain';
 import { requestJson } from '../data/api';
 import AccountTable, { type AccountUser } from './AccountTable';
@@ -6,7 +6,7 @@ import AccountPassword, { NewPasswordField } from './AccountPassword';
 import { Icon } from './shared/Icon';
 import { Dialog } from './shared/Dialog';
 import { useConfirm } from './shared/Confirm';
-import { type NoteKind } from './shell/Notifications';
+import { useNotify, type NoteKind } from './shell/Notifications';
 
 type Props = {
   user: AccountUser;
@@ -15,6 +15,28 @@ type Props = {
   reload: () => Promise<void>;
   notify: (message: string, kind?: NoteKind) => void;
 };
+
+/** What « Abandonner les modifications ? » names: the access fields, the typed new password, or both (PN8). */
+export function unsavedChanges(label: string, access: boolean, password: boolean) {
+  if (access && password) return `Les modifications de l’accès et le nouveau mot de passe de ${label} ne sont pas enregistrés.`;
+  if (password) return `Le nouveau mot de passe de ${label} n’est pas enregistré.`;
+  return `Les modifications de l’accès de ${label} ne sont pas enregistrées.`;
+}
+
+/** F2: a new account's identifier and password, shown once with « Copier ». Not a live region: screen readers
+ *  hear « Compte créé : identifiant et mot de passe affichés une fois » (announce), never the secrets. */
+export function CreatedAccess({ created, copied, passwordViewingEnabled, onCopy, onHide }: {
+  created: { label: string; username: string; password: string }; copied: string; passwordViewingEnabled: boolean;
+  onCopy: () => void; onHide: () => void;
+}) {
+  return <div className="notice notice--success admin-created"><Icon name="check" className="notice__icon"/>
+    <div className="notice__text"><p className="notice__title">Accès créé pour {created.label}</p>
+      <dl className="admin-created__list"><div><dt>Identifiant</dt><dd>{created.username}</dd></div><div><dt>Mot de passe</dt><dd>{created.password}</dd></div></dl>
+      <p>Transmettez ces accès maintenant : ils ne seront plus affichés ici.{passwordViewingEnabled ? ' Le mot de passe reste consultable dans « Gérer l’accès… ».' : ''}</p>
+      {copied && <p>{copied}</p>}</div>
+    <div className="admin-actions"><button type="button" className="btn btn--secondary btn--sm" onClick={onCopy}><Icon name="copy"/>Copier</button><button type="button" className="link-btn" onClick={onHide}>Masquer</button></div>
+  </div>;
+}
 
 export default function AccountManagement({ user, users, passwordViewingEnabled, reload, notify }: Props) {
   const [username, setUsername] = useState('');
@@ -28,26 +50,34 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
   // The access form as it was opened, and a typed but unsaved new password (PN8).
   const [opened, setOpened] = useState('');
   const [passwordDraft, setPasswordDraft] = useState(false);
+  const draftRef = useRef(false);
+  draftRef.current = passwordDraft;
+  // Access saved while the dialog stays open for a typed new password: said in the dialog, not behind it.
+  const [accessSaved, setAccessSaved] = useState(false);
   // F2: a new account's identifier and password, shown once with « Copier ».
   const [created, setCreated] = useState<{ label: string; username: string; password: string } | null>(null);
   const [copied, setCopied] = useState('');
   const hintId = useId();
   const confirm = useConfirm();
+  const { announce } = useNotify();
   useEffect(() => {
     if (!created) return;
     const timer = window.setTimeout(() => setCreated(null), 5 * 60_000);
     return () => window.clearTimeout(timer);
   }, [created]);
+  // The credentials never outlive the view, even when React keeps its state (a hidden <Activity>).
+  useEffect(() => () => { setCreated(null); setCopied(''); }, []);
 
   const accessOf = (a: AccountUser) => JSON.stringify([a.label, a.team || '', a.role, a.active !== 0]);
-  function openAccount(target: AccountUser) { setError(''); setPasswordDraft(false); setOpened(accessOf(target)); setAccount({ ...target }); }
+  function openAccount(target: AccountUser) { setError(''); setPasswordDraft(false); setAccessSaved(false); setOpened(accessOf(target)); setAccount({ ...target }); }
   /** Escape, ✕: close unless a request is running; unsaved access changes or a typed password ask first. */
   async function closeAccount() {
     if (busy || !account) return;
-    if ((accessOf(account) !== opened || passwordDraft) && !(await confirm({ title: 'Abandonner les modifications ?',
-      body: <p>Les modifications de l’accès de {account.label} ne sont pas enregistrées.</p>,
+    const accessDirty = accessOf(account) !== opened;
+    if ((accessDirty || passwordDraft) && !(await confirm({ title: 'Abandonner les modifications ?',
+      body: <p>{unsavedChanges(account.label, accessDirty, passwordDraft)}</p>,
       cancelLabel: 'Continuer la modification', confirmLabel: 'Abandonner les modifications', tone: 'danger' }))) return;
-    setAccount(null); setError(''); setPasswordDraft(false);
+    setAccount(null); setError(''); setPasswordDraft(false); setAccessSaved(false);
   }
   const closeRemoving = () => { if (!busy) { setRemoving(null); setError(''); } };
 
@@ -74,6 +104,8 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
         setCreated(null); setCopied('');
         if (await save({ action: 'user', username, label, password, role }, '')) {
           setCreated({ label, username, password });
+          // Only this sentence is spoken: the identifier and password stay out of every live region.
+          announce('Compte créé : identifiant et mot de passe affichés une fois');
           setUsername(''); setLabel(''); setPassword(''); setRole('advisor');
         }
       }}>
@@ -88,16 +120,13 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
         <div className="admin-form__submit"><button type="submit" className="btn btn--primary" disabled={busy}><Icon name="plus"/>Créer l’accès</button></div>
       </form>
       {error && !account && !removing && <p className="notice notice--danger" role="alert"><Icon name="alert" className="notice__icon"/><span className="notice__text">{error}</span></p>}
-      {created && <div className="notice notice--success admin-created" role="status"><Icon name="check" className="notice__icon"/>
-        <div className="notice__text"><p className="notice__title">Accès créé pour {created.label}</p>
-          <dl className="admin-created__list"><div><dt>Identifiant</dt><dd>{created.username}</dd></div><div><dt>Mot de passe</dt><dd>{created.password}</dd></div></dl>
-          <p>Transmettez ces accès maintenant : ils ne seront plus affichés ici.{passwordViewingEnabled ? ' Le mot de passe reste consultable dans « Gérer l’accès… ».' : ''}</p>
-          {copied && <p>{copied}</p>}</div>
-        <div className="admin-actions"><button type="button" className="btn btn--secondary btn--sm" onClick={async () => {
-          try { await navigator.clipboard.writeText(`Identifiant : ${created.username}\nMot de passe : ${created.password}`); setCopied('Identifiant et mot de passe copiés.'); }
-          catch { setCopied('Copie indisponible : sélectionnez l’identifiant et le mot de passe affichés.'); }
-        }}><Icon name="copy"/>Copier</button><button type="button" className="link-btn" onClick={() => setCreated(null)}>Masquer</button></div>
-      </div>}
+      {created && <CreatedAccess created={created} copied={copied} passwordViewingEnabled={passwordViewingEnabled} onHide={() => setCreated(null)}
+        onCopy={async () => {
+          let said = 'Identifiant et mot de passe copiés.';
+          try { await navigator.clipboard.writeText(`Identifiant : ${created.username}\nMot de passe : ${created.password}`); }
+          catch { said = 'Copie indisponible : sélectionnez l’identifiant et le mot de passe affichés.'; }
+          setCopied(said); announce(said);
+        }}/>}
       <AccountTable user={user} users={users} onManage={openAccount}
         onRemove={target => { setError(''); setRemoving(target); }}/>
     </section>
@@ -108,9 +137,12 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
         <div className="dialog__body">
         <form className="admin-form admin-form--stack" onSubmit={async event => {
           event.preventDefault();
-          if (await save({ action: 'user-settings', id: account.id, label: account.label, team: account.team || '',
-            active: account.active !== 0, reporting_scope: 'own', ...(account.role === 'admin' ? {} : { role: account.role }) },
-          'Accès et équipe mis à jour.')) { setOpened(accessOf(account)); if (!passwordDraft) setAccount(null); }
+          if (!(await save({ action: 'user-settings', id: account.id, label: account.label, team: account.team || '',
+            active: account.active !== 0, reporting_scope: 'own', ...(account.role === 'admin' ? {} : { role: account.role }) }, ''))) return;
+          setOpened(accessOf(account));
+          // A typed new password keeps the dialog open: the confirmation goes in it, not in a toast behind it.
+          if (draftRef.current) setAccessSaved(true);
+          else { setAccount(null); notify('Accès et équipe mis à jour.'); }
         }}>
           <label className="field">Nom affiché<input data-autofocus value={account.label} onChange={e => setAccount({ ...account, label: e.target.value })}
             minLength={2} maxLength={80} required disabled={busy}/></label>
@@ -130,6 +162,8 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
           <p className="notice notice--info"><Icon name="info" className="notice__icon"/><span className="notice__text">Un changement de rôle ou une désactivation déconnecte les sessions du compte. Les résultats sont conservés.</span></p>
           <div className="admin-form__submit"><button type="submit" className="btn btn--primary" disabled={busy}>Enregistrer les accès</button></div>
         </form>
+        {accessSaved && accessOf(account) === opened && <p className="notice notice--success" role="status"><Icon name="check" className="notice__icon"/><span className="notice__text">
+          Accès et équipe mis à jour.{passwordDraft ? ' Le nouveau mot de passe n’est pas encore enregistré.' : ''}</span></p>}
         {error && <p className="notice notice--danger" role="alert"><Icon name="alert" className="notice__icon"/><span className="notice__text">{error}</span></p>}
         {account.role !== 'admin' && <AccountPassword key={account.id} account={users.find(u => u.id === account.id) || account}
           enabled={passwordViewingEnabled} request={body => requestJson('', body)} saved={reload} onDraft={setPasswordDraft}/>}
