@@ -18,6 +18,9 @@ export class ReportCache {
     this.user = id;
   }
 
+  /** The account this tab's reports belong to (set from the workspace), null when signed out. */
+  currentUser() { return this.user; }
+
   clear() {
     for (const entry of this.entries.values()) entry.controller.abort();
     this.entries.clear();
