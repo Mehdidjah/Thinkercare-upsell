@@ -6,7 +6,7 @@ import { hashPassword, newSaltHex } from '../auth/crypto.js';
 import { sealPassword } from '../auth/password-vault.js';
 import { ENV, type Env } from '../config/env.js';
 import { DeskError } from '../common/http.js';
-import { canManageWorkspace, canManageAccount, canRemoveAccount } from '@touche/domain';
+import { canManageWorkspace, canManageAccount, canRemoveAccount, isFrontline } from '@touche/domain';
 import type { Db, Tx } from '../db/schema.js';
 import { tcAudit, tcProducts, tcSessions, tcSettings, tcUsers } from '../db/schema.js';
 import { auditRow } from './audit.js';
@@ -155,7 +155,7 @@ export class AdminService {
       if (target.id === actor.id && (!v.active || role !== target.role)) {
         throw new DeskError(403, 'Vous ne pouvez pas retirer votre propre accès.');
       }
-      if (role === 'advisor' && v.reporting_scope !== 'own') {
+      if (isFrontline(role) && v.reporting_scope !== 'own') {
         throw new DeskError(400, 'Une conseillère accède uniquement à sa progression personnelle. Le pilotage des équipes est réservé à la direction.');
       }
       await tx.update(tcUsers).set({

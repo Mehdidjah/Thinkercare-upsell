@@ -62,6 +62,21 @@ describe('migrations', () => {
     ).rejects.toMatchObject({ cause: { code: '23514' } });
   });
 
+  it('accepts the cm role beside existing advisor rows', async () => {
+    await db.execute(
+      sql`INSERT INTO tc_users (id, username, label, role, salt, password_hash) VALUES ('u-cm', 'cm', 'CM', 'cm', 's', 'h')`,
+    );
+    await db.execute(
+      sql`INSERT INTO tc_users (id, username, label, role, salt, password_hash) VALUES ('u-adv', 'adv', 'Adv', 'advisor', 's', 'h')`,
+    );
+    await runMigrations(testDatabaseUrl());
+    const result = await db.execute(sql`SELECT username, role FROM tc_users ORDER BY username`);
+    expect(result.rows).toEqual([
+      { username: 'adv', role: 'advisor' },
+      { username: 'cm', role: 'cm' },
+    ]);
+  });
+
   it('an order reference can be accepted only once', async () => {
     await db.execute(sql`INSERT INTO tc_accepted_dossiers (order_ref, call_id, user_id) VALUES ('DOS-1', 'c1', 'u1')`);
     await expect(

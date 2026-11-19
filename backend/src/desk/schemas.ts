@@ -141,7 +141,7 @@ export const userSchema = z
       .regex(/^[a-z0-9._-]{3,40}$/),
     label: z.string().trim().min(2).max(80),
     password: z.string().min(1).max(200),
-    role: z.enum(['advisor', 'manager']).default('advisor'),
+    role: z.enum(['advisor', 'cm', 'manager']).default('advisor'),
   })
   .strict();
 
@@ -167,7 +167,7 @@ export const userSettingsSchema = z
     team: z.string().trim().max(60),
     active: z.boolean(),
     reporting_scope: z.enum(['own', 'team']),
-    role: z.enum(['advisor', 'manager']).optional(),
+    role: z.enum(['advisor', 'cm', 'manager']).optional(),
   })
   .strict();
 

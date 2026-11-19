@@ -1,7 +1,11 @@
 // Shared server policy, independently tested. User-supplied filters may only narrow this scope.
 export type ReportingUser={id:string;role:string;team?:string;reporting_scope?:string};
 export const canManageWorkspace=(user:{role:string})=>user.role==='admin'||user.role==='manager';
-export const accountRoleLabel=(role:string)=>role==='admin'?'Direction':role==='manager'?'Manager':'Conseillère';
+export type MemberRole='advisor'|'cm'|'manager';
+export const MEMBER_ROLES:readonly(readonly [MemberRole,string])[]=[['advisor','Call center'],['cm','CM'],['manager','Manager']];
+// Frontline roles share the call-center rights: own data only, no management.
+export const isFrontline=(role:string)=>role==='advisor'||role==='cm';
+export const accountRoleLabel=(role:string)=>role==='admin'?'Direction':role==='manager'?'Manager':role==='cm'?'CM':'Call center';
 export function canManageAccount(actor:{role:string},target:{role:string}):boolean{
  return canManageWorkspace(actor)&&(actor.role==='admin'||target.role!=='admin');
 }

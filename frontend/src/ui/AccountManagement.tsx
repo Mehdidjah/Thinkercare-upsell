@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { canManageAccount, canManageWorkspace, canRemoveAccount } from '@touche/domain';
+import { MEMBER_ROLES, canManageAccount, canManageWorkspace, canRemoveAccount } from '@touche/domain';
 import { requestJson } from '../data/api';
 import AccountTable, { type AccountUser } from './AccountTable';
 import AccountPassword, { NewPasswordField } from './AccountPassword';
@@ -98,7 +98,7 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
   return <>
     <section className="card admin-section" aria-labelledby="admin-accounts-title">
       <h2 id="admin-accounts-title">Comptes et accès</h2>
-      <p>Créez un accès Conseillère ou Manager. Les managers disposent de tous les onglets et options de gestion, sauf la modification du compte Direction.</p>
+      <p>Créez un accès Call center, CM ou Manager. Les managers disposent de tous les onglets et options de gestion, sauf la modification du compte Direction.</p>
       <form className="admin-form" onSubmit={async event => {
         event.preventDefault();
         setCreated(null); setCopied('');
@@ -114,7 +114,7 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
           pattern="[a-z0-9._\-]{3,40}" required maxLength={40} disabled={busy} autoCapitalize="none" spellCheck={false} aria-describedby={hintId}/><small id={hintId} className="field__help">3 à 40 caractères : minuscules, chiffres, point, tiret, tiret bas</small></div>
         <label className="field">Nom affiché<input value={label} onChange={e => setLabel(e.target.value)} required minLength={2} maxLength={80} disabled={busy}/></label>
         <label className="field">Rôle<select value={role} onChange={e => setRole(e.target.value)} disabled={busy}>
-          <option value="advisor">Conseillère</option><option value="manager">Manager</option>
+          {MEMBER_ROLES.map(([value, name]) => <option key={value} value={value}>{name}</option>)}
         </select></label>
         <NewPasswordField label="Mot de passe initial" value={password} onChange={setPassword} disabled={busy}/>
         <div className="admin-form__submit"><button type="submit" className="btn btn--primary" disabled={busy}><Icon name="plus"/>Créer l’accès</button></div>
@@ -151,10 +151,11 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
           {account.role !== 'admin' && <>
             <label className="field">Rôle<select value={account.role} onChange={e => setAccount({ ...account, role: e.target.value })}
               disabled={busy || account.id === user.id}>
-              <option value="advisor">Conseillère</option><option value="manager">Manager</option>
+              {MEMBER_ROLES.map(([value, name]) => <option key={value} value={value}>{name}</option>)}
             </select></label>
             <p className="field__help">{account.role === 'manager'
               ? 'Tous les onglets et options de gestion. Le compte Direction reste protégé.'
+              : account.role === 'cm' ? 'Un CM dispose des mêmes accès qu’un compte Call center : accès personnel uniquement.'
               : 'Accès personnel uniquement : les résultats des autres comptes ne sont pas accessibles.'}</p>
             <label className="check-row"><input type="checkbox" checked={account.active !== 0}
               disabled={busy || account.id === user.id} onChange={e => setAccount({ ...account, active: e.target.checked ? 1 : 0 })}/>Compte actif</label>
