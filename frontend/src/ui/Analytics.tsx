@@ -1,6 +1,6 @@
 import {useEffect,useId,useMemo,useState,useRef,useSyncExternalStore,type FormEvent,type ReactNode} from 'react';
 import {requestJson} from '../data/api';
-import {useLiveReport} from '../data/use-live-report';
+import {useLiveReport,reportRequest} from '../data/use-live-report';
 import ReportFreshness,{StaleNotice} from './ReportFreshness';
 import {Icon} from './shared/Icon';
 import {Dialog} from './shared/Dialog';
@@ -16,7 +16,6 @@ type Props={user:User;users:User[];products:Product[];resume:(call:any)=>void;in
  /** Server capabilities (state.features): 'void-call' offers « Annuler ce résultat », 'reopen-reminder' the undo of « Marquer traité ». */
  features?:string[]};
 type AuditEvent={id:string;at:string;action:string;target:string;detail:unknown;user_id:string;label?:string|null};
-function request(query:string,body?:unknown,signal?:AbortSignal){return requestJson(query,body,signal);}
 function download(name:string,body:string,mime='text/csv;charset=utf-8'){const u=URL.createObjectURL(new Blob([body],{type:mime})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
 const rate=(x:number|null)=>x===null?'Non mesuré':x.toFixed(1).replace('.',',')+' %';
 const dt=(x:string)=>new Date(x).toLocaleString('fr-FR',{timeZone:'Africa/Algiers',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -78,7 +77,7 @@ function CallDetail({call,actor,canVoid,onClose,onVoided,resume}:{call:ActivityC
   event.preventDefault();const text=reason.trim();
   if(text.length<3){setError('Indiquez le motif de l’annulation (3 caractères minimum).');return;}
   setBusy(true);setError('');
-  try{const r=await request('',{action:'void-call',id:call.id,reason:text});
+  try{const r=await requestJson('',{action:'void-call',id:call.id,reason:text});
    onVoided({...call,voided_at:r.call?.voided_at??new Date().toISOString(),voided_by:r.call?.voided_by??null,voided_by_label:actor,void_reason:r.call?.void_reason??text});
    setVoiding(false);setReason('');notify({kind:'success',title:'Résultat annulé.',detail:'L’appel reste au journal. Il ne compte plus dans les chiffres ni dans les primes, et son dossier est libéré.'});
   }catch(e){setError((e as Error).message);}finally{setBusy(false);}
@@ -96,17 +95,17 @@ export default function Analytics({user,users,products,resume,initialOperator=''
  const phone=usePhone(),{announce}=useNotify(),manager=canManageWorkspace(user);
  useEffect(()=>{if(initialTab)setTab(initialTab)},[initialTab]);
  useEffect(()=>{if(initialOperator){setOperator(initialOperator);onOperatorUsed?.();}},[initialOperator]);
- const report=useLiveReport<ActivityCall[]>('analytics:'+from+':'+to,async signal=>{
+ const report=useLiveReport<ActivityCall[]>('analytics:'+from+':'+to,async(signal,o)=>{
   let cursor:string|null=null;const all:ActivityCall[]=[];let pages=0;
   do{
    const q=new URLSearchParams({action:'analytics',from,to});if(cursor)q.set('cursor',cursor);
-   const d=await request('?'+q,undefined,signal);all.push(...d.calls);cursor=d.nextCursor;pages++;
+   const d=await reportRequest('?'+q,signal,o);all.push(...d.calls);cursor=d.nextCursor;pages++;
    if(pages>=200&&cursor)throw new Error('Plus de 100 000 appels. Réduisez la période pour charger un rapport complet.');
   }while(cursor);
   return all;
  });
  const sideKey=tab==='reminders'||(tab==='audit'&&manager)?'action='+tab:null;
- const side=useLiveReport<{reminders?:Reminder[];events?:AuditEvent[]}>(sideKey,signal=>request('?'+sideKey,undefined,signal));
+ const side=useLiveReport<{reminders?:Reminder[];events?:AuditEvent[]}>(sideKey,(signal,o)=>reportRequest('?'+sideKey,signal,o));
  const rows=report.data??[],reminders=side.data?.reminders??[],audit=side.data?.events??[];
  const complete=useCompleteReminder(features,setError);
  function refreshReports(){setError('');report.refresh();}

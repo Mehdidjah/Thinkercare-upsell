@@ -1,6 +1,6 @@
 import {useEffect,useId,useMemo,useState,useRef} from 'react';
 import {requestJson} from '../data/api';
-import {useLiveReport} from '../data/use-live-report';
+import {useLiveReport,reportRequest,type LoadOptions} from '../data/use-live-report';
 import ReportFreshness,{StaleNotice} from './ReportFreshness';
 import {Icon} from './shared/Icon';
 import {Button} from './shared/Button';
@@ -12,7 +12,7 @@ type ProgressData={month:string;today:string;user:{id:string;label:string};rule:
 type Totals={calls:number;confirmations:number;upsells:number;initialDzd:number;confirmedDzd:number;upliftDzd:number;withoutRef:number;duplicates:number};
 type Person={id:string;label:string;role:string;active:number;team:string;period:Totals;monthly:Totals&{bonus:ReturnType<typeof bonusEstimate>};daily:ContributionRow[]};
 type ContributionData={month:string;from:string;to:string;today:string;rule:BonusRule;monthRuleVersion:number;people:Person[];updatedAt:string};
-function read(query:string,signal?:AbortSignal){return requestJson('?'+query,undefined,signal);}
+function read(query:string,signal:AbortSignal,o:LoadOptions){return reportRequest('?'+query,signal,o);}
 function write(body:unknown){return requestJson('',body);}
 function download(name:string,body:string){const u=URL.createObjectURL(new Blob([body],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
 const monthLabel=(m:string)=>validMonth(m)?new Date(m+'-15T12:00:00Z').toLocaleDateString('fr-FR',{month:'long',year:'numeric',timeZone:'Africa/Algiers'}):'le mois sélectionné';
@@ -29,9 +29,9 @@ export function ProgressCard({data,compact=false,due=0,stale}:{data:ProgressData
 export function PersonalProgress({refreshKey=0,compact=false,resume,features}:{refreshKey?:number;compact?:boolean;resume?:(r:any)=>void;features?:string[]}){
  const [month,setMonth]=useState(()=>algerDay().slice(0,7)),[actionError,setError]=useState('');
  const key=new URLSearchParams({action:'my-progress',month}).toString();
- const report=useLiveReport<ProgressData>(key,signal=>read(key,signal),refreshKey);
+ const report=useLiveReport<ProgressData>(key,(signal,o)=>read(key,signal,o),refreshKey);
  // Shared with the sidebar badge (same key, one request): the strip shows how many are due.
- const remindersReport=useLiveReport<{reminders:Reminder[]}>('action=reminders',signal=>read('action=reminders',signal),refreshKey);
+ const remindersReport=useLiveReport<{reminders:Reminder[]}>('action=reminders',(signal,o)=>read('action=reminders',signal,o),refreshKey);
  const data=report.data,reminders=remindersReport.data?.reminders??[],due=reminders.filter(r=>isDue(r)).length;
  const complete=useCompleteReminder(features,setError);
  function refreshReports(){setError('');report.refresh();}
@@ -46,7 +46,7 @@ export function ContributionDashboard({openOperator}:{openOperator:(id:string)=>
  const today=algerDay(),[month,setMonth]=useState(today.slice(0,7)),[from,setFrom]=useState(today.slice(0,7)+'-01'),[to,setTo]=useState(today),[actionError,setError]=useState(''),[saving,setSaving]=useState(false),[ruleDirty,setRuleDirty]=useState(false),[team,setTeam]=useState(''),[person,setPerson]=useState(''),[sort,setSort]=useState<'upliftDzd'|'confirmedDzd'|'upsells'>('upliftDzd'),[mode,setMode]=useState<BonusRule['mode']>('pending'),[threshold,setThreshold]=useState(60),[rate,setRate]=useState(45),[attest,setAttest]=useState(false),[notice,setNotice]=useState('');
  const ruleReasonId=useId(),attestRef=useRef<HTMLInputElement>(null);
  const key=new URLSearchParams({action:'contributions',month,from,to}).toString();
- const report=useLiveReport<ContributionData>(key,signal=>read(key,signal));
+ const report=useLiveReport<ContributionData>(key,(signal,o)=>read(key,signal,o));
  // `busy` is only a load the user waits for; the 30 s refresh never touches the rule button or the export (PN1).
  const data=report.data,busy=report.busy;
  const draft=useRef({month:'',signature:'',version:0});

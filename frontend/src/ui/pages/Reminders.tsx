@@ -1,6 +1,6 @@
 import {initialItems,localDay,quantityLabel,type Product,type CallMeta} from '@touche/domain';
 import {requestJson} from '../../data/api';
-import {useLiveReport} from '../../data/use-live-report';
+import {useLiveReport,reportRequest} from '../../data/use-live-report';
 import {Icon} from '../shared/Icon';
 import {useConfirm} from '../shared/Confirm';
 import {useNotify} from '../shell/Notifications';
@@ -17,7 +17,7 @@ export const isLate=(r:Pick<Reminder,'callback_at'>)=>Date.parse(r.callback_at)<
 /** Advisers only: how many of their reminders are due today or late. Polls with the other live reports (30 s,
  *  focus, after a save) and shares their cache, so Ma progression and the badge make one request. */
 export function useDueReminders(enabled:boolean){
- const report=useLiveReport<{reminders:Reminder[]}>(enabled?'action=reminders':null,signal=>requestJson('?action=reminders',undefined,signal));
+ const report=useLiveReport<{reminders:Reminder[]}>(enabled?'action=reminders':null,(signal,o)=>reportRequest('?action=reminders',signal,o));
  const today=localDay(new Date());
  return enabled?(report.data?.reminders??[]).filter(r=>isDue(r,today)).length:0;
 }
