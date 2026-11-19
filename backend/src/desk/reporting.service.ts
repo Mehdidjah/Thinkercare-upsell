@@ -72,6 +72,9 @@ export class ReportingService {
       lt(tcCalls.created_at, new Date(shiftDay(to, 1) + 'T00:00:00+01:00')),
     ];
     if (userId !== null) filters.push(eq(tcCalls.user_id, userId));
+    // H5: voided calls are listed only on request (`voided=1`, sent by desks that know void-call);
+    // an older Pilotage tab would otherwise count them in its figures.
+    if (query.get('voided') !== '1') filters.push(isNull(tcCalls.voided_at));
     const operator = query.get('operator');
     if (operator) {
       if (operator.length > 80) throw new DeskError(400, 'Filtre invalide.');

@@ -161,27 +161,47 @@ describe('present-offer', () => {
   });
 
   it('a stale price is 409 with the new amount and the price-changed code', async () => {
-    const body = present({ agreedTotal: 3100 });
-    const res = await post(body);
+    const res = await post(present({ agreedTotal: 3100, expectedUserId: linaUser.id }));
     expect(res.status).toBe(409);
     expect(res.body).toEqual({
       error: `Le tarif a changé : cette offre vaut maintenant ${money(3000)}. Le catalogue a été mis à jour, annoncez le nouveau montant.`,
       code: 'price-changed',
     });
-    expect(res.body.error).not.toMatch(/Actualisez/);
+    // An older open tab ignores `code` and keeps its prices until the page is reloaded.
+    const oldTab = await post(present({ agreedTotal: 3100 }));
+    expect(oldTab.status).toBe(409);
+    expect(oldTab.body).toEqual({
+      error: `Le tarif a changé : cette offre vaut maintenant ${money(3000)}. Rechargez la page pour mettre les prix à jour, puis annoncez le nouveau montant.`,
+      code: 'price-changed',
+    });
+    for (const r of [res, oldTab]) expect(r.body.error).not.toMatch(/Actualisez/);
     expect(await ctx.db.select().from(tcProposals)).toEqual([]);
     expect(await auditRows('offer.presented')).toEqual([]);
   });
 
   it('a catalogue price edited during the call names the new offer amount (H2)', async () => {
     expect((await post({ action: 'product', product: { ...fixture('wcgel'), price: 1600 } }, admin)).status).toBe(200);
-    const res = await post(present());
+    const res = await post(present({ expectedUserId: linaUser.id }));
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('price-changed');
     expect(res.body.error).toBe(
       `Le tarif a changé : cette offre vaut maintenant ${money(3100)}. Le catalogue a été mis à jour, annoncez le nouveau montant.`,
     );
     expect((await post(present({ agreedTotal: 3100 }))).status).toBe(200);
+  });
+
+  it('a stale price is reported before the raise-the-order check (H2 before M5)', async () => {
+    const order = { baseId: 'serumspf', baseQuantities: { serumspf: 3 }, quantities: { serumspf: 3, wcgel: 1 }, productIds: ['serumspf', 'wcgel'], tier: 'final' };
+    const stale = await post(present({ ...order, agreedTotal: 8400, expectedUserId: linaUser.id }));
+    expect(stale.status).toBe(409);
+    expect(stale.body).toEqual({
+      error: `Le tarif a changé : cette offre vaut maintenant ${money(8500)}. Le catalogue a été mis à jour, annoncez le nouveau montant.`,
+      code: 'price-changed',
+    });
+    const current = await post(present({ ...order, agreedTotal: 8500, expectedUserId: linaUser.id }));
+    expect(current.status).toBe(400);
+    expect(current.body.error).toContain(money(8500));
+    expect(current.body).not.toHaveProperty('code');
   });
 
   it('an offer that does not raise the order is refused with the shared message (M5)', async () => {
@@ -202,10 +222,16 @@ describe('present-offer', () => {
     expect((await off('antiacne')).status).toBe(200);
     expect((await post(present())).status).toBe(200);
     expect((await off('wcgel')).status).toBe(200);
-    const res = await post(present());
+    const res = await post(present({ expectedUserId: linaUser.id }));
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
       error: '« Water Complex Gel » n’est plus disponible dans le catalogue : retirez-le de l’offre et présentez-la de nouveau.',
+      code: 'product-disabled',
+    });
+    const oldTab = await post(present());
+    expect(oldTab.status).toBe(400);
+    expect(oldTab.body).toEqual({
+      error: '« Water Complex Gel » n’est plus disponible dans le catalogue : retirez-le de l’offre et présentez-la de nouveau. Rechargez la page pour mettre le catalogue à jour.',
       code: 'product-disabled',
     });
   });
@@ -382,6 +408,32 @@ describe('save-call', () => {
     }
   });
 
+  it('pack contents and the unit count of a sale come from the presented offer, not the catalogue edited since', async () => {
+    const edit = async (id: string, components: string[]) =>
+      expect((await post({ action: 'product', product: { ...fixture(id), components } }, admin)).status).toBe(200);
+    // Shampoo + Pack Anti-chute (2 products): a trio. The pack then gains the shampoo and a third product.
+    const offer = { baseId: 'shpousse', productIds: ['shpousse', 'packanti'], tier: 'duo' };
+    const agreedTotal = basketOffer([fixture('shpousse'), fixture('packanti')] as unknown as Product[], 'duo');
+    const p = await presented(lina, { ...offer, agreedTotal });
+    await edit('packanti', ['shanti', 'serumhair', 'shpousse']);
+    const trio = await post(save({ id: p.callId, ...offer, agreedTotal, outcome: 'trio', meta: { orderRef: 'DOS-PACK', acceptedProposalId: p.id } }));
+    expect(trio.status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, p.callId));
+    const [shown] = await ctx.db.select().from(tcProposals).where(eq(tcProposals.id, p.id));
+    expect(call!.products).toEqual(shown!.snapshot.products);
+    expect(call!.products[1]!.components!.map((c) => c.id)).toEqual(['shanti', 'serumhair']);
+    // A pack upgrade presented while the pack held the shampoo stays sellable once it no longer does.
+    const upgrade = { baseId: 'shpousse', upgradeId: 'packpousse', productIds: ['packpousse'], tier: 'catalogue', agreedTotal: 3250 };
+    const u = await presented(lina, upgrade);
+    await edit('packpousse', ['conditioner', 'serumhair', 'shanti']);
+    expect((await post(save({ id: u.callId, ...upgrade, outcome: 'duo', meta: { orderRef: 'DOS-UP', acceptedProposalId: u.id } }))).status).toBe(200);
+    // The presented offer itself must still match the outcome.
+    const d = await presented();
+    const wrong = await post(save({ id: d.callId, outcome: 'trio', meta: { acceptedProposalId: d.id } }));
+    expect(wrong.status).toBe(400);
+    expect(wrong.body).toEqual({ error: 'Le résultat doit correspondre aux soins physiques, composants des packs inclus.' });
+  });
+
   it('an accepted sale on a stored offer that does not raise the order is refused (M5)', async () => {
     const callId = randomUUID();
     const id = randomUUID();
@@ -406,9 +458,13 @@ describe('save-call', () => {
     const off = (id: string) => post({ action: 'product', product: { ...fixture(id), enabled: false } }, admin);
     expect((await off('antiacne')).status).toBe(200);
     expect((await off('wcgel')).status).toBe(200);
-    const sale = await post(save({ id: p.callId, meta: { acceptedProposalId: p.id } }));
+    const unavailable = '« Water Complex Gel » n’est plus disponible dans le catalogue : retirez-le de l’offre et présentez-la de nouveau.';
+    const sale = await post(save({ id: p.callId, expectedUserId: linaUser.id, meta: { acceptedProposalId: p.id } }));
     expect(sale.status).toBe(400);
-    expect(sale.body.code).toBe('product-disabled');
+    expect(sale.body).toEqual({ error: unavailable, code: 'product-disabled' });
+    const oldTab = await post(save({ id: p.callId, meta: { acceptedProposalId: p.id } }));
+    expect(oldTab.status).toBe(400);
+    expect(oldTab.body).toEqual({ error: unavailable + ' Rechargez la page pour mettre le catalogue à jour.', code: 'product-disabled' });
     for (const outcome of ['refused', 'initial', 'noanswer', 'review', 'callback'] as const) {
       const body = save({ outcome, refusal: outcome === 'refused' ? 'budget' : '', consent: false, checked: false, meta: outcome === 'callback' ? { callbackAt: at(DAY) } : {} });
       const res = await post(body);

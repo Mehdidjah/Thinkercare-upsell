@@ -111,7 +111,10 @@ describe('void-call (H5)', () => {
     expect(rows).toEqual([expect.objectContaining({ user_id: linaUser.id, calls: 1, upsells: 1, duplicates: 0 })]);
     const dashboard = await deskGet(ctx, '?action=contributions', admin);
     expect(dashboard.body.people.find((p: { id: string }) => p.id === linaUser.id).period).toMatchObject({ upsells: 1 });
-    const report = await deskGet(ctx, `?action=analytics&from=${today}&to=${today}`, admin);
+    // An older Pilotage tab (no `voided=1`) never sees the voided row, so its figures stay right.
+    const oldTab = await deskGet(ctx, `?action=analytics&from=${today}&to=${today}`, admin);
+    expect(oldTab.body.calls.map((c: { id: string }) => c.id)).toEqual([right]);
+    const report = await deskGet(ctx, `?action=analytics&from=${today}&to=${today}&voided=1`, admin);
     expect(report.body.calls.find((c: { id: string }) => c.id === wrong)).toMatchObject({
       voided_at: res.body.call.voided_at, voided_by: linaUser.id, voided_by_label: 'Lina B.', void_reason: 'Mauvais dossier saisi',
     });
@@ -129,7 +132,7 @@ describe('void-call (H5)', () => {
     expect(byManager.status).toBe(200);
     expect(byManager.body.call.voided_by).toBe(adminUser.id);
     const today = localDay(new Date(Date.now() - 31 * 60_000));
-    const report = await deskGet(ctx, `?action=analytics&from=${today}&to=${today}`, admin);
+    const report = await deskGet(ctx, `?action=analytics&from=${today}&to=${today}&voided=1`, admin);
     expect(report.body.calls.find((c: { id: string }) => c.id === id).voided_by_label).toBe('Direction');
   });
 
@@ -166,6 +169,29 @@ describe('void-call (H5)', () => {
     const reopen = await post({ action: 'reopen-reminder', id });
     expect(reopen.status).toBe(409);
     expect(reopen.body).toEqual({ error: 'Ce résultat a été annulé : son rappel ne peut pas être rouvert.', code: 'already-voided' });
+  });
+
+  it('voided=1 only opts the journal in: other values exclude voided rows, other reports ignore it', async () => {
+    const kept = await sale('DOS-12');
+    const voided = await sale('DOS-13');
+    expect((await post({ action: 'void-call', id: voided, reason: 'Erreur de saisie' })).status).toBe(200);
+    const today = localDay(new Date());
+    const ids = async (extra: string) => {
+      const res = await deskGet(ctx, `?action=analytics&from=${today}&to=${today}${extra}`, admin);
+      expect(res.status, extra).toBe(200);
+      return res.body.calls.map((c: { id: string }) => c.id).sort();
+    };
+    expect(await ids('&voided=1')).toEqual([kept, voided].sort());
+    for (const extra of ['', '&voided=0', '&voided=true', '&voided=']) expect(await ids(extra), extra).toEqual([kept]);
+    expect(await ids(`&voided=1&operator=${linaUser.id}`)).toEqual([kept, voided].sort());
+    for (const [query, cookie] of [
+      ['?compact=1&voided=1', lina], ['?action=reminders&voided=1', lina], ['?action=my-progress&voided=1', lina],
+      ['?action=contributions&voided=1', admin], ['?action=audit&voided=1', admin],
+    ] as const) {
+      expect((await deskGet(ctx, query, cookie)).status, query).toBe(200);
+    }
+    expect((await deskGet(ctx, '?action=my-progress&voided=1', lina)).body.progress.count).toBe(1);
+    expect((await deskGet(ctx, '?action=my-progress&operator=x', lina)).status).toBe(403);
   });
 
   it('the workspace announces the action and the adviser window', async () => {

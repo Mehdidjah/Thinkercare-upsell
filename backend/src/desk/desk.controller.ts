@@ -112,6 +112,8 @@ export class DeskController {
       throw new DeskError(401, 'Votre session a expiré. Reconnectez-vous.');
     // X1: a tab still showing another account must not write as the account now signed in.
     const { expectedUserId, ...rest } = body;
+    // Only desks that read error codes (and reload the catalogue themselves) send expectedUserId.
+    const client = { reloadsCatalogue: expectedUserId !== undefined };
     if (expectedUserId !== undefined) {
       if (typeof expectedUserId !== 'string' || expectedUserId.length > 64) {
         throw new DeskError(400, 'Données invalides.');
@@ -131,7 +133,7 @@ export class DeskController {
     // reopen-reminder and void-call (each checks its own access), user-settings, save-call, password,
     // non-management -> 403, then product, clinical and account management.
     if (body.action === 'present-offer')
-      return sendJson(res, await this.calls.presentOffer(user, body));
+      return sendJson(res, await this.calls.presentOffer(user, body, client));
     if (body.action === 'complete-reminder')
       return sendJson(res, await this.calls.completeReminder(user, body));
     if (body.action === 'reopen-reminder')
@@ -141,7 +143,7 @@ export class DeskController {
     if (body.action === 'user-settings')
       return sendJson(res, await this.admin.updateUserSettings(user, body));
     if (body.action === 'save-call')
-      return sendJson(res, await this.calls.saveCall(user, body));
+      return sendJson(res, await this.calls.saveCall(user, body, client));
     if (body.action === 'password') {
       await this.auth.changePassword(user, body, req.headers.cookie);
       return sendJson(res, { ok: true });

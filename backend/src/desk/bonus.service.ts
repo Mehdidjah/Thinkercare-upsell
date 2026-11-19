@@ -52,7 +52,8 @@ export class BonusService {
       throw new DeskError(403, 'Cet espace est réservé à la direction.');
     if (
       action === 'my-progress' &&
-      [...q.keys()].some((k) => !['action', 'month'].includes(k))
+      // `voided` (the journal's opt-in for voided calls) targets no account: ignored here.
+      [...q.keys()].some((k) => !['action', 'month', 'voided'].includes(k))
     )
       throw new DeskError(
         403,
