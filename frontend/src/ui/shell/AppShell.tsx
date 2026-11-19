@@ -17,8 +17,8 @@ export function AppShell({state,view,setView,titles,signingOut,signOut,newCall,f
    const top=document.querySelector('.shell-topbar')?.getBoundingClientRect().bottom??0;
    const bottom=Math.min(window.innerHeight,...[...document.querySelectorAll<HTMLElement>('.call-actions,.call-bar,.shell-sidebar')].map(b=>b.getBoundingClientRect()).filter(b=>b.height>0&&b.top>window.innerHeight/2).map(b=>b.top));
    if(r.height>bottom-top)return;
-   if(r.bottom>bottom-8)window.scrollBy({top:r.bottom-bottom+16});
-   else if(r.top<top+8)window.scrollBy({top:r.top-top-16});
+   if(r.bottom>bottom-8)window.scrollBy({top:r.bottom-bottom+16,behavior:'instant'});
+   else if(r.top<top+8)window.scrollBy({top:r.top-top-16,behavior:'instant'});
   };
   document.addEventListener('focusin',keepClear);
   return()=>document.removeEventListener('focusin',keepClear);

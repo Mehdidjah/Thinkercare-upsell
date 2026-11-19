@@ -52,9 +52,10 @@
   @media (forced-colors: active) { .pilot-day[aria-pressed="true"] { outline: 2px solid Highlight; } }
   @media (max-width: 760px) {
     .pilot-calendar { gap: var(--space-1); }
-    .pilot-day { min-block-size: 4.5rem; padding: var(--space-2) var(--space-1); }
-    /* The counts stay in the button's name; the journal shows them in full. */
-    .pilot-day > span { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .pilot-day { min-block-size: 3.5rem; padding: var(--space-2) var(--space-1); align-items: center; justify-content: center; }
+    /* Phone cells show the day and its heat; the counts and amount stay in the button's name,
+       and the journal shows them in full. */
+    .pilot-day > :is(span, strong) { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   }
 
   /* Objection counters: whole-row buttons */
