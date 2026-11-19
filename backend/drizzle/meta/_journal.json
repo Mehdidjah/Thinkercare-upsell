@@ -29,6 +29,13 @@
       "when": 1794923515437,
       "tag": "0003_manager_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795093248799,
+      "tag": "0004_cm_role",
+      "breakpoints": true
     }
   ]
 }

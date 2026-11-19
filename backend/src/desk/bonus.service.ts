@@ -6,6 +6,7 @@ import {
   bonusEstimate,
   canViewDirection,
   dateRangeValid,
+  isFrontline,
   monthBounds,
   sumContributions,
   validMonth,
@@ -122,7 +123,7 @@ export class BonusService {
         period: sumContributions(pr),
         monthly: {
           ...m,
-          bonus: bonusEstimate(u.role === 'advisor' ? m.upsells : 0, rule),
+          bonus: bonusEstimate(isFrontline(u.role) ? m.upsells : 0, rule),
         },
         daily: pr,
       };
