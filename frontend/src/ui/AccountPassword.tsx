@@ -22,11 +22,13 @@ export function NewPasswordField({ value, onChange, disabled = false, label = 'N
   </div>;
 }
 
-export default function AccountPassword({ account, enabled, request, saved }: {
+export default function AccountPassword({ account, enabled, request, saved, onDraft }: {
   account: { id: string; username: string; password_available?: boolean; password_updated_at?: string | null };
   enabled: boolean;
   request: (body: unknown) => Promise<{ password?: string | null }>;
   saved: () => Promise<void>;
+  /** Tells the dialog whether a new password is typed but not saved (PN8). */
+  onDraft?: (pending: boolean) => void;
 }) {
   const [password, setPassword] = useState<string | null>(null);
   const [adminPassword, setAdminPassword] = useState('');
@@ -35,6 +37,7 @@ export default function AccountPassword({ account, enabled, request, saved }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  useEffect(() => { onDraft?.(replacement !== ''); }, [replacement]);
   useEffect(() => {
     if (password === null) return;
     const timer = window.setTimeout(() => setPassword(null), 60000);

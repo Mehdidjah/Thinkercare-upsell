@@ -38,6 +38,7 @@
   .cat-protocol__text > h2:not(:first-child) { margin-block-start: var(--space-8); }
   .cat-protocol__text > h2 + p { margin-block-start: var(--space-2); }
   .cat-protocol__text > p { color: var(--color-text-secondary); }
+  .cat-protocol__stops { display: flex; flex-direction: column; gap: var(--space-1); margin-block: var(--space-2) 0; padding-inline-start: var(--space-5); color: var(--color-text-secondary); }
   .cat-protocol__text b { color: var(--color-text-primary); }
   .cat-formula { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-4); border-radius: var(--radius-option); background: var(--color-bg-sunken); }
   .cat-formula > p { color: var(--color-text-primary); }
