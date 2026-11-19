@@ -110,6 +110,7 @@ describe('bootstrap', () => {
       expect(u).not.toHaveProperty('password_hash');
     }
     expect(res.body.calls).toEqual([]);
+    expect(res.body.features).toEqual(expect.arrayContaining(['expected-user']));
   });
   it('adviser bootstrap never includes calls or colleagues', async () => {
     await insertCall(randomUUID(), '2026-11-01T10:00:00Z');
@@ -166,6 +167,22 @@ describe('product', () => {
     });
     expect(res.status).toBe(400);
     expect(res.body.error.startsWith(FORM)).toBe(true);
+    expect(res.body).toEqual({
+      error: FORM + 'Image du produit — adresse non autorisée, utilisez une image /assets/… ou une adresse https://cdn.shopify.com/….',
+    });
+  });
+  it('validation messages are French and name the field, never its technical path', async () => {
+    const res = await post({ action: 'product', product: { ...fixture('antiacne'), name: 'X', source: 'http://touchelab.com/x' } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(
+      FORM + 'Nom du produit — 2 caractères minimum ; Fiche officielle — adresse non autorisée, utilisez une page https://www.touchelab.com/….',
+    );
+    const account = await post({ action: 'user', username: 'é', label: 'Nouvelle', password: 'x' });
+    expect(account.status).toBe(400);
+    expect(account.body.error).toBe(
+      FORM + 'Identifiant — 3 à 40 caractères : lettres minuscules, chiffres, point, tiret ou tiret bas.',
+    );
+    for (const text of [res.body.error, account.body.error]) expect(text).not.toMatch(/product\.|username|Invalid|expected/);
   });
   it('a pack cannot contain itself', async () => {
     const product = {

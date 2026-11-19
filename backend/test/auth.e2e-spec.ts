@@ -144,9 +144,72 @@ describe('logout and password', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
     expect(await ctx.db.select().from(tcSessions)).toHaveLength(1);
-    expect((await deskPost(ctx, { action: 'logout' }, { cookie: b })).status).toBe(401);
+    expect((await deskPost(ctx, { action: 'password', current: next, next: PASSWORD }, { cookie: b })).status).toBe(401);
     expect((await deskPost(ctx, { action: 'nope' }, { cookie: a })).status).toBe(400);
     expect((await login(USER, PASSWORD)).status).toBe(401);
     expect((await login(USER, next)).status).toBe(200);
+  });
+});
+
+describe('signing out without a live session', () => {
+  it.each([
+    ['an ended session', 'revoked'],
+    ['no cookie at all', ''],
+  ])('logout with %s answers 200 and clears the cookie', async (_name, kind) => {
+    let cookie = '';
+    if (kind === 'revoked') {
+      cookie = await loginCookie(ctx, USER, PASSWORD);
+      await ctx.db.delete(tcSessions);
+    }
+    const res = await deskPost(ctx, { action: 'logout' }, { cookie });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(res.headers['set-cookie']![0]).toBe(
+      '__Host-touche-session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0',
+    );
+  });
+  it('any other action without a session is still 401', async () => {
+    const res = await deskPost(ctx, { action: 'password', current: 'a', next: 'b' });
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('account check on writes (expectedUserId)', () => {
+  const CHANGED = {
+    error: 'Ce poste est maintenant connecté avec un autre compte. Rechargez la page pour continuer avec ce compte.',
+    code: 'account-changed',
+  };
+  it('a write sent for another account is 409 and changes nothing', async () => {
+    const other = await createUser(ctx.db, { username: 'conseil.lina', password: PASSWORD, role: 'advisor' });
+    const cookie = await loginCookie(ctx, USER, PASSWORD);
+    const res = await deskPost(ctx, { action: 'password', current: PASSWORD, next: 'nouveau', expectedUserId: other.id }, { cookie });
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual(CHANGED);
+    expect((await login(USER, PASSWORD)).status).toBe(200);
+    const signedOut = await deskPost(ctx, { action: 'logout', expectedUserId: other.id }, { cookie });
+    expect(signedOut.status).toBe(409);
+    expect(signedOut.body).toEqual(CHANGED);
+    expect((await deskGet(ctx, '', cookie)).status).toBe(200);
+  });
+  it('the signed-in account id is accepted on any action, and old clients may omit it', async () => {
+    const [me] = await ctx.db.select().from(tcUsers).where(eq(tcUsers.username, USER));
+    const cookie = await loginCookie(ctx, USER, PASSWORD);
+    const res = await deskPost(ctx, { action: 'password', current: PASSWORD, next: 'nouveau', expectedUserId: me!.id }, { cookie });
+    expect(res.status).toBe(200);
+    const unknown = await deskPost(ctx, { action: 'nope', expectedUserId: me!.id }, { cookie });
+    expect(unknown.status).toBe(400);
+    expect(unknown.body).toEqual({ error: 'Action inconnue.' });
+    expect((await deskPost(ctx, { action: 'logout', expectedUserId: me!.id }, { cookie })).status).toBe(200);
+  });
+  it.each([42, null, 'x'.repeat(65)])('a malformed expectedUserId (%s) is 400', async (expectedUserId) => {
+    const cookie = await loginCookie(ctx, USER, PASSWORD);
+    const res = await deskPost(ctx, { action: 'logout', expectedUserId }, { cookie });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Données invalides.' });
+  });
+  it('login does not take expectedUserId', async () => {
+    const res = await deskPost(ctx, { action: 'login', username: USER, password: PASSWORD, expectedUserId: 'x' });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Vérifiez les champs du formulaire : Requête — champ non pris en charge.' });
   });
 });

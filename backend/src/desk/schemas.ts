@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import { validMonth, MAX_ITEM_QUANTITY } from '@touche/domain';
+import { frenchIssue } from '../common/validation-messages.js';
+
+// Every validation message is French; DeskExceptionFilter adds the field label (M6).
+z.config(z.locales.fr());
+z.config({ customError: frenchIssue });
 
 export const loginSchema = z
   .object({

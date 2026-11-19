@@ -7,6 +7,7 @@ import type { Db } from '../db/schema.js';
 import { tcCalls, tcSettings, tcUsers } from '../db/schema.js';
 import { loadProducts } from './catalogue.js';
 import type { DeskUser } from './desk.types.js';
+import { FEATURES } from './features.js';
 
 @Injectable()
 export class BootstrapService {
@@ -46,6 +47,14 @@ export class BootstrapService {
     const clinical = data
       ? { ...data, validated: data.version === 3 && !!data.validated }
       : { validated: false, by: '', at: '' };
-    return { user, products, calls, clinical, users, password_viewing_enabled: admin && !!this.env.accountPasswordKey };
+    return {
+      user,
+      products,
+      calls,
+      clinical,
+      users,
+      password_viewing_enabled: admin && !!this.env.accountPasswordKey,
+      features: [...FEATURES],
+    };
   }
 }

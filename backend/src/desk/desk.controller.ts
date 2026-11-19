@@ -20,6 +20,9 @@ import { BootstrapService } from './bootstrap.service.js';
 import { CallsService } from './calls.service.js';
 import { ReportingService } from './reporting.service.js';
 
+const ACCOUNT_CHANGED =
+  'Ce poste est maintenant connecté avec un autre compte. Rechargez la page pour continuer avec ce compte.';
+
 @Controller('api/desk')
 @UseFilters(DeskExceptionFilter)
 export class DeskController {
@@ -70,12 +73,16 @@ export class DeskController {
     const text = typeof req.body === 'string' ? req.body : '';
     if (text.length > 28000)
       throw new DeskError(413, 'Requête trop volumineuse.');
-    let body: { action?: unknown } & Record<string, unknown>;
+    let parsed: unknown;
     try {
-      body = JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch {
       throw new DeskError(400, 'Données invalides.');
     }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new DeskError(400, 'Données invalides.');
+    }
+    let body = parsed as { action?: unknown } & Record<string, unknown>;
     if (body.action === 'login') {
       const cookie = await this.auth.login(body, req.ip ?? 'unknown');
       // Deliver the workspace with the login response, avoiding another browser round trip.
@@ -88,8 +95,22 @@ export class DeskController {
       return sendJson(res, { ok: true }, 200, { 'Set-Cookie': cookie });
     }
     const user = await this.auth.resolveUser(req.headers.cookie);
+    // Signing out of a session that already ended still clears the browser cookie.
+    if (!user && body.action === 'logout') {
+      await this.auth.logout(req.headers.cookie);
+      return sendJson(res, { ok: true }, 200, { 'Set-Cookie': clearedSessionCookie() });
+    }
     if (!user)
       throw new DeskError(401, 'Votre session a expiré. Reconnectez-vous.');
+    // X1: a tab still showing another account must not write as the account now signed in.
+    const { expectedUserId, ...rest } = body;
+    if (expectedUserId !== undefined) {
+      if (typeof expectedUserId !== 'string' || expectedUserId.length > 64) {
+        throw new DeskError(400, 'Données invalides.');
+      }
+      if (expectedUserId !== user.id) throw new DeskError(409, ACCOUNT_CHANGED, 'account-changed');
+    }
+    body = rest;
     if (body.action === 'logout') {
       await this.auth.logout(req.headers.cookie);
       return sendJson(res, { ok: true }, 200, {
