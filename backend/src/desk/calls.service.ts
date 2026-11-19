@@ -85,8 +85,8 @@ function requireAvailable(added: OrderItem[]): void {
 /** Presented snapshots keep price, quantity and category: enough for the shared pricing rules. */
 const snapshotOrder = (items: ItemSnapshot[]) => items as unknown as OrderItem[];
 
-/** M4: a call cannot have started more than a day before it is recorded. */
-const MAX_CALL_AGE_MS = 86_400_000;
+/** A call cannot have started more than 7 days before it is recorded (unchanged by M4). */
+const MAX_CALL_AGE_MS = 7 * 86_400_000;
 
 @Injectable()
 export class CallsService {
@@ -452,8 +452,9 @@ export class CallsService {
             user_id: user.id,
           });
         }
-        // M2: the follow-up call made from a reminder closes that reminder.
-        if (meta?.linkedCallId && meta.linkedCallId !== v.id) {
+        // M2: the follow-up call made from a reminder closes that reminder once the customer was
+        // reached; with no answer the reminder stays open (a callback follow-up opens its own).
+        if (meta?.linkedCallId && meta.linkedCallId !== v.id && v.outcome !== 'noanswer') {
           closedReminderId = await this.closeLinkedReminder(tx, user, meta.linkedCallId, v.id);
         }
       });
@@ -618,6 +619,11 @@ export class CallsService {
       if (reminderClosed) {
         await tx.update(tcCallMeta).set({ callback_done: 1 }).where(eq(tcCallMeta.call_id, v.id));
       }
+      const linkedCallId = (meta?.data as { linkedCallId?: unknown } | undefined)?.linkedCallId;
+      const reopenedReminderId =
+        typeof linkedCallId === 'string' && linkedCallId !== v.id
+          ? await this.reopenClosedBy(tx, user, v.id, linkedCallId)
+          : undefined;
       await tx.insert(tcAudit).values(
         auditRow(user, 'call.voided', v.id, {
           reason: v.reason,
@@ -625,6 +631,7 @@ export class CallsService {
           meta: meta ?? null,
           dossier: dossier ?? null,
           reminderClosed,
+          reopenedReminderId: reopenedReminderId ?? null,
         }),
       );
       return {
@@ -635,7 +642,52 @@ export class CallsService {
           voided_by: user.id,
           void_reason: v.reason,
         },
+        ...(reopenedReminderId ? { reopenedReminderId } : {}),
       };
     });
+  }
+
+  /**
+   * M2 undone by H5: the reminder that the voided call's save closed is open again, provided its
+   * own call is not voided and it is still closed by that save (not reopened or handled since).
+   * Locks the reminder's call then its meta, the order voidCall uses, so concurrent voids queue.
+   */
+  private async reopenClosedBy(
+    tx: Tx,
+    user: DeskUser,
+    callId: string,
+    reminderId: string,
+  ): Promise<string | undefined> {
+    const [reminder] = await tx
+      .select({ voided_at: tcCalls.voided_at })
+      .from(tcCalls)
+      .where(eq(tcCalls.id, reminderId))
+      .for('update');
+    if (!reminder || reminder.voided_at) return undefined;
+    const [reminderMeta] = await tx
+      .select({ callback_done: tcCallMeta.callback_done })
+      .from(tcCallMeta)
+      .where(eq(tcCallMeta.call_id, reminderId))
+      .for('update');
+    if (reminderMeta?.callback_done !== 1) return undefined;
+    const [last] = await tx
+      .select({ action: tcAudit.action, detail: tcAudit.detail })
+      .from(tcAudit)
+      .where(
+        and(
+          eq(tcAudit.target, reminderId),
+          inArray(tcAudit.action, ['reminder.closed', 'reminder.reopened']),
+        ),
+      )
+      .orderBy(desc(tcAudit.at))
+      .limit(1);
+    if (last?.action !== 'reminder.closed' || (last.detail as { callId?: unknown }).callId !== callId) {
+      return undefined;
+    }
+    await tx.update(tcCallMeta).set({ callback_done: 0 }).where(eq(tcCallMeta.call_id, reminderId));
+    await tx
+      .insert(tcAudit)
+      .values(auditRow(user, 'reminder.reopened', reminderId, { callId, reason: 'void' }));
+    return reminderId;
   }
 }

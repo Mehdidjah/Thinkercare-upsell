@@ -192,17 +192,87 @@ describe('reminders (M2)', () => {
 
   it('a link to a reminder the adviser may not handle, or one already closed, leaves it as it is', async () => {
     const theirs = await callback(sara);
-    const res = await post(saveBody({ outcome: 'noanswer', meta: { linkedCallId: theirs } }));
+    const res = await post(saveBody({ outcome: 'refused', refusal: 'budget', meta: { linkedCallId: theirs } }));
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
     expect(await reminderIds(sara)).toEqual([theirs]);
-    const byManager = await post(saveBody({ outcome: 'noanswer', meta: { linkedCallId: theirs } }), admin);
+    const byManager = await post(saveBody({ outcome: 'refused', refusal: 'budget', meta: { linkedCallId: theirs } }), admin);
     expect(byManager.body).toEqual({ ok: true, closedReminderId: theirs });
     expect(await reminderIds(sara)).toEqual([]);
     const noReminder = saveBody({ outcome: 'initial' });
     expect((await post(noReminder)).status).toBe(200);
     expect((await post(saveBody({ outcome: 'initial', meta: { linkedCallId: noReminder.id } }))).body).toEqual({ ok: true });
     expect((await post(saveBody({ outcome: 'initial', meta: { linkedCallId: randomUUID() } }))).body).toEqual({ ok: true });
+  });
+
+  it('a follow-up with no answer leaves the reminder open; a callback follow-up closes it and opens its own', async () => {
+    const first = await callback();
+    const unanswered = await post(saveBody({ outcome: 'noanswer', meta: { linkedCallId: first } }));
+    expect(unanswered.status).toBe(200);
+    expect(unanswered.body).toEqual({ ok: true });
+    expect(await reminderIds(lina)).toEqual([first]);
+    expect(await audits('reminder.closed', first)).toEqual([]);
+    const later = saveBody({ meta: { linkedCallId: first, callbackAt: at(2 * DAY) } });
+    expect((await post(later)).body).toEqual({ ok: true, closedReminderId: first });
+    expect(await reminderIds(lina)).toEqual([later.id]);
+  });
+
+  it('voiding the follow-up call reopens the reminder its save closed', async () => {
+    const first = await callback();
+    const follow = saveBody({ outcome: 'initial', meta: { linkedCallId: first } });
+    expect((await post(follow)).body).toEqual({ ok: true, closedReminderId: first });
+    expect(await reminderIds(lina)).toEqual([]);
+    const res = await post({ action: 'void-call', id: follow.id, reason: 'Mauvaise cliente' }, admin);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      call: { id: follow.id, voided_at: expect.any(String), voided_by: adminUser.id, void_reason: 'Mauvaise cliente' },
+      reopenedReminderId: first,
+    });
+    expect(await reminderIds(lina)).toEqual([first]);
+    const [reopened] = await audits('reminder.reopened', first);
+    expect(reopened).toMatchObject({ user_id: adminUser.id, detail: { callId: follow.id, reason: 'void' } });
+    const [voided] = await audits('call.voided', follow.id);
+    expect(voided!.detail).toMatchObject({ reminderClosed: false, reopenedReminderId: first });
+  });
+
+  it('voiding the follow-up leaves a reminder handled since, or whose own call is voided, as it is', async () => {
+    const voidCall = async (id: string) => {
+      const res = await post({ action: 'void-call', id, reason: 'Erreur de saisie' }, admin);
+      expect(res.status).toBe(200);
+      expect(res.body).not.toHaveProperty('reopenedReminderId');
+      expect((await audits('call.voided', id))[0]!.detail).toMatchObject({ reopenedReminderId: null });
+    };
+    const follow = async (first: string) => {
+      const body = saveBody({ outcome: 'initial', meta: { linkedCallId: first } });
+      expect((await post(body)).body).toEqual({ ok: true, closedReminderId: first });
+      return body.id;
+    };
+    // Reopened then marked handled by hand after the follow-up: the later decision stands.
+    const handled = await callback();
+    const handledFollow = await follow(handled);
+    expect((await post({ action: 'reopen-reminder', id: handled })).status).toBe(200);
+    expect((await post({ action: 'complete-reminder', callId: handled })).status).toBe(200);
+    await voidCall(handledFollow);
+    // Reopened by hand and still open: nothing to undo.
+    const open = await callback();
+    const openFollow = await follow(open);
+    expect((await post({ action: 'reopen-reminder', id: open })).status).toBe(200);
+    await voidCall(openFollow);
+    expect(await audits('reminder.reopened', open)).toHaveLength(1);
+    // The reminder's own call was voided since.
+    const gone = await callback();
+    const goneFollow = await follow(gone);
+    await voidCall(gone);
+    await voidCall(goneFollow);
+    // A follow-up with no answer never closed it.
+    const unanswered = await callback();
+    const noAnswer = saveBody({ outcome: 'noanswer', meta: { linkedCallId: unanswered } });
+    expect((await post(noAnswer)).status).toBe(200);
+    await voidCall(noAnswer.id);
+    expect(await reminderIds(lina)).toEqual([open, unanswered]);
+    expect(await audits('reminder.reopened', gone)).toEqual([]);
+    expect(await audits('reminder.reopened', unanswered)).toEqual([]);
   });
 
   it('complete-reminder: 404, 400 without a callback, idempotent without a second audit row', async () => {

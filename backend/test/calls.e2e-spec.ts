@@ -622,13 +622,18 @@ describe('save-call', () => {
     expect((meta!.data as Record<string, unknown>).callbackAt).toBe(tomorrow);
   });
 
-  it('a start time over a day old is rejected', async () => {
-    for (const startedAt of [at(-8 * DAY), at(-DAY - 60_000)]) {
+  it('a start time over 7 days old is rejected; an older call within the week is kept', async () => {
+    for (const startedAt of [at(-8 * DAY), at(-7 * DAY - 60_000)]) {
       const old = await post(save({ outcome: 'initial', consent: false, checked: false, meta: { startedAt } }));
       expect(old.status).toBe(400);
       expect(old.body).toEqual({ error: 'Horodatage de début invalide. Ouvrez un nouvel appel.' });
     }
-    expect((await post(save({ outcome: 'initial', consent: false, checked: false, meta: { startedAt: at(-DAY + 60_000) } }))).status).toBe(200);
+    for (const startedAt of [at(-7 * DAY + 60_000), at(-DAY - 60_000)]) {
+      const body = save({ outcome: 'initial', consent: false, checked: false, meta: { startedAt } });
+      expect((await post(body)).status).toBe(200);
+      const [meta] = await ctx.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, body.id));
+      expect((meta!.data as CallMeta).startedAt).toBe(startedAt);
+    }
   });
 
   it('a desk clock ahead of the server is clamped to the server time, not refused (M4)', async () => {
