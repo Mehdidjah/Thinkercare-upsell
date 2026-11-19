@@ -102,12 +102,19 @@
   .pilot-progress > .footnote { margin: 0; }
   @media (max-width: 760px) { .pilot-progress__body { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); } }
 
+  /* On the call the monthly progress is a one-line strip, so the call starts high on the page.
+     The estimate, the rule and the freshness line stay on Ma progression. */
   .pilot-inline { display: flex; flex-direction: column; gap: var(--space-2); margin-block-end: var(--space-6); }
-  .pilot-progress--compact { gap: var(--space-3); padding: var(--space-4) var(--space-5); }
-  .pilot-progress--compact .pilot-progress__head h2 { font-size: var(--text-h3); }
+  .pilot-inline > .report-freshness { display: none; }
+  .pilot-progress--compact { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-6); padding: var(--space-3) var(--space-5); }
+  .pilot-progress--compact .pilot-progress__head { flex: 0 1 auto; }
+  .pilot-progress--compact .pilot-progress__head h2 { font-size: var(--text-body); }
+  .pilot-progress--compact .pilot-progress__body { display: flex; flex: 1 1 18rem; align-items: center; }
+  .pilot-progress--compact .pilot-progress__main { flex: 1 1 auto; flex-direction: row; align-items: center; gap: var(--space-4); }
+  .pilot-progress--compact .pilot-progress__count { flex: none; }
   .pilot-progress--compact .pilot-progress__count > strong { font-size: var(--text-price-md); }
-  .pilot-progress--compact .pilot-progress__body { gap: var(--space-4); }
-  .pilot-progress--compact .pilot-progress__foot { padding-block-start: var(--space-3); }
+  .pilot-progress--compact .meter { flex: 1 1 6rem; }
+  .pilot-progress--compact :is(.pilot-progress__motivation, .pilot-progress__estimate, .pilot-progress__foot, .pilot-progress__head .tag) { display: none; }
 
   /* Bonus rule (Apports & primes) */
   .pilot-rule .check-row { margin-inline: 0; }
