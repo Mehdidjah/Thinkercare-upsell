@@ -1,4 +1,4 @@
-import { canManageWorkspace } from '@touche/domain';
+import { PRICING_RULE, canManageWorkspace } from '@touche/domain';
 import {
   Controller,
   Get,
@@ -25,6 +25,9 @@ const ACCOUNT_CHANGED =
 
 /** H1: the desk marks its automatic report refreshes; they are not activity and never slide the session. */
 const background = (req: Request) => req.headers['x-desk-background'] === '1';
+
+/** The desk prices offers with the server's current rules (shared PRICING_RULE); a tab opened before does not. */
+const currentPricing = (req: Request) => req.headers['x-desk-pricing'] === PRICING_RULE;
 
 @Controller('api/desk')
 @UseFilters(DeskExceptionFilter)
@@ -112,8 +115,9 @@ export class DeskController {
       throw new DeskError(401, 'Votre session a expiré. Reconnectez-vous.');
     // X1: a tab still showing another account must not write as the account now signed in.
     const { expectedUserId, ...rest } = body;
-    // Only desks that read error codes (and reload the catalogue themselves) send expectedUserId.
-    const client = { reloadsCatalogue: expectedUserId !== undefined };
+    // Only desks that read error codes (and reload the catalogue themselves) send expectedUserId. Reloading the catalogue
+    // fixes their amounts only when they price with the current rules; a tab opened before is told to reload the page.
+    const client = { reloadsCatalogue: expectedUserId !== undefined && currentPricing(req) };
     if (expectedUserId !== undefined) {
       if (typeof expectedUserId !== 'string' || expectedUserId.length > 64) {
         throw new DeskError(400, 'Données invalides.');

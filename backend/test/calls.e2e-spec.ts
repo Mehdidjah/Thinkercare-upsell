@@ -841,6 +841,19 @@ describe('hair-pack products chosen separately', () => {
     expect(await ctx.db.select().from(tcProposals)).toEqual([]);
   });
 
+  it('tells a tab opened before this rule to reload the page: reloading its catalogue would not change its amount', async () => {
+    const body = present({ ...pair, tier: 'duo', agreedTotal: 3300, expectedUserId: linaUser.id });
+    for (const pricing of [null, 'list-price']) {
+      const res = await deskPost(ctx, body, { cookie: lina, pricing });
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({
+        error: `Le tarif a changé : cette offre vaut maintenant ${money(3250)}. Rechargez la page pour mettre les prix à jour, puis annoncez le nouveau montant.`,
+        code: 'price-changed',
+      });
+    }
+    expect(await ctx.db.select().from(tcProposals)).toEqual([]);
+  });
+
   it('saves the accepted pair at the pack price and keeps the list-price catalogue total', async () => {
     const offer = await presented(lina, { ...pair, tier: 'duo', agreedTotal: 3250 });
     const res = await post(
@@ -906,13 +919,52 @@ describe('hair-pack products chosen separately', () => {
     expect(call).toMatchObject({ outcome: 'refused', base_total: 3250, offered_total: 3250, extra: 0, catalogue_total: 5500 });
   });
 
-  it('a pack price edited after the presentation does not block the presented sale; sets take the current pack price', async () => {
+  // A sale or a refusal of a presented offer records the amounts that were presented, whatever the catalogue became since.
+  const editPack = (changes: Body) => post({ action: 'product', product: { ...fixture('packpousse'), ...changes } }, admin);
+  const acceptTrio = (offer: { id: string; callId: string }, overrides: Body = {}) =>
+    post(save({ ...trio, id: offer.callId, outcome: 'trio', meta: { acceptedProposalId: offer.id }, ...overrides }));
+
+  it.each([3100, 5000])('a pack price edited to %i after the presentation keeps the presented amounts of the sale', async (price) => {
     const offer = await presented(lina, trio);
-    expect((await post({ action: 'product', product: { ...fixture('packpousse'), price: 3100 } }, admin)).status).toBe(200);
-    const res = await post(save({ ...trio, id: offer.callId, outcome: 'trio', meta: { acceptedProposalId: offer.id } }));
+    expect((await editPack({ price })).status).toBe(200);
+    const res = await acceptTrio(offer);
     expect(res.status).toBe(200);
     const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, offer.callId));
-    expect(call).toMatchObject({ offered_total: 4900, base_total: 3100, extra: 1800, catalogue_total: 5500 });
+    expect(call).toMatchObject({ offered_total: 4900, base_total: 3250, extra: 1650, catalogue_total: 5500 });
+    const rows = await contributions(ctx.db, localDay(new Date()), localDay(new Date()));
+    expect(rows[0]).toMatchObject({ upsells: 1, initial_dzd: 3250, confirmed_dzd: 4900, uplift_dzd: 1650 });
+  });
+
+  it('a pack whose contents change after the presentation does not block the presented sale', async () => {
+    const offer = await presented(lina, trio);
+    expect((await editPack({ components: ['shpousse', 'conditioner', 'serumhair'] })).status).toBe(200);
+    const res = await acceptTrio(offer);
+    expect(res.status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, offer.callId));
+    expect(call).toMatchObject({ offered_total: 4900, base_total: 3250, extra: 1650 });
+  });
+
+  it('a refusal after a pack price edit keeps the presented value of the initial order', async () => {
+    const offer = await presented(lina, trio);
+    expect((await editPack({ price: 3100 })).status).toBe(200);
+    const res = await post(save({ ...trio, id: offer.callId, outcome: 'refused', refusal: 'budget', consent: false, checked: false }));
+    expect(res.status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, offer.callId));
+    expect(call).toMatchObject({ outcome: 'refused', base_total: 3250, offered_total: 3250, extra: 0 });
+  });
+
+  it('an offer presented before pack pricing is recorded with the amounts it was presented with', async () => {
+    // Before this rule the initial pair counted at its 3 600 DA list sum and the trio at the final price was 4 500 DA.
+    const offer = await presented(lina, trio);
+    const [shown] = await ctx.db.select().from(tcProposals).where(eq(tcProposals.id, offer.id));
+    await ctx.db
+      .update(tcProposals)
+      .set({ snapshot: { ...shown!.snapshot, offerTotal: 4500, extra: 900 } })
+      .where(eq(tcProposals.id, offer.id));
+    const res = await acceptTrio(offer, { agreedTotal: 4500 });
+    expect(res.status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, offer.callId));
+    expect(call).toMatchObject({ offered_total: 4500, base_total: 3600, extra: 900 });
   });
 });
 
