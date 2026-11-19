@@ -22,7 +22,7 @@ export const tcUsers = pgTable(
     team: text('team').notNull().default(''),
     reporting_scope: text('reporting_scope').notNull().default('own'),
   },
-  (t) => [check('tc_users_role_check', sql`${t.role} IN ('admin','manager','advisor')`)],
+  (t) => [check('tc_users_role_check', sql`${t.role} IN ('admin','manager','advisor','cm')`)],
 );
 
 export const tcSessions = pgTable(

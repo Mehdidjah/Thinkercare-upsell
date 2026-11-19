@@ -11,7 +11,7 @@ export async function createUser(
   u: {
     username: string;
     password: string;
-    role: 'admin' | 'manager' | 'advisor';
+    role: 'admin' | 'manager' | 'advisor' | 'cm';
     label?: string;
     team?: string;
     active?: 0 | 1;
