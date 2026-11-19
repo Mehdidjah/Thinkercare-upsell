@@ -1,3 +1,4 @@
+import { PRICING_RULE } from '@touche/domain';
 import { reportCache } from './report-cache';
 import { reportUpdates } from './report-updates';
 
@@ -34,7 +35,8 @@ export async function requestJson(query = '', body?: unknown, signal?: AbortSign
   try {
     response = await fetch('/api/desk' + query, {
       method: body ? 'POST' : 'GET', credentials: 'same-origin', signal,
-      headers: body ? { 'Content-Type': 'application/json' } : options.background ? { 'X-Desk-Background': '1' } : undefined,
+      // X-Desk-Pricing: the pricing rules this desk computes offers with; an older open tab is told to reload the page.
+      headers: body ? { 'Content-Type': 'application/json', 'X-Desk-Pricing': PRICING_RULE } : options.background ? { 'X-Desk-Background': '1' } : undefined,
       body: body ? JSON.stringify(payload) : undefined,
     });
     text = await response.text();

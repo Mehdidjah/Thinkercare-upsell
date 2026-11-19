@@ -1,7 +1,7 @@
 import { canManageWorkspace } from '@touche/domain';
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import type { ItemSnapshot, Product, Proposal, OrderItem, Tier } from '@touche/domain';
+import type { ItemSnapshot, Product, Proposal, OrderItem } from '@touche/domain';
 import {
   basketOffer,
   basketProblem,
@@ -13,6 +13,7 @@ import {
   proposalOriginals,
   quantityOf,
   itemsTotal,
+  raiseProblem,
   sameOrder,
   orderSignature,
 } from '@touche/domain';
@@ -74,7 +75,8 @@ const addedLines = (initial: OrderItem[], basket: OrderItem[]) => basket.filter(
 /**
  * How the desk handles a catalogue change. Desks that read the error `code` reload the catalogue in
  * place and send `expectedUserId`; an older open tab does neither, so its message must also say to
- * reload the page.
+ * reload the page. So must a tab opened before the current pricing rules (no matching X-Desk-Pricing):
+ * reloading its catalogue would not change the amount it computes.
  */
 export type DeskClient = { reloadsCatalogue: boolean };
 const NEW_DESK: DeskClient = { reloadsCatalogue: true };
@@ -104,8 +106,12 @@ function priceChanged(offer: number, client: DeskClient): DeskError {
   );
 }
 
-/** Presented snapshots keep price, quantity and category: enough for the shared pricing rules. */
-const snapshotOrder = (items: ItemSnapshot[]) => items as unknown as OrderItem[];
+/**
+ * The value of the initial order a proposal was presented against (hair-pack sets at the pack price of that moment; the
+ * list-price sum for offers presented before that rule). Fixed at presentation, so a later catalogue edit changes neither
+ * the check nor the amounts recorded for that offer.
+ */
+const presentedBase = (p: Proposal) => p.offerTotal - p.extra;
 
 /**
  * A presented offer as an order with its own catalogue: its products, packs keeping the components
@@ -401,14 +407,8 @@ export class CallsService {
             'Le résultat doit correspondre aux soins physiques, composants des packs inclus.',
           );
         }
-        // M5: an accepted add-on must raise the order. Singles keep their presented prices; a complete hair-pack set takes
-        // the current pack price, on both sides (the same rule as the stored initial value below).
-        const lowOffer = offerProblem(
-          snapshotOrder(proposalOriginals(presentation)),
-          snapshotOrder(presentation.products),
-          presentation.tier as Tier,
-          all,
-        );
+        // M5: an accepted add-on must raise the order, on the amounts presented.
+        const lowOffer = raiseProblem(presentation.offerTotal, presentedBase(presentation));
         if (lowOffer) throw new DeskError(400, lowOffer);
       }
       if (v.meta.orderRef && accepted) {
@@ -438,8 +438,9 @@ export class CallsService {
     const sameBasket = !!locked && orderSignature(locked.products) === orderSignature(b);
     const snapshots: ItemSnapshot[] = sameBasket ? locked.products : b.map((p) => snapshot(p, all));
     const originals = locked ? proposalOriginals(locked) : initial.map((p) => snapshot(p, all));
-    // The initial order at its pack-aware value: frozen snapshot prices for singles, the current pack price for a set.
-    const lockedBase = pricedTotal(originals, all);
+    // The initial order's value: the one the locked offer was presented against, otherwise today's (hair-pack sets at the
+    // pack price).
+    const lockedBase = locked ? presentedBase(locked) : pricedTotal(originals, all);
     const lockedSum = sameBasket ? locked.catalogueTotal : itemsTotal(b);
     const offer = presentation
       ? presentation.offerTotal

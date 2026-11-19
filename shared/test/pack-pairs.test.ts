@@ -1,6 +1,6 @@
 import {readFileSync} from 'node:fs';
 import {describe,it,expect} from 'vitest';
-import {basketOffer,orderOffer,offerProblem,pricedTotal,hairPackSets,summaryText,salesPitch,objections,money,EMPTY_PROFILE,type Product,type OrderItem,type Tier} from '../src/index.js';
+import {basketOffer,orderOffer,offerProblem,raiseProblem,pricedTotal,hairPackSets,summaryText,salesPitch,objections,money,EMPTY_PROFILE,type Product,type OrderItem,type Tier} from '../src/index.js';
 // Hair-pack pair pricing (docs/superpowers/specs/2026-11-19-hair-pack-pair-pricing-design.md), real catalogue prices.
 const catalogue=JSON.parse(readFileSync(new URL('./fixtures/catalogue.json',import.meta.url),'utf8')) as Product[];
 const get=(id:string)=>catalogue.find(p=>p.id===id)!;
@@ -64,6 +64,27 @@ describe('hair-pack products chosen separately',()=>{
   expect(pricedTotal(basket,edited)).toBe(3100);
   expect(offers(basket,edited)).toEqual([3100,3100,3100]);
  });
+ it('ignores a hair pack with a single component: a product alone is never priced as a pack',()=>{
+  const edited=catalogue.map(p=>p.id==='packjunior'?{...p,components:['shpousse']}:p);
+  expect(hairPackSets([item('shpousse')],edited).sets).toEqual([]);
+  expect(pricedTotal([item('shpousse')],edited)).toBe(1900);
+  expect(offers([item('shpousse'),item('wcgel')],edited)).toEqual([3400,3100,2800]);
+  // The real pair still forms Pack Pousse.
+  expect(offers([item('shpousse'),item('conditioner')],edited)).toEqual([3250,3250,3250]);
+ });
+ it.each([
+  ['a component on promotion',(p:Product)=>p.id==='shpousse'?{...p,price:1200}:p,2900,[2900,2700,2400]],
+  ['the pack priced at the sum of its components',(p:Product)=>p.id==='packpousse'?{...p,price:3600}:p,3600,[3600,3300,3000]],
+ ] as [string,(p:Product)=>Product,number,number[]][])('forms no set when the pack is not cheaper than its components (%s)',(_,change,total,expected)=>{
+  const edited=catalogue.map(change),take=(id:string):OrderItem=>({...edited.find(p=>p.id===id)!,quantity:1});
+  const basket=[take('shpousse'),take('conditioner')];
+  expect(hairPackSets(basket,edited).sets).toEqual([]);
+  expect(pricedTotal(basket,edited)).toBe(total);
+  expect(offers(basket,edited)).toEqual(expected);
+  const text=summaryText(basket[0],basket,'duo',null,edited,[basket[0]]);
+  expect(text).not.toContain('Tarif pack appliqué');
+  expect(text).not.toContain('Économie : -');
+ });
  it('rejects an invalid amount, including the pack price read from the catalogue',()=>{
   const broken=catalogue.map(p=>p.id==='packpousse'?{...p,price:Number.NaN}:p);
   for(const t of tiers){
@@ -123,6 +144,11 @@ describe('initial orders containing a hair-pack pair',()=>{
   const withSerum=[...initial,take('serumhair')];
   expect(orderOffer(withSerum,[...withSerum,take('hcream')],'final',cheap)).toBe(5100);
   expect(offerProblem(withSerum,[...withSerum,take('hcream')],'final',cheap)).toBe(`À ce niveau de prix, l’offre (${money(5100)}) ne dépasse pas la commande initiale (${money(5150)}) : choisissez un autre prix ou ajoutez un produit.`);
+ });
+ it('checks fixed amounts with the same message (a presented offer against the value it was presented with)',()=>{
+  expect(raiseProblem(4900,3250)).toBeNull();
+  expect(raiseProblem(5100,5150)).toBe(`À ce niveau de prix, l’offre (${money(5100)}) ne dépasse pas la commande initiale (${money(5150)}) : choisissez un autre prix ou ajoutez un produit.`);
+  expect(raiseProblem(3250,3250)).toContain('ne dépasse pas la commande initiale');
  });
 });
 

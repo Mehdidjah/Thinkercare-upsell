@@ -36,11 +36,25 @@ export function expand(p:Product,catalogue:Product[]):Product[]{
  return p.components.map(id=>catalogue.find(x=>x.id===id)).filter((x):x is Product=>!!x);
 }
 export function physicalCount(basket:OrderItem[],catalogue:Product[]):number{return basket.reduce((s,p)=>s+quantityOf(p)*expand(p,catalogue).length,0);}
+/**
+ * The pricing rules a desk computes offers with, announced on every POST (X-Desk-Pricing). Change it whenever these
+ * rules change: a tab opened before cannot fix its amounts by reloading the catalogue, so the server tells it to reload
+ * the page instead.
+ */
+export const PRICING_RULE='hair-pack-sets';
 /** An order line, live or frozen in a snapshot: enough to price it. */
 export type PricedLine=WithQuantity&{id:string;price:number;category?:string};
 export type HairPackSet={pack:Product;count:number};
-/** A hair pack whose price applies to its components chosen one by one (body duo and Junior excluded). */
-const pairPack=(p:Product)=>isPack(p)&&p.domain==='hair'&&!!p.components?.length;
+/**
+ * A hair pack whose price applies to its components chosen one by one (body duo and Junior excluded): at least two of
+ * them, and the pack cheaper than they are at list price, so the pack price is always a saving. An invalid pack price
+ * stays eligible, for basketOffer to refuse it.
+ */
+const pairPack=(p:Product,catalogue:Product[])=>{
+ if(!isPack(p)||p.domain!=='hair'||(p.components?.length??0)<2)return false;
+ const sum=p.components!.reduce((s,id)=>s+(catalogue.find(x=>x.id===id)?.price??Number.NaN),0);
+ return !Number.isSafeInteger(p.price)||p.price<sum;
+};
 /**
  * Pricing only: separate lines covering every component of a hair pack cost that pack, at its current catalogue price.
  * Greedy in catalogue order; only non-pack lines count as components; sets = smallest component quantity. `rest` holds
@@ -49,7 +63,7 @@ const pairPack=(p:Product)=>isPack(p)&&p.domain==='hair'&&!!p.components?.length
 export function hairPackSets<T extends PricedLine>(items:T[],catalogue:Product[]):{sets:HairPackSet[];rest:T[]}{
  const left=new Map<string,number>(),used=new Map<string,number>(),sets:HairPackSet[]=[];
  for(const p of items)if(!isPack(p))left.set(p.id,(left.get(p.id)??0)+quantityOf(p));
- for(const pack of catalogue.filter(pairPack)){
+ for(const pack of catalogue.filter(p=>pairPack(p,catalogue))){
   const need=new Map<string,number>();
   for(const id of pack.components!)need.set(id,(need.get(id)??0)+1);
   const count=Math.min(...[...need].map(([id,n])=>Math.floor((left.get(id)??0)/n)));
@@ -93,7 +107,10 @@ export function basketProblem(basket:OrderItem[],catalogue:Product[]):string|nul
 /** An add-on must raise the order: a discount on the whole basket may not bring it to, or below, what the customer already ordered. */
 export function offerProblem(initial:OrderItem[],basket:OrderItem[],tier:Tier,catalogue:Product[]):string|null{
  if(!initial.length||sameOrder(initial,basket))return null;
- const offer=orderOffer(initial,basket,tier,catalogue),base=pricedTotal(initial,catalogue);
+ return raiseProblem(orderOffer(initial,basket,tier,catalogue),pricedTotal(initial,catalogue));
+}
+/** The same rule on amounts already fixed, such as a presented offer and the initial value it was presented against. */
+export function raiseProblem(offer:number,base:number):string|null{
  return offer>base?null:`À ce niveau de prix, l’offre (${money(offer)}) ne dépasse pas la commande initiale (${money(base)}) : choisissez un autre prix ou ajoutez un produit.`;
 }
 /** A product ordered together with a pack that already contains it. */

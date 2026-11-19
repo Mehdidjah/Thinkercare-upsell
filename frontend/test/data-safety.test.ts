@@ -3,6 +3,7 @@ import { ACCOUNT_CHANGED, NETWORK_ERROR, lockRequests, requestJson, resetRequest
 import { announceSession, closeSessionChannel, onSessionMessage, parseSessionMessage, sessionReaction } from '../src/data/session-channel';
 import { allowedView, backFromGuard, landingView, viewFromEntry, viewFromSearch, viewHref } from '../src/data/view-history';
 import { CALL_CHANNEL, claimAnswer, parseClaim, startCallClaims } from '../src/data/call-claims';
+import { PRICING_RULE } from '@touche/domain';
 
 // Requests, other tabs and history: what keeps a live call safe outside the call screen.
 const reply = (body: unknown, status = 200) => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status });
@@ -41,6 +42,14 @@ describe('requests (X5, B2, X1)', () => {
     expect(sent()).toEqual({ action: 'login', username: 'x', password: 'y' });
     await requestJson('?compact=1');
     expect(fetch.mock.calls.at(-1)![1].body).toBeUndefined();
+  });
+
+  it('every POST names the pricing rule this desk computes with, so the server can tell an older open tab to reload', async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => reply({ ok: true }));
+    vi.stubGlobal('fetch', fetch);
+    await requestJson('', { action: 'present-offer' });
+    expect(fetch.mock.calls.at(-1)![1].headers).toStrictEqual({ 'Content-Type': 'application/json', 'X-Desk-Pricing': 'hair-pack-sets' });
+    expect(PRICING_RULE).toBe('hair-pack-sets');
   });
 
   it('« account-changed » tells the app, and a locked tab sends nothing more', async () => {
