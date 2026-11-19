@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ReportCache, reportCache } from '../src/data/report-cache';
 import { requestJson } from '../src/data/api';
 
+/** A real Response: the client reads the body as text and parses it itself. */
+const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); reportCache.setUser(null); });
 
 describe('report navigation cache', () => {
@@ -67,7 +70,7 @@ describe('report navigation cache', () => {
   it('successful writes invalidate reports without caching their response', async () => {
     reportCache.setUser('admin');
     await reportCache.load('report', async () => 'old');
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })));
+    vi.stubGlobal('fetch', vi.fn(async () => reply({ ok: true })));
     await requestJson('', { action: 'save-call' });
     expect(reportCache.peek('report')).toBeUndefined();
   });
@@ -75,7 +78,7 @@ describe('report navigation cache', () => {
   it('an expired session clears cached reports', async () => {
     reportCache.setUser('advisor');
     await reportCache.load('report', async () => 'private');
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 401, json: async () => ({ error: 'Expired' }) })));
+    vi.stubGlobal('fetch', vi.fn(async () => reply({ error: 'Expired' }, 401)));
     await expect(requestJson('?action=my-progress')).rejects.toMatchObject({ status: 401 });
     expect(reportCache.peek('report')).toBeUndefined();
   });

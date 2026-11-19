@@ -3,6 +3,9 @@ import { requestJson } from '../src/data/api';
 import { reportCache } from '../src/data/report-cache';
 import { REPORT_REFRESH_MS, ReportUpdates, reportUpdates } from '../src/data/report-updates';
 
+/** A real Response: the client reads the body as text and parses it itself. */
+const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+
 class Channel {
   static instances: Channel[] = [];
   onmessage: ((event: { data: unknown }) => void) | null = null;
@@ -77,7 +80,7 @@ describe('live report updates', () => {
       const listener = vi.fn();
       reportUpdates.subscribe(listener);
       await reportCache.load('report', async () => 'before action');
-      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })));
+      vi.stubGlobal('fetch', vi.fn(async () => reply({ ok: true })));
       await requestJson('', { action });
       expect(reportCache.peek('report')).toBeUndefined();
       expect(listener).toHaveBeenCalledTimes(1);
@@ -87,9 +90,9 @@ describe('live report updates', () => {
 
   it('does not announce failed actions or report reads as new activity', async () => {
     const listener = vi.fn(); reportUpdates.subscribe(listener);
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 409, json: async () => ({ error: 'Conflict' }) })));
+    vi.stubGlobal('fetch', vi.fn(async () => reply({ error: 'Conflict' }, 409)));
     await expect(requestJson('', { action: 'save-call' })).rejects.toThrow('Conflict');
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ calls: [] }) })));
+    vi.stubGlobal('fetch', vi.fn(async () => reply({ calls: [] })));
     await requestJson('?action=analytics');
     expect(listener).not.toHaveBeenCalled();
   });
