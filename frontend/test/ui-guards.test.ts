@@ -14,6 +14,21 @@ test('Both upsell-rule footnotes count added products and cover an initial pack 
     assert.ok(part.includes('pack de 2'), name);
   }
 });
+test('Apports & primes treats CM accounts like call-center accounts', () => {
+  assert.ok(/import \{[^}]*\bisFrontline\b[^}]*\} from '@touche\/domain'/.test(commission), 'isFrontline imported from @touche/domain');
+  const dashboard = commission.slice(commission.indexOf('export function ContributionDashboard'));
+  // Estimated monthly total, CSV prime column, account caption and prime cell each ask isFrontline(p.role).
+  assert.ok((dashboard.match(/isFrontline\(p\.role\)/g) || []).length >= 4, 'isFrontline(p.role) in all four prime sites');
+  assert.ok(!/role\s*===\s*'advisor'\s*\?\s*\(\s*p\.monthly\.bonus/.test(dashboard), "estimated total must not sum advisors only (p.role==='advisor'?(p.monthly.bonus…)");
+  assert.ok(!/role\s*!==\s*'advisor'\s*\?\s*'Non concerné'/.test(dashboard), "prime column and cell must not mark CMs 'Non concerné' (p.role!=='advisor'?'Non concerné'…)");
+  assert.ok(!/role\s*!==\s*'advisor'\s*\?\s*'Compte '/.test(dashboard), "account caption must not hide a CM's bonus progress (p.role!=='advisor'?'Compte '…)");
+});
+test('Account form offers every member role from MEMBER_ROLES', () => {
+  const accounts = ui('AccountManagement.tsx');
+  assert.ok(/import \{[^}]*\bMEMBER_ROLES\b[^}]*\} from '@touche\/domain'/.test(accounts), 'MEMBER_ROLES imported from @touche/domain');
+  assert.equal((accounts.match(/MEMBER_ROLES\.map\(/g) || []).length, 2, 'create form and edit dialog both list MEMBER_ROLES');
+  assert.ok(!/<option\s+value=["'](advisor|manager)["']/.test(accounts), 'no hard-coded role <option>');
+});
 test('Questionnaire says which answers still block "Construire la routine"', () => {
   assert.ok(/import \{[^}]*\bmissingAnswers\b[^}]*\} from '@touche\/domain'/.test(app), 'missingAnswers imported from @touche/domain');
   const question = app.slice(app.indexOf('function Question('));

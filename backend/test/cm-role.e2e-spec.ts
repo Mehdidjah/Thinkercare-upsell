@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { algerDay } from '@touche/domain';
 import { tcAudit, tcUsers } from '../src/db/schema.js';
@@ -35,10 +35,9 @@ describe('cm role', () => {
   it('direction creates a CM', async () => {
     expect((await createCm()).status).toBe(200);
     expect(await roleOf('cm.lina')).toBe('cm');
-    const [audit] = await ctx.db.select().from(tcAudit).where(eq(tcAudit.action, 'account.created'));
-    expect(audit).toBeDefined();
-    const rows = await ctx.db.select().from(tcAudit).where(eq(tcAudit.target, 'cm.lina'));
-    expect(rows[0]!.detail).toEqual({ role: 'cm' });
+    const [audit] = await ctx.db.select().from(tcAudit)
+      .where(and(eq(tcAudit.action, 'account.created'), eq(tcAudit.target, 'cm.lina')));
+    expect(audit?.detail).toEqual({ role: 'cm' });
   });
 
   it('manager creates a CM', async () => {

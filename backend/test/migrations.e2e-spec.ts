@@ -62,7 +62,7 @@ describe('migrations', () => {
     ).rejects.toMatchObject({ cause: { code: '23514' } });
   });
 
-  it('accepts the cm role and keeps existing advisor rows across a migration re-run', async () => {
+  it('accepts the cm role beside existing advisor rows', async () => {
     await db.execute(
       sql`INSERT INTO tc_users (id, username, label, role, salt, password_hash) VALUES ('u-cm', 'cm', 'CM', 'cm', 's', 'h')`,
     );
