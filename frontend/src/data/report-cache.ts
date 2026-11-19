@@ -1,6 +1,7 @@
 type Entry = {
   value?: unknown;
   expiresAt: number;
+  loadedAt?: number;
   pending?: Promise<unknown>;
   controller: AbortController;
 };
@@ -27,6 +28,12 @@ export class ReportCache {
     if (entry && entry.expiresAt > Date.now()) return entry.value as T;
   }
 
+  /** When the fresh value of `key` was loaded (ISO), so a reused report can say how old it is. */
+  loadedAt(key: string): string | undefined {
+    const entry = this.entries.get(key);
+    if (entry?.loadedAt && entry.expiresAt > Date.now()) return new Date(entry.loadedAt).toISOString();
+  }
+
   load<T>(key: string, loader: (signal: AbortSignal) => Promise<T>, force = false): Promise<T> {
     const current = this.entries.get(key);
     if (current?.pending) return current.pending as Promise<T>;
@@ -51,7 +58,8 @@ export class ReportCache {
         throw new DOMException('Report invalidated', 'AbortError');
       }
       entry.value = data;
-      entry.expiresAt = Date.now() + this.ttl;
+      entry.loadedAt = Date.now();
+      entry.expiresAt = entry.loadedAt + this.ttl;
       entry.pending = undefined;
       return data;
     }).catch(error => {
