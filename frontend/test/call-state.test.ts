@@ -143,6 +143,13 @@ describe('initial order (CN1, A3, X10)', () => {
     expect(r.draft.adds).toEqual(['wcspf']);
   });
 
+  it('the call starts when its first product is picked, not when the empty screen was opened', () => {
+    const empty = cs.newDraft({ id: 'call-9', now: '2026-11-13T17:00:00.000Z' });
+    const first = cs.changeInitialOrder(empty, ['antiacne'], catalogue, '2026-11-16T09:00:00.000Z')!;
+    expect(first.draft.startedAt).toBe('2026-11-16T09:00:00.000Z');
+    expect(cs.changeInitialOrder(first.draft, ['antiacne', 'wcgel'], catalogue, '2026-11-16T09:05:00.000Z')!.draft.startedAt).toBe('2026-11-16T09:00:00.000Z');
+  });
+
   it('a guiding product of another domain asks first, then clears the answers', () => {
     const d = liveCall();
     expect(cs.initialNeedsConfirm(d, ['shpousse'], catalogue)).toBe(true);
@@ -229,6 +236,7 @@ describe('void and catalogue changes (H5, H2)', () => {
   it('reopens the same answers and basket under a new id linked to the voided call', () => {
     const saved = cs.markSaved(liveCall({ presented: [proposal], presentationKeys: { a: 'k' } }), 'duo', T0);
     const reopened = cs.reopenAfterVoid(saved, 'call-2');
+    expect(cs.reopenAfterVoid({ ...saved, linkedCallId: 'reminder-0' }, 'call-3').linkedCallId).toBe('reminder-0');
     expect(reopened).toMatchObject({ callId: 'call-2', linkedCallId: 'call-1', saved: false, savedOutcome: '', presented: [], presentationKeys: {}, consent: false, checked: false });
     expect(reopened.adds).toEqual(saved.adds);
     expect(reopened.profile).toEqual(saved.profile);

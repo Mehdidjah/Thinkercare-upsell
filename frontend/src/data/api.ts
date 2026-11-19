@@ -22,7 +22,9 @@ export function lockRequests() { locked = true; }
 /** Tests only. */
 export function resetRequestState() { expectedUserId = null; locked = false; }
 
-export async function requestJson(query = '', body?: unknown, signal?: AbortSignal) {
+/** `background`: an automatic report refresh (30 s, focus, other tab). It is marked so the server does not count it as
+ *  activity that keeps the session open (servers that do not know the header ignore it). */
+export async function requestJson(query = '', body?: unknown, signal?: AbortSignal, options: { background?: boolean } = {}) {
   const action = (body as { action?: string } | undefined)?.action;
   if (locked) throw failure(ACCOUNT_CHANGED, 409, 'account-changed');
   if (action === 'login' || action === 'logout') reportCache.setUser(null);
@@ -32,7 +34,7 @@ export async function requestJson(query = '', body?: unknown, signal?: AbortSign
   try {
     response = await fetch('/api/desk' + query, {
       method: body ? 'POST' : 'GET', credentials: 'same-origin', signal,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      headers: body ? { 'Content-Type': 'application/json' } : options.background ? { 'X-Desk-Background': '1' } : undefined,
       body: body ? JSON.stringify(payload) : undefined,
     });
     text = await response.text();

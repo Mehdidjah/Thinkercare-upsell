@@ -161,10 +161,11 @@ export function initialNeedsConfirm(d:CallDraft,ids:string[],products:Product[])
  * A new selection of initial products. Same domain: answers, verifications, call id and start time stay, additions are re-checked.
  * Other domain (after confirmation): answers and additions are cleared. Any pack upgrade goes (it replaced the old single product).
  */
-export function changeInitialOrder(d:CallDraft,ids:string[],products:Product[]):Revalidated|null{
+export function changeInitialOrder(d:CallDraft,ids:string[],products:Product[],now=new Date().toISOString()):Revalidated|null{
  if(orderLocked(d)||same(ids,d.baseIds))return null;
  const lostUpgrade=d.upgradeId?[d.upgradeId]:[];
- const moved:CallDraft={...d,baseIds:ids,baseQuantities:Object.fromEntries(ids.map(id=>[id,d.baseQuantities[id]||1])),upgradeId:'',consent:false,checked:false};
+ // The call starts when its first product is picked, not when the empty screen was opened (it may have waited for days).
+ const moved:CallDraft={...d,startedAt:d.baseIds.length?d.startedAt:now,baseIds:ids,baseQuantities:Object.fromEntries(ids.map(id=>[id,d.baseQuantities[id]||1])),upgradeId:'',consent:false,checked:false};
  if(initialNeedsConfirm(d,ids,products))return {draft:{...moved,profile:{...EMPTY_PROFILE},profileDomain:'',adds:[],requestedIds:[],quantities:{},verifiedProducts:[],handledObjections:[]},removed:[...lostUpgrade,...d.adds]};
  const r=revalidate(d,moved,products);
  return {draft:r.draft,removed:[...lostUpgrade,...r.removed]};
@@ -268,7 +269,8 @@ export function voidDeadline(d:CallDraft,features:string[]|undefined,windowMinut
 }
 /** After a void: the same answers and basket, a fresh call id linked to the voided call, offers to present again. */
 export function reopenAfterVoid(d:CallDraft,id:string=uuid()):CallDraft{
- return {...d,callId:id,linkedCallId:d.callId,saved:false,savedOutcome:'',savedAt:'',presented:[],presentationKeys:{},consent:false,checked:false};
+ // A voided follow-up keeps its link to the original reminder (the server reopened it); otherwise link to the voided call.
+ return {...d,callId:id,linkedCallId:d.linkedCallId||d.callId,saved:false,savedOutcome:'',savedAt:'',presented:[],presentationKeys:{},consent:false,checked:false};
 }
 
 /** A catalogue change reported by present-offer or save-call: reload the catalogue in place, keep the call. */

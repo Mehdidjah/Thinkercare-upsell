@@ -98,3 +98,17 @@ describe('views and history (BACK, ROLES)', () => {
     expect([landingView(true), landingView(false)]).toEqual(['results', 'call']);
   });
 });
+
+describe('background refresh marker', () => {
+  it('marks automatic report refreshes only', async () => {
+    resetRequestState();
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    await requestJson('?action=analytics', undefined, undefined, { background: true });
+    await requestJson('?action=analytics');
+    expect((fetch.mock.calls[0][1].headers as Record<string, string>)['X-Desk-Background']).toBe('1');
+    expect(fetch.mock.calls[1][1].headers).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+});
+

@@ -288,11 +288,15 @@ export default function Desk(){
   if(outcome==='callback'&&!now.callbackAt){notify('Renseignez la date et l’heure du rappel.','error');return;}
   if(callState.CONFIRMED_OUTCOMES.includes(outcome)&&(!(await confirmAction(outcomeConfirm(outcome)))||current()!==now))return;
   setBusy(true);try{
-   await api({action:'save-call',id:now.callId,baseId,baseIds:now.baseIds,baseQuantities:now.baseQuantities,quantities:selectedQuantities,productIds:basket.map(p=>p.id),upgradeId:now.upgradeId||undefined,agreedTotal:offer,outcome,tier:altered?tier:'catalogue',delivery:fee,consent:now.consent,checked:now.checked,refusal:now.refusal,verifiedProducts:now.verifiedProducts,
+   const result=await api({action:'save-call',id:now.callId,baseId,baseIds:now.baseIds,baseQuantities:now.baseQuantities,quantities:selectedQuantities,productIds:basket.map(p=>p.id),upgradeId:now.upgradeId||undefined,agreedTotal:offer,outcome,tier:altered?tier:'catalogue',delivery:fee,consent:now.consent,checked:now.checked,refusal:now.refusal,verifiedProducts:now.verifiedProducts,
     meta:{version:3,source:'manual',customerStage:now.customerStage,orderRef:now.orderRef,startedAt:now.startedAt||new Date().toISOString(),eligible:!blocked&&(altered||candidates.length>0||upgrades.length>0||now.presented.length>0),acceptedProposalId:won?matchingOffer!.id:undefined,objections:now.handledObjections,callbackAt:outcome==='callback'?new Date(now.callbackAt+':00+01:00').toISOString():undefined,linkedCallId:now.linkedCallId||undefined}});
    // The screen shows what the server recorded, even if a field was touched during the request.
    if(current().callId===now.callId)commit(callState.markSaved(now,outcome,new Date().toISOString()));
-   setRemoval(null);setCatalogueNotice(null);setProgressEpoch(x=>x+1);notify('Résultat enregistré dans le pilotage interne. Aucun système externe modifié.');
+   setRemoval(null);setCatalogueNotice(null);setProgressEpoch(x=>x+1);
+   // A follow-up that reached the customer closes the reminder it came from (M2): say so, and let the adviser reopen it.
+   const closed=typeof result?.closedReminderId==='string'?result.closedReminderId:'';
+   if(closed)push({kind:'success',title:'Résultat enregistré. Le rappel d’origine est marqué traité.',action:state?.features?.includes('reopen-reminder')?{label:'Rouvrir le rappel',run:()=>{void api({action:'reopen-reminder',id:closed}).then(()=>notify('Rappel rouvert : il revient dans les rappels à traiter.')).catch(e=>notify((e as Error).message,'error'));}}:undefined});
+   else notify('Résultat enregistré dans le pilotage interne. Aucun système externe modifié.');
   }catch(e){await callError(e);}finally{setBusy(false);}
  }
  /** Voids the saved outcome (H5), then reopens the same call under a new id linked to the voided one. Returns an error text or ''. */
