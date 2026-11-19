@@ -13,7 +13,7 @@ export function NewPasswordField({ value, onChange, disabled = false, label = 'N
   return <div className="field admin-password-field">
     <label className="field__label" htmlFor={id}>{label}</label><input id={id} type={visible ? 'text' : 'password'} autoComplete="new-password"
       value={value} onChange={e => onChange(e.target.value)} maxLength={200}
-      placeholder="12 caractères ou plus" required disabled={disabled}/>
+      required disabled={disabled}/>
     <div className="admin-actions">
       <button type="button" className="link-btn" onClick={generate} disabled={disabled}>Générer</button>
       <button type="button" className="link-btn" aria-controls={id} aria-pressed={visible}

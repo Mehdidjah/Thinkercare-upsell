@@ -87,7 +87,7 @@
   @media (max-width: 760px) { .icon-btn { inline-size: var(--control-height-touch); block-size: var(--control-height-touch); } }
 
   .link-btn {
-    position: relative; display: inline-flex; align-items: center; gap: var(--space-1);
+    position: relative; display: inline-flex; align-items: center; gap: var(--space-1); min-block-size: var(--target-min);
     padding: 0; border: 0; background: none; color: var(--color-accent-text);
     font-size: var(--text-ui); font-weight: var(--font-weight-semibold); line-height: var(--leading-ui); text-align: start;
     text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.2em;
@@ -203,7 +203,7 @@
   /* Search field with a leading icon */
   .search-field { position: relative; display: block; min-inline-size: 0; }
   .search-field > svg { position: absolute; inset-inline-start: var(--space-3); inset-block-start: 50%; translate: 0 -50%; inline-size: var(--icon); block-size: var(--icon); color: var(--color-text-tertiary); pointer-events: none; }
-  .search-field > svg + input { padding-inline-start: var(--space-10); }
+  .search-field > svg ~ input { padding-inline-start: var(--space-10); }
   .search-field--wide { max-inline-size: 36rem; }
 
   /* ── Choice groups and options (single = radio, multi = checkbox) ─────── */
