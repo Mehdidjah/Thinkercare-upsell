@@ -19,11 +19,11 @@ test('each stop reason has its own customer script',()=>{
 
 test('an offer that does not raise the order is refused (3 × SPF serum + gel at the final price)',()=>{
  const initial=[{...p('serumspf'),quantity:3}],basket=[...initial,{...p('wcgel'),quantity:1}];
- assert.equal(c.orderOffer(initial,basket,'final'),8500);
- assert.match(c.offerProblem(initial,basket,'final')!,/ne dépasse pas la commande initiale/);
- assert.equal(c.offerProblem(initial,basket,'catalogue'),null);
- assert.equal(c.offerProblem(initial,initial,'final'),null);
- assert.equal(c.offerProblem([p('antiacne')],[p('antiacne'),p('wcgel')],'final'),null);
+ assert.equal(c.orderOffer(initial,basket,'final',catalogue),8500);
+ assert.match(c.offerProblem(initial,basket,'final',catalogue)!,/ne dépasse pas la commande initiale/);
+ assert.equal(c.offerProblem(initial,basket,'catalogue',catalogue),null);
+ assert.equal(c.offerProblem(initial,initial,'final',catalogue),null);
+ assert.equal(c.offerProblem([p('antiacne')],[p('antiacne'),p('wcgel')],'final',catalogue),null);
 });
 
 test('a product ordered with a pack that contains it is reported',()=>{

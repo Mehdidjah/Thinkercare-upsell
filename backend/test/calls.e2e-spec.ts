@@ -22,6 +22,8 @@ const fixtureAll = JSON.parse(
   readFileSync(resolve(import.meta.dirname, '../../shared/test/fixtures/catalogue.json'), 'utf8'),
 ) as Array<Record<string, unknown> & { id: string }>;
 const fixture = (id: string) => structuredClone(fixtureAll.find((p) => p.id === id)!);
+/** The seeded catalogue, as the shared pricing rules read it. */
+const catalogue = fixtureAll as unknown as Product[];
 
 let ctx: TestContext;
 let admin: string;
@@ -208,7 +210,7 @@ describe('present-offer', () => {
     const order = { baseId: 'serumspf', baseQuantities: { serumspf: 3 }, quantities: { serumspf: 3, wcgel: 1 }, productIds: ['serumspf', 'wcgel'] };
     const initial = [{ ...fixture('serumspf'), quantity: 3 }] as unknown as OrderItem[];
     const basket = [...initial, { ...fixture('wcgel'), quantity: 1 }] as unknown as OrderItem[];
-    const message = offerProblem(initial, basket, 'final');
+    const message = offerProblem(initial, basket, 'final', catalogue);
     expect(message).toContain(money(8500));
     const res = await post(present({ ...order, tier: 'final', agreedTotal: 8500 }));
     expect(res.status).toBe(400);
@@ -413,7 +415,7 @@ describe('save-call', () => {
       expect((await post({ action: 'product', product: { ...fixture(id), components } }, admin)).status).toBe(200);
     // Shampoo + Pack Anti-chute (2 products): a trio. The pack then gains the shampoo and a third product.
     const offer = { baseId: 'shpousse', productIds: ['shpousse', 'packanti'], tier: 'duo' };
-    const agreedTotal = basketOffer([fixture('shpousse'), fixture('packanti')] as unknown as Product[], 'duo');
+    const agreedTotal = basketOffer([fixture('shpousse'), fixture('packanti')] as unknown as Product[], 'duo', catalogue);
     const p = await presented(lina, { ...offer, agreedTotal });
     await edit('packanti', ['shanti', 'serumhair', 'shpousse']);
     const trio = await post(save({ id: p.callId, ...offer, agreedTotal, outcome: 'trio', meta: { orderRef: 'DOS-PACK', acceptedProposalId: p.id } }));
@@ -449,7 +451,7 @@ describe('save-call', () => {
       productIds: ['serumspf', 'wcgel'], tier: 'final', agreedTotal: 8500, outcome: 'routine', meta: { acceptedProposalId: id },
     }));
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe(offerProblem(snapshot.originals as unknown as OrderItem[], snapshot.products as unknown as OrderItem[], 'final'));
+    expect(res.body.error).toBe(offerProblem(snapshot.originals as unknown as OrderItem[], snapshot.products as unknown as OrderItem[], 'final', catalogue));
     expect(await ctx.db.select().from(tcCalls)).toEqual([]);
   });
 
@@ -783,6 +785,7 @@ describe('save-call', () => {
     const agreedTotal = basketOffer(
       [fixture('antiacne'), fixture('shpousse')] as unknown as Product[],
       'duo',
+      fixtures,
     );
     expect(agreedTotal).toBe(3400);
     const requested = { productIds: ['antiacne', 'shpousse'], agreedTotal };
@@ -808,6 +811,108 @@ describe('save-call', () => {
       extra: 1600,
     });
     expect(call!.products.map((x) => x.id)).toEqual(['antiacne', 'shpousse']);
+  });
+});
+
+describe('hair-pack products chosen separately', () => {
+  // Shampooing Pousse 1900 + Après-Shampooing 1700 = 3600 at list price, 3250 as Pack Pousse et Croissance.
+  const pair = { baseId: 'shpousse', productIds: ['shpousse', 'conditioner'] };
+
+  it.each(['catalogue', 'duo', 'final'])('presents the pair at the pack price (%s)', async (tier) => {
+    const res = await post(present({ ...pair, tier, agreedTotal: 3250 }));
+    expect(res.status).toBe(200);
+    expect(res.body.proposal).toMatchObject({
+      offerTotal: 3250,
+      extra: 1350,
+      catalogueTotal: 3600,
+      tier,
+      base: { id: 'shpousse', price: 1900 },
+    });
+    expect(res.body.proposal.products.map((p: { id: string }) => p.id)).toEqual(['shpousse', 'conditioner']);
+  });
+
+  it('refuses the discounted list-price amount of the pair and names the pack price', async () => {
+    const res = await post(present({ ...pair, tier: 'duo', agreedTotal: 3300, expectedUserId: linaUser.id }));
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({
+      error: `Le tarif a changé : cette offre vaut maintenant ${money(3250)}. Le catalogue a été mis à jour, annoncez le nouveau montant.`,
+      code: 'price-changed',
+    });
+    expect(await ctx.db.select().from(tcProposals)).toEqual([]);
+  });
+
+  it('saves the accepted pair at the pack price and keeps the list-price catalogue total', async () => {
+    const offer = await presented(lina, { ...pair, tier: 'duo', agreedTotal: 3250 });
+    const res = await post(
+      save({ ...pair, id: offer.callId, tier: 'duo', agreedTotal: 3250, outcome: 'duo', meta: { acceptedProposalId: offer.id } }),
+    );
+    expect(res.status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, offer.callId));
+    expect(call).toMatchObject({
+      outcome: 'duo',
+      offered_total: 3250,
+      base_total: 1900,
+      extra: 1350,
+      catalogue_total: 3600,
+      tier: 'duo',
+    });
+    expect(call!.products.map((x) => x.id)).toEqual(['shpousse', 'conditioner']);
+  });
+
+  it('values an initial order that already contains the pair at the pack price', async () => {
+    const body = save({
+      ...pair,
+      baseIds: pair.productIds,
+      outcome: 'initial',
+      tier: 'catalogue',
+      agreedTotal: 3250,
+      consent: false,
+      checked: false,
+    });
+    expect((await post(body)).status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, body.id));
+    expect(call).toMatchObject({
+      outcome: 'initial',
+      base_total: 3250,
+      offered_total: 3250,
+      extra: 0,
+      catalogue_total: 3600,
+    });
+    expect(call!.products.map((x) => x.id)).toEqual(['shpousse', 'conditioner']);
+    const rows = await contributions(ctx.db, localDay(new Date()), localDay(new Date()));
+    expect(rows[0]).toMatchObject({ confirmations: 1, upsells: 0, initial_dzd: 3250, confirmed_dzd: 3250 });
+  });
+
+  // An initial pair + Sérum Anti-Chute at the final price: (3250 × 11 + 1900 × 9) / 1100 → 4900 (list-price discount: 4500).
+  const trio = { ...pair, baseIds: pair.productIds, productIds: [...pair.productIds, 'serumhair'], tier: 'final', agreedTotal: 4900 };
+
+  it('prices a third product on top of an initial pair from the pack value, presented and accepted', async () => {
+    const offer = await presented(lina, trio);
+    const [shown] = await ctx.db.select().from(tcProposals).where(eq(tcProposals.id, offer.id));
+    expect(shown!.snapshot).toMatchObject({ offerTotal: 4900, extra: 1650, catalogueTotal: 5500 });
+    const res = await post(save({ ...trio, id: offer.callId, outcome: 'trio', meta: { acceptedProposalId: offer.id } }));
+    expect(res.status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, offer.callId));
+    expect(call).toMatchObject({ offered_total: 4900, base_total: 3250, extra: 1650, catalogue_total: 5500 });
+    const rows = await contributions(ctx.db, localDay(new Date()), localDay(new Date()));
+    expect(rows[0]).toMatchObject({ upsells: 1, initial_dzd: 3250, confirmed_dzd: 4900, uplift_dzd: 1650 });
+  });
+
+  it('a refusal after that offer keeps the initial pair at the pack price', async () => {
+    const offer = await presented(lina, trio);
+    const res = await post(save({ ...trio, id: offer.callId, outcome: 'refused', refusal: 'budget', consent: false, checked: false }));
+    expect(res.status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, offer.callId));
+    expect(call).toMatchObject({ outcome: 'refused', base_total: 3250, offered_total: 3250, extra: 0, catalogue_total: 5500 });
+  });
+
+  it('a pack price edited after the presentation does not block the presented sale; sets take the current pack price', async () => {
+    const offer = await presented(lina, trio);
+    expect((await post({ action: 'product', product: { ...fixture('packpousse'), price: 3100 } }, admin)).status).toBe(200);
+    const res = await post(save({ ...trio, id: offer.callId, outcome: 'trio', meta: { acceptedProposalId: offer.id } }));
+    expect(res.status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, offer.callId));
+    expect(call).toMatchObject({ offered_total: 4900, base_total: 3100, extra: 1800, catalogue_total: 5500 });
   });
 });
 

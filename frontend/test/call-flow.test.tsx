@@ -117,7 +117,7 @@ describe('closing the call (B3, M5, REFUSE, F4)', () => {
 
 describe('step 3 offer (STEP3, C1, M5, RAIL)', () => {
   const initial = [{ ...p('antiacne'), quantity: 5 }], basket = [...initial, { ...p('wcgel'), quantity: 1 }];
-  const low = { altered: true, initial, baseTotal: 9000, basket, total: 10500, tier: 'final' as const, offer: 8600, count: 6, offerIssue: offerProblem(initial, basket, 'final') };
+  const low = { altered: true, initial, baseTotal: 9000, basket, total: 10500, tier: 'final' as const, offer: 8600, count: 6, offerIssue: offerProblem(initial, basket, 'final', catalogue) };
 
   it('« J’ai présenté · prix » sits in a sticky action bar, blocked with the reason when the offer is too low', () => {
     expect(low.offerIssue).toContain('ne dépasse pas la commande initiale');
@@ -145,6 +145,24 @@ describe('step 3 offer (STEP3, C1, M5, RAIL)', () => {
     expect(html).toContain('class="notice notice--warning call-price__issue" role="status"');
     expect(html).toContain('− ' + money(400));
     expect(html).toMatch(/<div class="call-total-bar"><div class="call-readout">[\s\S]*Copier le récapitulatif<\/button><\/div>$/);
+  });
+
+  it('the catalogue price of a hair pair chosen separately shows the pack saving; otherwise « Sans remise » stays', () => {
+    const plain = render(<OfferTotals/>, low);
+    expect(plain).toContain('<span class="option__title">Prix catalogue</span><span class="option__desc">Sans remise</span>');
+    const pair = [{ ...p('shpousse'), quantity: 1 }, { ...p('conditioner'), quantity: 1 }];
+    const html = render(<OfferTotals/>, { altered: true, base: p('shpousse'), initial: [pair[0]!], baseTotal: 1900, basket: pair, total: 3600, tier: 'catalogue', offer: 3250, count: 2, offerIssue: null });
+    expect(html).toContain(`<span class="option__title">Prix catalogue</span><span class="option__desc">Économie <span class="num">${money(350)}</span></span></span><span class="option__price num">${money(3250)}</span>`);
+    expect(html).not.toContain('Sans remise');
+    for (const title of ['Première offre', 'Offre finale autorisée']) expect(html).toContain(`<span class="option__title">${title}</span><span class="option__desc">Économie <span class="num">${money(350)}</span></span></span><span class="option__price num">${money(3250)}</span>`);
+    expect(html).toContain('+ ' + money(1350));
+    expect(html).toContain('Tarif pack appliqué aux produits d’un même pack, sans autre remise.');
+    expect(render(<OfferTotals/>, { altered: true, base: p('shpousse'), initial: [pair[0]!], baseTotal: 1900, basket: pair, total: 3600, tier: 'duo', offer: 3250, count: 2, offerIssue: null })).toContain('Tarif pack conservé. Remise sur les compléments seulement');
+    // An initial order that already holds the pair: its total is read at the pack price.
+    const kept = render(<OfferTotals/>, { altered: false, base: p('shpousse'), initial: pair, baseTotal: 3250, basket: pair, total: 3600, tier: 'duo', offer: 3250, count: 2, offerIssue: null });
+    expect(kept).toContain('Total de la commande initiale au tarif pack, sans remise additionnelle.');
+    expect(kept).toContain(money(3250));
+    expect(render(<OfferTotals/>, { altered: false, initial: [{ ...p('antiacne'), quantity: 1 }, { ...p('wcgel'), quantity: 1 }] })).toContain('Total de la commande initiale, sans remise additionnelle.');
   });
 
   it('step 3 shows price and recap before the presentation (narrow screens), then the bar after the close-out', () => {

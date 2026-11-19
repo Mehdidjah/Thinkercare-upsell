@@ -29,26 +29,60 @@ export function priceOffer(total:number,tier:Tier,count=2):number{
  if(count<2||tier==='catalogue')return total;
  return Math.min(total,Math.ceil((total*(tier==='duo'?10:9))/1100)*100);
 }
-export const isPack=(p:Product)=>p.category==='Pack';
+export const isPack=(p:{category?:string})=>p.category==='Pack';
 export function expand(p:Product,catalogue:Product[]):Product[]{
  if(!isPack(p))return[p];
  if(!p.components?.length)return[p];
  return p.components.map(id=>catalogue.find(x=>x.id===id)).filter((x):x is Product=>!!x);
 }
 export function physicalCount(basket:OrderItem[],catalogue:Product[]):number{return basket.reduce((s,p)=>s+quantityOf(p)*expand(p,catalogue).length,0);}
-export function basketOffer(basket:OrderItem[],tier:Tier):number{
+/** An order line, live or frozen in a snapshot: enough to price it. */
+export type PricedLine=WithQuantity&{id:string;price:number;category?:string};
+export type HairPackSet={pack:Product;count:number};
+/** A hair pack whose price applies to its components chosen one by one (body duo and Junior excluded). */
+const pairPack=(p:Product)=>isPack(p)&&p.domain==='hair'&&!!p.components?.length;
+/**
+ * Pricing only: separate lines covering every component of a hair pack cost that pack, at its current catalogue price.
+ * Greedy in catalogue order; only non-pack lines count as components; sets = smallest component quantity. `rest` holds
+ * the lines left once the units used by the sets are removed. The recorded products stay the separate products.
+ */
+export function hairPackSets<T extends PricedLine>(items:T[],catalogue:Product[]):{sets:HairPackSet[];rest:T[]}{
+ const left=new Map<string,number>(),used=new Map<string,number>(),sets:HairPackSet[]=[];
+ for(const p of items)if(!isPack(p))left.set(p.id,(left.get(p.id)??0)+quantityOf(p));
+ for(const pack of catalogue.filter(pairPack)){
+  const need=new Map<string,number>();
+  for(const id of pack.components!)need.set(id,(need.get(id)??0)+1);
+  const count=Math.min(...[...need].map(([id,n])=>Math.floor((left.get(id)??0)/n)));
+  if(count<1)continue;
+  sets.push({pack,count});
+  for(const [id,n] of need){left.set(id,left.get(id)!-count*n);used.set(id,(used.get(id)??0)+count*n);}
+ }
+ const rest=items.flatMap(p=>{
+  if(isPack(p))return[p];
+  const q=quantityOf(p),take=Math.min(used.get(p.id)??0,q);
+  if(take)used.set(p.id,used.get(p.id)!-take);
+  return take===0?[p]:q>take?[{...p,quantity:q-take}]:[];
+ });
+ return{sets,rest};
+}
+const setsTotal=(sets:HairPackSet[])=>sets.reduce((s,x)=>s+x.count*x.pack.price,0);
+/** Catalogue value with complete hair-pack sets at the pack price: pack lines, sets, then the remaining singles. */
+export function pricedTotal(items:PricedLine[],catalogue:Product[]):number{const{sets,rest}=hairPackSets(items,catalogue);return setsTotal(sets)+itemsTotal(rest);}
+export function basketOffer(basket:OrderItem[],tier:Tier,catalogue:Product[]):number{
  if(basket.some(p=>!Number.isSafeInteger(p.price)||p.price<0))throw new Error('Montant invalide');
- const total=itemsTotal(basket);
+ const{sets,rest}=hairPackSets(basket,catalogue);
+ if(sets.some(x=>!Number.isSafeInteger(x.pack.price)||x.pack.price<0))throw new Error('Montant invalide');
+ const total=setsTotal(sets)+itemsTotal(rest);
  if(unitCount(basket)<2||tier==='catalogue')return total;
- const packs=itemsTotal(basket.filter(isPack));
+ const packs=setsTotal(sets)+itemsTotal(rest.filter(isPack));
  if(!packs)return priceOffer(total,tier,unitCount(basket));
- // Existing pack tariff is protected. Discount only added singles, one final upward rounding.
+ // Pack tariffs (pack lines and complete hair-pack sets) are protected. Discount only the other singles, one final upward rounding.
  return Math.min(total,Math.ceil((packs*11+(total-packs)*(tier==='duo'?10:9))/1100)*100);
 }
 /** Existing products alone retain their catalogue/pack prices; discounts apply to an upsell. */
-export function orderOffer(initial:OrderItem[],basket:OrderItem[],tier:Tier):number{
+export function orderOffer(initial:OrderItem[],basket:OrderItem[],tier:Tier,catalogue:Product[]):number{
  const unchanged=sameOrder(initial,basket);
- return basketOffer(basket,unchanged?'catalogue':tier);
+ return basketOffer(basket,unchanged?'catalogue':tier,catalogue);
 }
 export function basketProblem(basket:OrderItem[],catalogue:Product[]):string|null{
  const flat=basket.flatMap(p=>expand(p,catalogue));
@@ -57,9 +91,9 @@ export function basketProblem(basket:OrderItem[],catalogue:Product[]):string|nul
  return null;
 }
 /** An add-on must raise the order: a discount on the whole basket may not bring it to, or below, what the customer already ordered. */
-export function offerProblem(initial:OrderItem[],basket:OrderItem[],tier:Tier):string|null{
+export function offerProblem(initial:OrderItem[],basket:OrderItem[],tier:Tier,catalogue:Product[]):string|null{
  if(!initial.length||sameOrder(initial,basket))return null;
- const offer=orderOffer(initial,basket,tier),base=itemsTotal(initial);
+ const offer=orderOffer(initial,basket,tier,catalogue),base=pricedTotal(initial,catalogue);
  return offer>base?null:`À ce niveau de prix, l’offre (${money(offer)}) ne dépasse pas la commande initiale (${money(base)}) : choisissez un autre prix ou ajoutez un produit.`;
 }
 /** A product ordered together with a pack that already contains it. */
@@ -241,11 +275,12 @@ export function packUpgrades(catalogue:Product[],base:Product,profile:Profile):C
   return extra.length>0&&extra.every(x=>canCombine(p.id==='bodypack'&&x.id==='nia10'?{...base,domain:'face'}:base,[],x,profile,catalogue))&&p.concerns.some(c=>profile.concerns.includes(c));
  }).map(p=>({product:p,score:100,reason:p.pitch||p.description}));
 }
-export function summaryText(base:Product,basket:OrderItem[],tier:Tier,delivery:number|null,initial:OrderItem[]=[base]){
- const total=itemsTotal(basket),offer=orderOffer(initial,basket,tier),pack=basket.some(isPack),baseTotal=itemsTotal(initial);
+export function summaryText(base:Product,basket:OrderItem[],tier:Tier,delivery:number|null,catalogue:Product[],initial:OrderItem[]=[base]){
+ const total=itemsTotal(basket),offer=orderOffer(initial,basket,tier,catalogue),{sets}=hairPackSets(basket,catalogue),pack=basket.some(isPack)||sets.length>0,baseTotal=pricedTotal(initial,catalogue);
+ const packRates=sets.map(({pack,count})=>`\nTarif pack appliqué : ${expand(pack,catalogue).map(p=>p.name).join(' + ')} = ${money(pack.price)}${count>1?` × ${count} = ${money(pack.price*count)}`:''}.`).join('');
  const fee=delivery===null?'Frais de livraison à confirmer.':`Livraison : ${money(delivery)}. Total avec livraison : ${money(offer+delivery)}.`;
  const replacement=`Commande initiale : ${initial.map(quantityLabel).join(' + ')} (${money(baseTotal)}).${basket[0]?.id!==base.id?' Remplacement par le pack ci-dessous, sans double facturation.':''}\n`;
- return `TOUCHÉ | Récapitulatif de l’offre\n${replacement}${basket.map(p=>`• ${quantityLabel(p)} : ${money(lineTotal(p))}${quantityOf(p)>1?` (${money(p.price)} / unité)`:""}`).join('\n')}\n\nTotal catalogue : ${money(total)}\nOffre produits : ${money(offer)}\nÉconomie : ${money(total-offer)}\nÉcart avec la commande initiale : ${money(offer-baseTotal)}\n${fee}\n${pack?'Tarif pack conservé, réduction uniquement sur les compléments éligibles. ':''}Offre liée à la commande en cours, sans cumul de remises. À valider avec la cliente. Aucun système de commande externe modifié.`;
+ return `TOUCHÉ | Récapitulatif de l’offre\n${replacement}${basket.map(p=>`• ${quantityLabel(p)} : ${money(lineTotal(p))}${quantityOf(p)>1?` (${money(p.price)} / unité)`:""}`).join('\n')}${packRates}\n\nTotal catalogue : ${money(total)}\nOffre produits : ${money(offer)}\nÉconomie : ${money(total-offer)}\nÉcart avec la commande initiale : ${money(offer-baseTotal)}\n${fee}\n${pack?'Tarif pack conservé, réduction uniquement sur les compléments éligibles. ':''}Offre liée à la commande en cours, sans cumul de remises. À valider avec la cliente. Aucun système de commande externe modifié.`;
 }
 export function goalPhrase(p:Profile):string{
  const goals:Record<string,string>={acne:'mieux prendre soin de vos petites imperfections',blackheads:'cibler les points noirs sans surcharger votre routine',oil:'limiter l’apparence de la brillance',marks:'améliorer l’apparence des marques brunes',red:'retrouver davantage de confort',dry:'réduire les sensations de tiraillement',dehydration:'mieux hydrater votre peau',dull:'retrouver un teint plus lumineux',scars:'améliorer l’aspect de votre peau sans promesse sur le relief des cicatrices',growth:'prendre soin de vos longueurs',breakage:'faciliter le démêlage et limiter la casse',fall:'mieux accompagner votre routine capillaire',hairdry:'retrouver des longueurs plus souples',scalpoil:'adapter le lavage à vos racines grasses',flakes:'adapter votre routine aux pellicules',scalpcomfort:'préserver le confort de votre cuir chevelu',bodyspots:'prendre soin des imperfections de votre corps',bodydry:'retrouver davantage de confort sur votre corps'};
@@ -274,7 +309,7 @@ export function customerBenefit(p:Product):string{
  return lines[p.id]||p.pitch||p.description;
 }
 export function salesPitch(base:Product,basket:OrderItem[],profile:Profile,tier:Tier,catalogue:Product[],initial:OrderItem[]=[base]){
- const offer=orderOffer(initial,basket,tier),total=itemsTotal(basket),extra=offer-itemsTotal(initial);
+ const offer=orderOffer(initial,basket,tier,catalogue),total=itemsTotal(basket),extra=offer-pricedTotal(initial,catalogue);
  const expanded=basket.flatMap(p=>expand(p,catalogue)),initialIds=new Set(initial.flatMap(p=>expand(p,catalogue)).map(p=>p.id));
  const complements=expanded.filter(p=>!initialIds.has(p.id));
  const facts=complements.flatMap(p=>(p.ingredients||[]).slice(0,2).map(i=>`${p.short} : ${i.name}. ${i.role}`));
@@ -288,7 +323,7 @@ export function salesPitch(base:Product,basket:OrderItem[],profile:Profile,tier:
  return{opener,value,facts,price,close,text:[opener,value,price,close].join('\n\n')};
 }
 export function objections(base:Product,basket:OrderItem[],profile:Profile,tier:Tier,catalogue:Product[],initial:OrderItem[]=[base]){
- const offer=orderOffer(initial,basket,tier),final=orderOffer(initial,basket,'final'),total=itemsTotal(basket),baseTotal=itemsTotal(initial),extra=offer-baseTotal;
+ const offer=orderOffer(initial,basket,tier,catalogue),final=orderOffer(initial,basket,'final',catalogue),total=itemsTotal(basket),baseTotal=pricedTotal(initial,catalogue),extra=offer-baseTotal;
  const items=basket.flatMap(p=>expand(p,catalogue)),baseIds=new Set(initial.flatMap(p=>expand(p,catalogue)).map(p=>p.id)),p=items.find(p=>!baseIds.has(p.id));
  const proof=p?.ingredients?.slice(0,2).map(i=>`${i.name} : ${i.role}`).join(' ')||p?.pitch||'Chaque produit garde un rôle précis dans la routine.';
  return[

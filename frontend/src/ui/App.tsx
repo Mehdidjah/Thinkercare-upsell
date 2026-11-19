@@ -1,5 +1,5 @@
 import {useState,useEffect,useRef,type ReactNode} from 'react';
-import {profileChanges,money,quantityOf,itemsTotal,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,offerProblem,packDuplicate,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,type Profile,type Product,type Tier} from '@touche/domain';
+import {profileChanges,money,quantityOf,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,packDuplicate,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,type Profile,type Product,type Tier} from '@touche/domain';
 import {reportCache} from '../data/report-cache';
 import {setExpectedUser,lockRequests,type RequestError} from '../data/api';
 import {announceSession,onSessionMessage,sessionReaction} from '../data/session-channel';
@@ -162,7 +162,7 @@ export default function Desk(){
   const s=storeRef.current,plan=callState.leavePlan(s,reason);
   if(plan!=='confirm')return true;
   const live=callState.liveCall(s)!,catalogue=stateRef.current?.products||[],{initial,basket}=callState.basketOf(live,catalogue),units=physicalCount(basket,catalogue);
-  const what=<>Le brouillon {live.orderRef||'sans référence'} ({units} soin{units>1?'s':''}, {live.presented.length?`offre présentée à ${money(orderOffer(initial,basket,live.tier))}`:'offre non présentée'}){s.draft.demo?', mis de côté pendant l’exemple,':''}</>;
+  const what=<>Le brouillon {live.orderRef||'sans référence'} ({units} soin{units>1?'s':''}, {live.presented.length?`offre présentée à ${money(orderOffer(initial,basket,live.tier,catalogue))}`:'offre non présentée'}){s.draft.demo?', mis de côté pendant l’exemple,':''}</>;
   if(reason==='leave')return confirmAction({title:'Quitter ThinkerCare ?',body:<p>{what} n’est pas enregistré. Il reste gardé dans cet onglet si vous y revenez, mais il sera perdu si l’onglet est fermé.</p>,cancelLabel:'Rester sur l’appel',confirmLabel:'Quitter la page',tone:'danger'});
   return confirmAction({title:reason==='signout'?'Se déconnecter et abandonner l’appel ?':'Abandonner l’appel en cours ?',body:<p>{what} sera supprimé.</p>,cancelLabel:'Reprendre l’appel',confirmLabel:reason==='signout'?'Abandonner et se déconnecter':'Abandonner l’appel',tone:'danger'});
  }
@@ -197,13 +197,14 @@ export default function Desk(){
  // ── The call on screen ────────────────────────────────────────────────────────────────────────────────────
  const d=store.draft,products=state?.products||[];
  const {base,upgrade,active:activeBase,initial,companions,basket}=callState.basketOf(d,products);
- const baseId=d.baseIds[0]||'',baseTotal=itemsTotal(initial),profile=d.profile,verifiedProducts=d.verifiedProducts,tier=d.tier;
- const total=itemsTotal(basket),offer=orderOffer(initial,basket,tier),fee=d.delivery===''?null:Number(d.delivery),stop=reviewStop(profile),blocked=stop?.text??null;
+ const baseId=d.baseIds[0]||'',profile=d.profile,verifiedProducts=d.verifiedProducts,tier=d.tier;
+ // Same shared pricing as the server: a hair pack's products chosen one by one cost the pack (callState.callAmounts).
+ const {total,baseTotal,offer,offerIssue}=callState.callAmounts(initial,basket,tier,products),fee=d.delivery===''?null:Number(d.delivery),stop=reviewStop(profile),blocked=stop?.text??null;
  // The official pack offered for a single initial product. Once something is added it is held back, with a note (PACK).
  const packsAlone=base&&initial.length===1&&!d.upgradeId?packUpgrades(products,base,{...profile,verifiedProducts}):[];
  const upgrades=d.adds.length?[]:packsAlone,heldPacks=d.adds.length?packsAlone.map(c=>c.product):[];
  const candidates=activeBase?recommend(products,activeBase,{...profile,verifiedProducts},companions):[],count=physicalCount(basket,products),altered=!sameOrder(initial,basket),domain=domainOf(base),notes=safetyNotes(profile),missing=missingAnswers(profile,base);
- const offerIssue=offerProblem(initial,basket,tier),duplicate=packDuplicate(initial,products);
+ const duplicate=packDuplicate(initial,products);
  const selectedQuantities=Object.fromEntries(basket.map(p=>[p.id,quantityOf(p)]));
  const requestIds=searchIds(products,requestSearch),orderIds=searchIds(products,search);
  // Step 3: every product that may be added, the added ones kept in their row (B5). A pack offered as the upgrade is never a

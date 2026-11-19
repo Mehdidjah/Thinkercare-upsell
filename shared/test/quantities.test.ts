@@ -6,22 +6,22 @@ const item=(id:string,quantity=1):OrderItem=>({...catalogue.find(p=>p.id===id)!,
 
 describe('ordered quantities',()=>{
  it('prices repeated units without rounding each unit and keeps an unchanged order at catalogue price',()=>{
-  expect(orderOffer([item('antiacne',2)],[item('antiacne',2)],'duo')).toBe(3600);
-  expect(orderOffer([item('antiacne')],[item('antiacne',2)],'catalogue')).toBe(3600);
-  expect(basketOffer([item('antiacne',2)],'duo')).toBe(3300);
-  expect(basketOffer([item('antiacne',2)],'final')).toBe(3000);
-  expect(basketOffer([item('antiacne',2),item('wcgel',3)],'duo')).toBe(7400);
+  expect(orderOffer([item('antiacne',2)],[item('antiacne',2)],'duo',catalogue)).toBe(3600);
+  expect(orderOffer([item('antiacne')],[item('antiacne',2)],'catalogue',catalogue)).toBe(3600);
+  expect(basketOffer([item('antiacne',2)],'duo',catalogue)).toBe(3300);
+  expect(basketOffer([item('antiacne',2)],'final',catalogue)).toBe(3000);
+  expect(basketOffer([item('antiacne',2),item('wcgel',3)],'duo',catalogue)).toBe(7400);
  });
  it('multiplies the protected pack tariff and counts every physical unit',()=>{
   const basket=[item('packpousse',2),item('antiacne',2)];
-  expect(basketOffer(basket,'duo')).toBe(9800);
-  expect(basketOffer(basket,'final')).toBe(9500);
+  expect(basketOffer(basket,'duo',catalogue)).toBe(9800);
+  expect(basketOffer(basket,'final',catalogue)).toBe(9500);
   expect(physicalCount(basket,catalogue)).toBe(6);
   expect(basketProblem(basket,catalogue)).toBeNull();
   expect(basketProblem([item('packpousse',2),item('shpousse')],catalogue)).toBeTruthy();
  });
  it('shows quantities, unit prices, line totals and the correct original value in the copied offer',()=>{
-  const text=summaryText(item('antiacne'),[item('antiacne',3)],'catalogue',400,[item('antiacne',2)]);
+  const text=summaryText(item('antiacne'),[item('antiacne',3)],'catalogue',400,catalogue,[item('antiacne',2)]);
   expect(text).toContain('Sérum Anti-Acné × 2');
   expect(text).toContain('Sérum Anti-Acné × 3 : 5\u202f400 DA');
   expect(text).toContain('1\u202f800 DA / unité');

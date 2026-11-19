@@ -9,6 +9,7 @@ import {
   money,
   offerProblem,
   physicalCount,
+  pricedTotal,
   proposalOriginals,
   quantityOf,
   itemsTotal,
@@ -205,10 +206,10 @@ export class CallsService {
     }
     // H2: the catalogue changed under the call; the desk reloads it in place and keeps the call.
     // Checked before M5, so a desk with stale prices first gets the current ones.
-    const serverOffer = basketOffer(b, v.tier);
+    const serverOffer = basketOffer(b, v.tier, all);
     if (serverOffer !== v.agreedTotal) throw priceChanged(serverOffer, client);
     // M5: an add-on offer must raise the order.
-    const lowOffer = offerProblem(initial, b, v.tier);
+    const lowOffer = offerProblem(initial, b, v.tier, all);
     if (lowOffer) throw new DeskError(400, lowOffer);
     const createdAt = new Date();
     const proposal: Proposal = {
@@ -219,9 +220,10 @@ export class CallsService {
       base: snapshot(initial[0], all),
       originals: initial.map((p) => snapshot(p, all)),
       products: b.map((p) => snapshot(p, all)),
+      // The list-price sum; the offer and the initial value price complete hair-pack sets at the pack price.
       catalogueTotal: itemsTotal(b),
       offerTotal: v.agreedTotal,
-      extra: v.agreedTotal - itemsTotal(initial),
+      extra: v.agreedTotal - pricedTotal(initial, all),
       tier: v.tier,
       delivery: v.delivery,
       version: 3,
@@ -399,11 +401,13 @@ export class CallsService {
             'Le résultat doit correspondre aux soins physiques, composants des packs inclus.',
           );
         }
-        // M5: an accepted add-on must raise the order.
+        // M5: an accepted add-on must raise the order. Singles keep their presented prices; a complete hair-pack set takes
+        // the current pack price, on both sides (the same rule as the stored initial value below).
         const lowOffer = offerProblem(
           snapshotOrder(proposalOriginals(presentation)),
           snapshotOrder(presentation.products),
           presentation.tier as Tier,
+          all,
         );
         if (lowOffer) throw new DeskError(400, lowOffer);
       }
@@ -434,7 +438,8 @@ export class CallsService {
     const sameBasket = !!locked && orderSignature(locked.products) === orderSignature(b);
     const snapshots: ItemSnapshot[] = sameBasket ? locked.products : b.map((p) => snapshot(p, all));
     const originals = locked ? proposalOriginals(locked) : initial.map((p) => snapshot(p, all));
-    const lockedBase = itemsTotal(originals);
+    // The initial order at its pack-aware value: frozen snapshot prices for singles, the current pack price for a set.
+    const lockedBase = pricedTotal(originals, all);
     const lockedSum = sameBasket ? locked.catalogueTotal : itemsTotal(b);
     const offer = presentation
       ? presentation.offerTotal

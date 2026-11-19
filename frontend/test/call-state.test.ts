@@ -458,3 +458,28 @@ describe('review follow-ups (state, recording, callux)', () => {
     expect(src).toContain('void-call reopens it and answers `reopenedReminderId`');
   });
 });
+
+describe('hair-pack products chosen separately (screen amounts = server amounts)', () => {
+  /** Shampooing Pousse ordered, Après-Shampooing added: 3 600 DA at list price, 3 250 DA as Pack Pousse et Croissance. */
+  const pairCall = (extra: Partial<cs.CallDraft> = {}) => liveCall({ baseIds: ['shpousse'], baseQuantities: { shpousse: 1 }, profile: hair, profileDomain: 'hair', adds: ['conditioner'], ...extra });
+  const amounts = (d: cs.CallDraft, products = catalogue) => { const { initial, basket } = cs.basketOf(d, products); return cs.callAmounts(initial, basket, d.tier, products); };
+
+  it('prices the pair at the pack price at every price level, adding 1 350 DA to the initial shampoo', () => {
+    for (const tier of ['catalogue', 'duo', 'final'] as const) {
+      expect(amounts(pairCall({ tier }))).toEqual({ total: 3600, baseTotal: 1900, offer: 3250, offerIssue: null });
+      expect(cs.offerOf(pairCall({ tier }), catalogue)).toBe(3250);
+    }
+  });
+
+  it('values an initial order that already holds the pair at the pack price', () => {
+    const d = pairCall({ baseIds: ['shpousse', 'conditioner'], baseQuantities: { shpousse: 1, conditioner: 1 }, adds: [] });
+    expect(amounts(d)).toEqual({ total: 3600, baseTotal: 3250, offer: 3250, offerIssue: null });
+    expect(amounts({ ...d, adds: ['serumhair'], tier: 'final' })).toEqual({ total: 5500, baseTotal: 3250, offer: 4900, offerIssue: null });
+  });
+
+  it('a new pack price in the catalogue changes the amount to announce and unticks the agreement', () => {
+    const d = pairCall({ tier: 'duo' }), cheaper = catalogue.map(x => x.id === 'packpousse' ? { ...x, price: 3100 } : x);
+    expect(cs.offerOf(d, cheaper)).toBe(3100);
+    expect(cs.afterCatalogueChange(d, catalogue, cheaper)).toMatchObject({ consent: false, checked: true });
+  });
+});

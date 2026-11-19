@@ -76,9 +76,9 @@ const call: ActivityCall = {
 };
 describe("complete original order", () => {
   it("keeps the full original price until a new product is added", () => {
-    expect(orderOffer(initial, initial, "duo")).toBe(3300);
-    expect(orderOffer(initial, [...initial].reverse(), "final")).toBe(3300);
-    expect(orderOffer(initial, basket, "duo")).toBe(4400);
+    expect(orderOffer(initial, initial, "duo", catalogue)).toBe(3300);
+    expect(orderOffer(initial, [...initial].reverse(), "final", catalogue)).toBe(3300);
+    expect(orderOffer(initial, basket, "duo", catalogue)).toBe(4400);
   });
   it("quotes the uplift from both original products and explains only the new complement", () => {
     const pitch = salesPitch(
@@ -98,7 +98,7 @@ describe("complete original order", () => {
       objections(initial[0], basket, profile, "duo", catalogue, initial)[0]
         .answer,
     ).toContain("3\u202f300");
-    expect(summaryText(initial[0], initial, "duo", null, initial)).toContain(
+    expect(summaryText(initial[0], initial, "duo", null, catalogue, initial)).toContain(
       "Écart avec la commande initiale : 0 DA",
     );
   });
@@ -163,7 +163,7 @@ describe("complete original order", () => {
 describe("accepted routines above three products", () => {
   it("counts larger routines in revenue, products and initial-order analytics", () => {
     const products = [...basket, get("total"), get("shpousse")];
-    const offer = orderOffer(initial, products, "duo");
+    const offer = orderOffer(initial, products, "duo", catalogue);
     const p = { ...proposal, products: products.map(snapshot), offerTotal: offer, extra: offer - 3300 };
     const c = { ...call, outcome: "routine", products: p.products, offered_total: offer, extra: p.extra, proposals: [p] };
     expect(summary([c])).toMatchObject({ won: 1, routines: 1, trios: 0, duos: 0, extra: offer - 3300, acceptRate: 100 });

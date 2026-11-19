@@ -1,4 +1,4 @@
-import {EMPTY_PROFILE,MAX_ITEM_QUANTITY,OUTCOMES,basketProblem,domainOf,expand,isPack,manualAddCheck,orderOffer,orderSignature,packUpgrades,proposalOriginals,questionsReady,quantityOf,recommend,reviewReason,type ItemSnapshot,type OrderItem,type Product,type Profile,type Proposal,type Tier} from '@touche/domain';
+import {EMPTY_PROFILE,MAX_ITEM_QUANTITY,OUTCOMES,basketProblem,domainOf,expand,isPack,itemsTotal,manualAddCheck,offerProblem,orderOffer,orderSignature,packUpgrades,pricedTotal,proposalOriginals,questionsReady,quantityOf,recommend,reviewReason,type ItemSnapshot,type OrderItem,type Product,type Profile,type Proposal,type Tier} from '@touche/domain';
 
 /**
  * The guided call as plain data, and every change to it as a pure function (plain objects in, plain objects out).
@@ -326,10 +326,16 @@ export function reopenAfterVoid(d:CallDraft,id:string=uuid()):CallDraft{
  return {...d,callId:id,linkedCallId:d.linkedCallId||d.callId,saved:false,savedOutcome:'',savedAt:'',presented:[],presentationKeys:{},consent:false,checked:false};
 }
 
+/** The amounts on screen, by the shared rules the server checks (a hair pack's products chosen one by one cost the pack):
+ *  `total` the list-price sum, `baseTotal` the initial order's value, `offer` at the chosen price level, and why that offer
+ *  cannot be presented (M5). */
+export function callAmounts(initial:OrderItem[],basket:OrderItem[],tier:Tier,products:Product[]){
+ return {total:itemsTotal(basket),baseTotal:pricedTotal(initial,products),offer:orderOffer(initial,basket,tier,products),offerIssue:offerProblem(initial,basket,tier,products)};
+}
 /** The price to announce for this call with these catalogue prices. */
 export function offerOf(d:CallDraft,products:Product[]):number|null{
  const {initial,basket}=basketOf(d,products);
- return initial.length&&basket.length?orderOffer(initial,basket,d.tier):null;
+ return initial.length&&basket.length?orderOffer(initial,basket,d.tier,products):null;
 }
 /** The catalogue was reloaded under an open call: when the price to announce changed, the customer's agreement was given
  *  for another amount and is unticked. Null when nothing changes. */
