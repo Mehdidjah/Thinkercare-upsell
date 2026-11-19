@@ -52,6 +52,8 @@ export type CallModel={
  addComplement:(id:string,verify:string[],requested:boolean)=>void;removeComplement:(id:string)=>void;changeQuantity:(id:string,next:number)=>boolean;
  /** « + Une unité » in the picker: the rail's quantity change, one unit up, announced (UNIT). */
  addUnit:(id:string)=>boolean;
+ /** « + Une unité » on a reference waiting for its check: the check is confirmed in the row, then one unit is added (UNIT-CHECK). */
+ verifyAndAddUnit:(id:string)=>boolean;
  basket:OrderItem[];count:number;total:number;altered:boolean;
  tier:Tier;chooseTier:(tier:Tier)=>void;offer:number;
  /** Why this price cannot be presented: the offer does not exceed the initial order (M5). */

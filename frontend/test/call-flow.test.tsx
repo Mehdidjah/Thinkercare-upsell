@@ -304,14 +304,15 @@ describe('one more unit of a product already in the order (UNIT)', () => {
     expect(rail).toMatch(/aria-label="Quantité de Sérum Anti-Acné" value="2"/);
   });
 
-  it('a refusal of the rail keeps the button focusable with its reason; a saved or busy call disables it', () => {
+  it('a reference to verify keeps « Une unité » usable to open its check; other refusals keep the button focusable with their reason; a saved or busy call disables it (UNIT-CHECK)', () => {
     const toVerify = order({ baseIds: ['nia12'], baseQuantities: { nia12: 1 } });
     const html = render(<ProductPicker/>, { step: 2, requests: rowsFor(toVerify) });
-    expect(html).toMatch(/<button type="button" class="btn btn--secondary btn--sm call-product__unit" aria-disabled="true" aria-describedby="unit-reason-nia12" aria-label="Ajouter une unité de Niacinamide 12 % Ultra Pure">/);
-    expect(html).toMatch(/<p id="unit-reason-nia12" class="call-product__blocked"><svg[\s\S]*?<\/svg>Confirmez la vérification de cette référence avant d’augmenter la quantité\.<\/p>/);
+    expect(html).toMatch(/<button type="button" class="btn btn--secondary btn--sm call-product__unit" aria-label="Ajouter une unité de Niacinamide 12 % Ultra Pure" aria-expanded="false" aria-controls="unit-check-nia12">/);
+    expect(html).not.toMatch(/call-product__unit" aria-disabled="true" aria-describedby="unit-reason-nia12"/);
+    expect(html).toMatch(/<p id="unit-reason-nia12" class="call-product__blocked"><svg[\s\S]*?<\/svg>Vérification requise : « Une unité » vous la fait confirmer ici\.<\/p>/);
     const full = render(<ProductPicker/>, { step: 2, requests: rowsFor(order({ quantities: { antiacne: 99 } })) });
     expect(full).toContain('99 unités au maximum par référence.');
-    expect(full).toContain('aria-describedby="unit-reason-antiacne"');
+    expect(full).toMatch(/call-product__unit" aria-disabled="true" aria-describedby="unit-reason-antiacne"/);
     for (const state of [{ saved: true }, { busy: true }, { presenting: true }]) {
       expect(render(<ProductPicker/>, { step: 2, requests: rowsFor(order()), ...state })).toMatch(/class="btn btn--secondary btn--sm call-product__unit" disabled=""/);
     }
@@ -491,6 +492,15 @@ describe('source guards', () => {
     expect(app).toContain('if(!applyQuantity(callState.addUnit(current(),id,products)))return false;');
     expect(app).toContain('announce(`${productName(id)} : une unité ajoutée, ×${current().quantities[id]} · ${unitsOf(current())}`)');
     expect(app).toMatch(/addComplement,removeComplement,changeQuantity,addUnit,/);
+  });
+  it('« + Une unité » on a reference to verify opens its check in the row, then adds the unit (UNIT-CHECK)', () => {
+    const picker = readFileSync(new URL('../src/ui/call/ProductPicker.tsx', import.meta.url), 'utf8');
+    expect(picker).toContain("unitCheck=!!line?.refusal&&unitNeedsCheck({verifiedProducts},p.id,products)");
+    expect(picker).toContain("blocked={!!line.refusal&&!unitCheck}");
+    expect(picker).toContain("onClick={()=>unitCheck?setUnitCheckId(checkingUnit?'':p.id):addUnit(p.id)}");
+    expect(picker).toContain("onClick={()=>{if(verifyAndAddUnit(p.id)){setUnitCheckId('');focusLater(`#picker-row-${p.id} .call-product__unit`);}}}>Vérification faite : ajouter une unité</button>");
+    expect(app).toContain('if(!applyQuantity(callState.verifyAndAddUnit(current(),id,products)))return false;');
+    expect(app).toMatch(/addComplement,removeComplement,changeQuantity,addUnit,verifyAndAddUnit,/);
   });
   it('additions, removals and a replaced concern are announced; a copy failure shows the text (B5, F5, COPY)', () => {
     expect(app).toContain('announce(`${productName(id)} ajouté · ${unitsOf(current())}`)');

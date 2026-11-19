@@ -278,6 +278,12 @@ export default function Desk(){
   announce(`${productName(id)} : une unité ajoutée, ×${current().quantities[id]} · ${unitsOf(current())}`);
   return true;
  }
+ /** The check confirmed in the picker row, then one unit: as ticking the check, then « + Une unité » (UNIT-CHECK). */
+ function verifyAndAddUnit(id:string){
+  if(!applyQuantity(callState.verifyAndAddUnit(current(),id,products)))return false;
+  announce(`${productName(id)} : vérification confirmée, une unité ajoutée, ×${current().quantities[id]} · ${unitsOf(current())}`);
+  return true;
+ }
  function chooseUpgrade(id:string){if(commit(callState.chooseUpgrade(current(),id))){setConfirmId('');setRequestSearch('');}}
  const clearUpgrade=()=>applyRemoval(current(),callState.clearUpgrade(current(),products));
  const toggleVerified=(product:Product,checked:boolean)=>applyRemoval(current(),callState.toggleVerification(current(),product,checked,products));
@@ -395,7 +401,7 @@ export default function Desk(){
   domain,profile,changeProfile,toggleConcern,blocked,stop,notes,missing,
   upgrades,heldPacks,upgrade,upgradeId:d.upgradeId,chooseUpgrade,clearUpgrade,adds:d.adds,requestedIds:d.requestedIds,
   verifiedProducts,toggleVerified,setDetail,
-  candidates,requests,requestApproximate,requestSearch,setRequestSearch,confirmId,setConfirmId,addComplement,removeComplement,changeQuantity,addUnit,
+  candidates,requests,requestApproximate,requestSearch,setRequestSearch,confirmId,setConfirmId,addComplement,removeComplement,changeQuantity,addUnit,verifyAndAddUnit,
   basket,count,total,altered,tier,chooseTier:(t:Tier)=>commit(callState.chooseTier(current(),t)),offer,offerIssue,delivery:d.delivery,changeDelivery:value=>commit(callState.changeDelivery(current(),value)),fee,copy,copyFallback,closeCopyFallback:()=>setCopyFallback(null),
   presented:d.presented,matchingOffer,keepsPresentedPrice,presentOffer,handledObjections:d.handledObjections,toggleObjection:key=>commit(callState.toggleObjection(current(),key)),
   consent:d.consent,setConsent:edit('consent'),checked:d.checked,setChecked:edit('checked'),callbackAt:d.callbackAt,setCallbackAt:edit('callbackAt'),refusal:d.refusal,setRefusal:edit('refusal'),record,

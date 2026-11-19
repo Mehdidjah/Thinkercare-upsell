@@ -230,6 +230,16 @@ export function addUnit(d:CallDraft,id:string,products:Product[]):{draft:CallDra
 /** A line of the basket as the step-3 list shows it (UNIT): part of the customer's order or not, its quantity, the units
  *  added above the order (as the rail counts them), and why « + Une unité » is refused (null when it is not). */
 export type BasketLine={initial:boolean;quantity:number;extra:number;refusal:string|null};
+/** « + Une unité » waits for this reference's specific check (label, protocol): it can be confirmed in the row itself (UNIT-CHECK). */
+export function unitNeedsCheck(d:Pick<CallDraft,'verifiedProducts'>,id:string,products:Product[]):boolean{
+ const p=find(products,id);return !!p&&(!p.recommendable||!!p.verificationRequired)&&!d.verifiedProducts.includes(id);
+}
+/** The adviser confirms the check in the row, then one unit is added: exactly ticking the check, then « + Une unité » (UNIT-CHECK). */
+export function verifyAndAddUnit(d:CallDraft,id:string,products:Product[]):{draft:CallDraft}|{error:string}|null{
+ const p=find(products,id);if(!p||d.saved)return null;
+ const checked=toggleVerification(d,p,true,products);
+ return addUnit(checked?checked.draft:d,id,products);
+}
 export function basketLines(d:CallDraft,products:Product[]):Map<string,BasketLine>{
  const {initial,basket}=basketOf(d,products);
  return new Map(basket.map(p=>{

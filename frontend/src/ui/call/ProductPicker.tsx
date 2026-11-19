@@ -4,7 +4,7 @@ import {Button} from '../shared/Button';
 import {Icon} from '../shared/Icon';
 import {Photo} from '../shared/Photo';
 import {useCall,type CallRequest} from './callModel';
-import {pickerOrder} from './callState';
+import {pickerOrder,unitNeedsCheck} from './callState';
 import {focusLater,reveal} from './reveal';
 
 const rowAction=(id:string)=>`#picker-row-${id} .call-product__action`;
@@ -24,8 +24,11 @@ function showVerification(id:string){const box=document.getElementById('verify-'
  * refusal keeps the button focusable with its reason, and a missing verification opens its box (UNIT).
  * « Ajouter » that needs a check opens the box in view with focus on its title; « Annuler » returns to « Ajouter » (CONFIRMBOX).
  */
-export function ProductPicker(){const {saved,busy,presenting,setDetail,candidates,requests,requestApproximate,requestSearch,setRequestSearch,confirmId,setConfirmId,addComplement,removeComplement,addUnit,count,upgradeId}=useCall();
+export function ProductPicker(){const {saved,busy,presenting,setDetail,candidates,requests,requestApproximate,requestSearch,setRequestSearch,confirmId,setConfirmId,addComplement,removeComplement,addUnit,verifyAndAddUnit,verifiedProducts,products,count,upgradeId}=useCall();
  const [showAll,setShowAll]=useState(false);
+ // « + Une unité » on a reference waiting for its specific check: the check opens in the row itself (UNIT-CHECK).
+ const [unitCheckId,setUnitCheckId]=useState('');
+ useEffect(()=>{if(unitCheckId)focusLater('#unit-check-title-'+unitCheckId);},[unitCheckId]);
  const searching=!!requestSearch.trim();
  // The order on screen, kept while the search and the « whole catalogue » choice stay the same.
  const shown=useRef<{key:string;ids:string[]}>({key:'',ids:[]});
@@ -55,7 +58,7 @@ export function ProductPicker(){const {saved,busy,presenting,setDetail,candidate
    {requestApproximate&&rows.length>0&&<p className="call-picker__approx" role="status">Aucun résultat exact. Produits proches :</p>}
    {(rows.length>0||searching)&&<div className="call-picker__list" role="region" aria-label="Produits à ajouter" tabIndex={0}>{rows.length?<ul className="call-picker__rows" role="list">{rows.map(r=>{
     const {product:p,check:chk,suggestion,added,line}=r;
-    const needsConfirmation=!line&&!suggestion&&chk.warnings.length>0,confirming=needsConfirmation&&confirmId===p.id,blockedRow=!line&&!!chk.blocked,unitReason='unit-reason-'+p.id;
+    const needsConfirmation=!line&&!suggestion&&chk.warnings.length>0,confirming=needsConfirmation&&confirmId===p.id,blockedRow=!line&&!!chk.blocked,unitReason='unit-reason-'+p.id,unitCheck=!!line?.refusal&&unitNeedsCheck({verifiedProducts},p.id,products),checkingUnit=unitCheck&&unitCheckId===p.id;
     return <li key={p.id} id={'picker-row-'+p.id} className="call-product" data-state={added?'added':line?'ordered':blockedRow?'blocked':confirming?'check':suggestion?'suggested':'default'}>
      <Photo product={p} small/>
      <div className="call-product__main">
@@ -64,14 +67,15 @@ export function ProductPicker(){const {saved,busy,presenting,setDetail,candidate
       {suggestion&&<p className="call-product__reason">{suggestion.reason}</p>}
       {line&&line.extra>0&&<p className="call-product__reason">Dont {line.extra} {line.extra>1?'unités ajoutées':'unité ajoutée'}</p>}
       {blockedRow&&<p className="call-product__blocked"><Icon name="lock"/>{chk.blocked}</p>}
-      {line?.refusal&&<p id={unitReason} className="call-product__blocked"><Icon name="lock"/>{line.refusal}</p>}
+      {line?.refusal&&<p id={unitReason} className="call-product__blocked"><Icon name="lock"/>{unitCheck?'Vérification requise : « Une unité » vous la fait confirmer ici.':line.refusal}</p>}
       <button type="button" className="link-btn link-btn--sm" aria-label={'Voir la fiche de '+p.name} onClick={()=>setDetail(p)}>Voir la fiche</button>
      </div>
      <div className="call-product__side"><span className="call-product__price num">{money(p.price)}</span>
       {line&&<span className="call-product__added"><Icon name="check"/>{line.initial?'Déjà dans la commande':'Dans la routine'} · <span className="num">×{line.quantity}</span></span>}
       {!blockedRow&&(!line||added)&&<Button size="sm" className="call-product__action" guard disabled={saved||(added&&(busy||presenting))} aria-label={(added?'Retirer ':'Ajouter ')+p.name+(added?' de la routine':'')} aria-expanded={needsConfirmation?confirming:undefined} aria-controls={needsConfirmation?'request-confirm-'+p.id:undefined} onClick={()=>act(r)}>{added?<>Retirer</>:<><Icon name="plus"/>Ajouter</>}</Button>}
-      {line&&<Button size="sm" className="call-product__unit" guard disabled={saved||busy||presenting} blocked={!!line.refusal} reasonId={unitReason} onBlocked={()=>showVerification(p.id)} aria-label={'Ajouter une unité de '+p.name} onClick={()=>addUnit(p.id)}>{!line.refusal&&<Icon name="plus"/>}Une unité</Button>}
+      {line&&<Button size="sm" className="call-product__unit" guard disabled={saved||busy||presenting} blocked={!!line.refusal&&!unitCheck} reasonId={unitReason} onBlocked={()=>showVerification(p.id)} aria-label={'Ajouter une unité de '+p.name} aria-expanded={unitCheck?checkingUnit:undefined} aria-controls={unitCheck?'unit-check-'+p.id:undefined} onClick={()=>unitCheck?setUnitCheckId(checkingUnit?'':p.id):addUnit(p.id)}>{(!line.refusal||unitCheck)&&<Icon name="plus"/>}Une unité</Button>}
      </div>
+     {checkingUnit&&<div className="call-product__confirm" id={'unit-check-'+p.id} role="group" aria-labelledby={'unit-check-title-'+p.id}><h4 className="call-product__confirm-title" id={'unit-check-title-'+p.id} tabIndex={-1}><Icon name="alert"/>Vérification avant d’ajouter une unité</h4><ul className="call-product__warnings"><li>{p.verificationRequired||'Vérifiez l’étiquette et le protocole de cette référence.'}</li></ul><div className="call-product__confirm-actions"><button type="button" className="btn btn--primary btn--sm" disabled={saved||busy||presenting} onClick={()=>{if(verifyAndAddUnit(p.id)){setUnitCheckId('');focusLater(`#picker-row-${p.id} .call-product__unit`);}}}>Vérification faite : ajouter une unité</button><button type="button" className="btn btn--ghost btn--sm" onClick={()=>{setUnitCheckId('');focusLater(`#picker-row-${p.id} .call-product__unit`);}}>Annuler</button></div></div>}
      {!blockedRow&&confirming&&<div className="call-product__confirm" id={'request-confirm-'+p.id} role="group" aria-labelledby={'request-confirm-title-'+p.id}><h4 className="call-product__confirm-title" id={'request-confirm-title-'+p.id} tabIndex={-1}><Icon name="alert"/>À vérifier avant l’ajout</h4><ul className="call-product__warnings">{chk.warnings.map(w=><li key={w}>{w}</li>)}</ul><div className="call-product__confirm-actions"><button type="button" className="btn btn--primary btn--sm" disabled={saved} onClick={()=>add(r)}>Confirmer : la cliente le demande, compatibilité vérifiée</button><button type="button" className="btn btn--ghost btn--sm" onClick={()=>cancel(p.id)}>Annuler</button></div></div>}
     </li>;
    })}</ul>:<div className="empty"><Icon name="search"/><p className="empty__title">Aucun produit ne correspond à cette recherche.</p><button type="button" className="btn btn--secondary btn--sm" onClick={()=>search('')}>Effacer la recherche</button></div>}</div>}

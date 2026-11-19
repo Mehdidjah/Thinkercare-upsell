@@ -257,6 +257,22 @@ describe('one more unit of a product already in the order (UNIT)', () => {
     expect((cs.addUnit(packed, 'packpousse', catalogue) as { draft: cs.CallDraft }).draft.quantities).toEqual({ packpousse: 2 });
   });
 
+  it('a reference to verify: the check is confirmed in its row, then one unit is added (UNIT-CHECK)', () => {
+    const toVerify = ordered({ baseIds: ['nia12'], baseQuantities: { nia12: 1 } });
+    expect(cs.unitNeedsCheck(toVerify, 'nia12', catalogue)).toBe(true);
+    expect(cs.unitNeedsCheck(ordered(), 'antiacne', catalogue)).toBe(false);
+    const r = cs.verifyAndAddUnit(toVerify, 'nia12', catalogue) as { draft: cs.CallDraft };
+    expect(r.draft.verifiedProducts).toContain('nia12');
+    expect(r.draft.quantities).toEqual({ nia12: 2 });
+    expect(cs.basketLines(r.draft, catalogue).get('nia12')).toMatchObject({ initial: true, quantity: 2, extra: 1, refusal: null });
+    expect(cs.unitNeedsCheck(r.draft, 'nia12', catalogue)).toBe(false);
+    // Same as ticking the check, then « + Une unité ».
+    expect(r).toEqual(cs.addUnit({ ...toVerify, verifiedProducts: ['nia12'] }, 'nia12', catalogue));
+    // Other refusals still stop it, and nothing changes once saved.
+    expect(cs.verifyAndAddUnit({ ...toVerify, quantities: { nia12: 99 } }, 'nia12', catalogue)).toEqual({ error: '99 unités au maximum par référence.' });
+    expect(cs.verifyAndAddUnit({ ...toVerify, saved: true }, 'nia12', catalogue)).toBeNull();
+  });
+
   it('refuses as the rail does: a reference to verify first, a duplicate in the basket, 99 at most', () => {
     const toVerify = ordered({ baseIds: ['nia12'], baseQuantities: { nia12: 1 } });
     const verifyFirst = { error: 'Confirmez la vérification de cette référence avant d’augmenter la quantité.' };
