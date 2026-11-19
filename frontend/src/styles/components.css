@@ -418,14 +418,14 @@
      data-label, the actions close the card. The markup keeps explicit table roles for screen readers. */
   .data-table--cards td[data-label]::before { font-size: var(--text-caption); font-weight: var(--font-weight-regular); color: var(--color-text-tertiary); }
   .row-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2) var(--space-4); }
-  .data-table__action > .row-actions > * + * { margin-inline-start: 0; }
   @media (max-width: 650px) {
     .data-table--cards { overflow: visible; border: 0; background: none; }
     .data-table--cards :where(table, tbody, tr, th, td) { display: block; }
     .data-table--cards thead { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .data-table--cards tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3) var(--space-4); padding: var(--space-4); border: 1px solid var(--color-border-hairline); border-radius: var(--radius-option); background: var(--color-bg-surface); }
     .data-table--cards tr + tr { margin-block-start: var(--space-2); }
-    .data-table--cards :where(th, td) { padding: 0; border: 0; }
+    /* Same layer as .data-table th/td: these selectors must out-rank them. */
+    .data-table.data-table--cards :is(th, td) { padding: 0; border: 0; }
     .data-table--cards :is(th[scope="row"], .data-table__action, [data-span="full"]) { grid-column: 1 / -1; }
     .data-table--cards td[data-label]::before { content: attr(data-label); display: block; margin-block-end: 2px; }
     .data-table--cards .data-table__action { position: static; background: none; box-shadow: none; white-space: normal; }

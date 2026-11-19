@@ -136,6 +136,7 @@
   /* The strip's due reminders (X7) and a failed refresh (PN2): one line each, below the meter. */
   .pilot-progress__due, .report-stale--compact { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); flex: 1 1 100%; font-size: var(--text-ui); color: var(--color-text-secondary); }
   .pilot-progress__due > svg, .report-stale--compact > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); flex: none; color: var(--color-warning-text); }
+  .pilot-progress__due > span, .report-stale--compact > span { flex: 1 1 12rem; min-inline-size: 0; }
   .report-stale--compact { color: var(--color-warning-text); }
 
   /* Bonus rule (Apports & primes) */
