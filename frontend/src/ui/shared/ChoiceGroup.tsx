@@ -25,7 +25,7 @@ export function ChoiceGroup(props:Single|Multi){
   if(o.exclusive){
    const cleared=options.filter(x=>x.id!==o.id&&current.includes(x.id)).map(x=>text(x.label)).filter(Boolean);
    props.onChange([o.id]);
-   setSaid(cleared.length?`« ${text(o.label)} » choisi : ${cleared.join(', ')} décoché.`:'');
+   setSaid(cleared.length?`« ${text(o.label)} » choisi : ${cleared.join(', ')} décoché${cleared.length>1?'s':''}.`:'');
    return;
   }
   const exclusive=options.filter(x=>x.exclusive&&current.includes(x.id));

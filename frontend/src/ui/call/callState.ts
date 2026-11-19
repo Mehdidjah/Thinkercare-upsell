@@ -1,4 +1,4 @@
-import {EMPTY_PROFILE,MAX_ITEM_QUANTITY,basketProblem,domainOf,expand,isPack,manualAddCheck,packUpgrades,questionsReady,quantityOf,recommend,reviewReason,type ItemSnapshot,type OrderItem,type Product,type Profile,type Proposal,type Tier} from '@touche/domain';
+import {EMPTY_PROFILE,MAX_ITEM_QUANTITY,OUTCOMES,basketProblem,domainOf,expand,isPack,manualAddCheck,packUpgrades,questionsReady,quantityOf,recommend,reviewReason,type ItemSnapshot,type OrderItem,type Product,type Profile,type Proposal,type Tier} from '@touche/domain';
 
 /**
  * The guided call as plain data, and every change to it as a pure function (plain objects in, plain objects out).
@@ -139,6 +139,8 @@ export function changeProfile(d:CallDraft,patch:Partial<Profile>,products:Produc
  return r.removed.length?{draft:{...r.draft,consent:false},removed:r.removed}:r;
 }
 
+/** The concern a new pick pushes out (F5): with two already chosen, a third replaces the second. */
+export function replacedConcern(p:Profile,id:string):string|null{return !p.concerns.includes(id)&&p.concerns.length>=2?p.concerns[1]:null;}
 /** One or two concerns: a third replaces the second; follow-up answers go with their concern. */
 export function concernPatch(p:Profile,id:string):Partial<Profile>{
  const a=p.concerns.includes(id)?p.concerns.filter(x=>x!==id):p.concerns.length<2?[...p.concerns,id]:[p.concerns[0],id];
@@ -239,7 +241,21 @@ export function undoRemoval(current:CallDraft,previous:CallDraft):CallDraft|null
  return {...current,profile,profileDomain,baseIds,baseQuantities,adds,requestedIds,quantities,upgradeId,verifiedProducts,consent:false,checked:false};
 }
 
+/**
+ * The rows the step-3 picker shows, in a stable order (B5, DBL, STEP3). `rows` are every product that may be added (or is
+ * added), best first. Without a search only the suggestions and the added products show, unless the whole catalogue is open.
+ * `previous` is the order already on screen for the same search: its rows keep their place, new ones come after, so an
+ * added product stays under the pointer and a second click cannot land on another row.
+ */
+export function pickerOrder(rows:{id:string;suggested:boolean;added:boolean}[],{previous=null,showAll=false,searching=false}:{previous?:string[]|null;showAll?:boolean;searching?:boolean}={}):{ids:string[];hidden:number}{
+ const wanted=rows.filter(r=>searching||showAll||r.suggested||r.added).map(r=>r.id),known=new Set(rows.map(r=>r.id));
+ const ids=previous?[...previous.filter(id=>known.has(id)),...wanted.filter(id=>!previous.includes(id))]:wanted;
+ return {ids,hidden:searching?0:rows.length-ids.length};
+}
+
 // ── Offers and outcomes ──────────────────────────────────────────────────────────────────────────────────────
+/** One label per outcome in the call (F4, A2): « Sans réponse » is « Cliente non jointe » on every call screen. */
+export const outcomeLabel=(outcome:string)=>outcome==='noanswer'?'Cliente non jointe':OUTCOMES[outcome]||'résultat enregistré';
 export function markSaved(d:CallDraft,outcome:string,at:string):CallDraft{return {...d,saved:true,savedOutcome:outcome,savedAt:at};}
 /** Outcomes recorded in one tap until now: they ask first (A2). */
 export const CONFIRMED_OUTCOMES=['noanswer','initial'];

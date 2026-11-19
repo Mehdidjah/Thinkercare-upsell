@@ -295,3 +295,39 @@ describe('draft in sessionStorage (A4)', () => {
     expect(d).toMatchObject({ step: 1, baseIds: ['antiacne', 'wcgel'], baseQuantities: { antiacne: 2, wcgel: 1 }, orderRef: 'DOS-9', customerStage: 'returning', linkedCallId: 'old-call', demo: false });
   });
 });
+
+describe('step 3 picker and labels (B5, DBL, STEP3, F4, F5)', () => {
+  const rows = [
+    { id: 'wcgel', suggested: true, added: false },
+    { id: 'total', suggested: true, added: false },
+    { id: 'vitc', suggested: false, added: false },
+    { id: 'spray', suggested: false, added: true },
+    { id: 'sal2', suggested: false, added: false },
+  ];
+  it('without a search: the suggestions and the added products, the rest behind « Voir tout le catalogue (N) »', () => {
+    expect(cs.pickerOrder(rows)).toEqual({ ids: ['wcgel', 'total', 'spray'], hidden: 2 });
+    expect(cs.pickerOrder(rows, { showAll: true })).toEqual({ ids: ['wcgel', 'total', 'vitc', 'spray', 'sal2'], hidden: 0 });
+    expect(cs.pickerOrder(rows, { searching: true }).ids).toEqual(['wcgel', 'total', 'vitc', 'spray', 'sal2']);
+  });
+
+  it('an added product keeps its row: the order on screen stays, new suggestions come after', () => {
+    const before = cs.pickerOrder(rows).ids;
+    // « Ajouter » on Water Complex Gel: it is no longer a suggestion (it is added) and the ranking changes.
+    const after = [{ id: 'sal2', suggested: true, added: false }, { id: 'total', suggested: true, added: false }, { id: 'wcgel', suggested: false, added: true }, { id: 'vitc', suggested: false, added: false }, { id: 'spray', suggested: false, added: true }];
+    expect(cs.pickerOrder(after, { previous: before })).toEqual({ ids: ['wcgel', 'total', 'spray', 'sal2'], hidden: 1 });
+    // A row whose product left the list (disabled, now in the initial order) goes; the others keep their place.
+    expect(cs.pickerOrder(after.filter(r => r.id !== 'total'), { previous: before }).ids).toEqual(['wcgel', 'spray', 'sal2']);
+  });
+
+  it('« Sans réponse » is « Cliente non jointe » on the call screens', () => {
+    expect(cs.outcomeLabel('noanswer')).toBe('Cliente non jointe');
+    expect(cs.outcomeLabel('duo')).toBe('Duo accepté');
+    expect(cs.outcomeLabel('nope')).toBe('résultat enregistré');
+  });
+
+  it('a third concern says which one it replaces', () => {
+    expect(cs.replacedConcern({ ...face, concerns: ['acne', 'marks'] }, 'dull')).toBe('marks');
+    expect(cs.replacedConcern({ ...face, concerns: ['acne', 'marks'] }, 'marks')).toBeNull();
+    expect(cs.replacedConcern({ ...face, concerns: ['acne'] }, 'dull')).toBeNull();
+  });
+});
