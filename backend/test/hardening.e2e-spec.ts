@@ -25,7 +25,7 @@ class BoomController {
 let ctx: TestContext;
 beforeAll(async () => {
   const staticDir = mkdtempSync(join(tmpdir(), 'touche-static-'));
-  writeFileSync(join(staticDir, 'index.html'), '<!doctype html><title>Touché Conseil</title>');
+  writeFileSync(join(staticDir, 'index.html'), '<!doctype html><title>ThinkerCare</title>');
   mkdirSync(join(staticDir, 'assets'));
   writeFileSync(join(staticDir, 'assets', 'a.js'), '1');
   ctx = await createTestApp({ staticDir }, [BoomController]);

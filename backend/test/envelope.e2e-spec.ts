@@ -10,7 +10,7 @@ import { deskGet, deskPost } from './support/desk.js';
 let ctx: TestContext;
 beforeAll(async () => {
   const staticDir = mkdtempSync(join(tmpdir(), 'touche-static-'));
-  writeFileSync(join(staticDir, 'index.html'), '<!doctype html><title>Touché Conseil</title>');
+  writeFileSync(join(staticDir, 'index.html'), '<!doctype html><title>ThinkerCare</title>');
   ctx = await createTestApp({ staticDir });
 });
 afterAll(() => ctx.close());
@@ -19,7 +19,7 @@ describe('/api/desk envelope', () => {
   it('health works without a session', async () => {
     const res = await deskGet(ctx, '?action=health');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, app: 'Touché Conseil' });
+    expect(res.body).toEqual({ ok: true, app: 'ThinkerCare' });
     expect(res.headers['cache-control']).toBe('no-store');
   });
   it('GET without a session is 401', async () => {
@@ -87,7 +87,7 @@ describe('HTTP shell', () => {
     const index = await request(ctx.server).get('/');
     expect(index.status).toBe(200);
     expect(index.headers['content-type']).toContain('text/html');
-    expect(index.text).toContain('Touché Conseil');
+    expect(index.text).toContain('ThinkerCare');
     const missing = await request(ctx.server).get('/nope');
     expect(missing.status).toBe(404);
     expect(missing.headers['content-type']).toContain('text/html');
