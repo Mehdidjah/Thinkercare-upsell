@@ -410,6 +410,10 @@
   .data-table thead .data-table__action { background: var(--color-bg-sunken); }
   .data-table td > .link-btn + .link-btn, .data-table__action > * + * { margin-inline-start: var(--space-4); }
   .data-table--wrap td { white-space: normal; }
+  .data-table__action :is(.btn, .link-btn) { white-space: nowrap; }
+  /* Until each table has its card layout (≤650px), a wide table scrolls inside its frame at a readable
+     width instead of squeezing every column to a word per line; the action column stays in view. */
+  @media (max-width: 650px) { .data-table:not(.admin-accounts) table { min-inline-size: 36rem; } }
   .data-cards { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
   .data-card { padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border-hairline); border-radius: var(--radius-option); background: var(--color-bg-surface); }
   .data-card__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
