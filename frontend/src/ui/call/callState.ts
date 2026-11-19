@@ -210,14 +210,32 @@ export function removeComplement(d:CallDraft,id:string):CallDraft|null{
  const quantities={...d.quantities};delete quantities[id];
  return {...d,adds:d.adds.filter(x=>x!==id),quantities,requestedIds:d.requestedIds.filter(x=>x!==id),consent:false,checked:false};
 }
+/** A quantity of the basket: the rail's control, and « + Une unité » in the step-3 list (addUnit). Nothing changes once saved
+ *  or during a targeted stop; more units wait for the reference's verification and may not duplicate a product. */
 export function changeQuantity(d:CallDraft,id:string,next:number,products:Product[]):{draft:CallDraft}|{error:string}|null{
- if(d.saved||!Number.isSafeInteger(next)||next<1||next>MAX_ITEM_QUANTITY)return null;
+ if(d.saved||reviewReason(d.profile)||!Number.isSafeInteger(next)||next<1)return null;
  const {initial,basket}=basketOf(d,products),item=basket.find(p=>p.id===id);if(!item)return null;
  const minimum=id===d.upgradeId?quantityOf(initial[0]):quantityOf(initial.find(p=>p.id===id)||{quantity:1});
  if(next<minimum||next===quantityOf(item))return null;
+ if(next>MAX_ITEM_QUANTITY)return {error:`${MAX_ITEM_QUANTITY} unités au maximum par référence.`};
  if(next>quantityOf(item)&&(!item.recommendable||item.verificationRequired)&&!d.verifiedProducts.includes(id))return {error:'Confirmez la vérification de cette référence avant d’augmenter la quantité.'};
  const problem=basketProblem(basket.map(p=>p.id===id?{...p,quantity:next}:p),products);if(problem&&next>quantityOf(item))return {error:problem};
  return {draft:{...d,quantities:{...d.quantities,[id]:next},consent:false,checked:false}};
+}
+/** « + Une unité » in the step-3 list (UNIT): one more unit of a line already in the basket, through the rail's change. */
+export function addUnit(d:CallDraft,id:string,products:Product[]):{draft:CallDraft}|{error:string}|null{
+ const item=basketOf(d,products).basket.find(p=>p.id===id);
+ return item?changeQuantity(d,id,quantityOf(item)+1,products):null;
+}
+/** A line of the basket as the step-3 list shows it (UNIT): part of the customer's order or not, its quantity, the units
+ *  added above the order (as the rail counts them), and why « + Une unité » is refused (null when it is not). */
+export type BasketLine={initial:boolean;quantity:number;extra:number;refusal:string|null};
+export function basketLines(d:CallDraft,products:Product[]):Map<string,BasketLine>{
+ const {initial,basket}=basketOf(d,products);
+ return new Map(basket.map(p=>{
+  const ordered=initial.find(x=>x.id===p.id),unit=addUnit(d,p.id,products);
+  return [p.id,{initial:!!ordered,quantity:quantityOf(p),extra:ordered?quantityOf(p)-quantityOf(ordered):0,refusal:unit&&'error' in unit?unit.error:null}];
+ }));
 }
 /** The official pack replaces the single initial product; the additions were chosen for that product, so they go. */
 export function chooseUpgrade(d:CallDraft,id:string):CallDraft|null{
@@ -268,13 +286,24 @@ export function undoRemoval(current:CallDraft,previous:CallDraft):CallDraft|null
 }
 
 /**
- * The rows the step-3 picker shows, in a stable order (B5, DBL, STEP3). `rows` are every product that may be added (or is
- * added), best first. Without a search only the suggestions and the added products show, unless the whole catalogue is open.
+ * The products the step-3 picker may list (B5, UNIT): every line of the basket (initial order, chosen pack, additions), for
+ * « + Une unité », and every other enabled product that may be added, except an initial product the pack replaced and the
+ * packs offered as the upgrade (PACK).
+ */
+export function pickerPool(d:CallDraft,products:Product[],offeredPacks:Set<string>):Product[]{
+ const lines=new Set(basketOf(d,products).basket.map(p=>p.id));
+ return products.filter(p=>p.enabled&&(lines.has(p.id)||!d.baseIds.includes(p.id)&&!offeredPacks.has(p.id)));
+}
+
+/**
+ * The rows the step-3 picker shows, in a stable order (B5, DBL, STEP3, UNIT). `rows` are every product that may be added (or
+ * is added), best first. The lines of the customer's order (`ordered`) come first and always show. Without a search only
+ * the suggestions and the added products show besides them, unless the whole catalogue is open.
  * `previous` is the order already on screen for the same search: its rows keep their place, new ones come after, so an
  * added product stays under the pointer and a second click cannot land on another row.
  */
-export function pickerOrder(rows:{id:string;suggested:boolean;added:boolean}[],{previous=null,showAll=false,searching=false}:{previous?:string[]|null;showAll?:boolean;searching?:boolean}={}):{ids:string[];hidden:number}{
- const wanted=rows.filter(r=>searching||showAll||r.suggested||r.added).map(r=>r.id),known=new Set(rows.map(r=>r.id));
+export function pickerOrder(rows:{id:string;suggested:boolean;added:boolean;ordered?:boolean}[],{previous=null,showAll=false,searching=false}:{previous?:string[]|null;showAll?:boolean;searching?:boolean}={}):{ids:string[];hidden:number}{
+ const wanted=[...rows.filter(r=>r.ordered),...rows.filter(r=>!r.ordered&&(searching||showAll||r.suggested||r.added))].map(r=>r.id),known=new Set(rows.map(r=>r.id));
  const ids=previous?[...previous.filter(id=>known.has(id)),...wanted.filter(id=>!previous.includes(id))]:wanted;
  return {ids,hidden:searching?0:rows.length-ids.length};
 }

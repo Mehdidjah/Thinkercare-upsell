@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { EMPTY_PROFILE, MAX_ITEM_QUANTITY, money, manualAddCheck, offerProblem, reviewStop, type Product, type Profile } from '@touche/domain';
+import { EMPTY_PROFILE, MAX_ITEM_QUANTITY, money, manualAddCheck, offerProblem, reviewStop, searchIds, type Product, type Profile } from '@touche/domain';
 import { CallModelContext, type CallModel, type CallRequest } from '../src/ui/call/callModel';
 import { SavedPanel } from '../src/ui/call/SavedPanel';
 import { CallNotices } from '../src/ui/call/CallNotices';
@@ -21,6 +21,9 @@ import { readQuantity, typeQuantity, settleQuantity } from '../src/ui/QuantityCo
 import { CallView } from '../src/ui/call/CallView';
 import { CallHeading } from '../src/ui/call/CallHeading';
 import { catalogueNoticeText } from '../src/ui/call/CallNotices';
+import { RoutineRail } from '../src/ui/call/RoutineRail';
+import { SpecificChecks } from '../src/ui/call/SpecificChecks';
+import * as cs from '../src/ui/call/callState';
 
 // Call screens rendered from a plain model (no DOM library), plus the source guards of the call flow.
 const catalogue: Product[] = JSON.parse(readFileSync(new URL('../../shared/test/fixtures/catalogue.json', import.meta.url), 'utf8'));
@@ -78,6 +81,8 @@ describe('call screens (A2, H5, X10, H2, A3)', () => {
 
 const req = (id: string, extra: Partial<CallRequest> = {}): CallRequest => ({ product: p(id), check: manualAddCheck(p('antiacne'), [], p(id), face, catalogue), suggestion: undefined, added: false, ...extra });
 const suggested = (id: string) => ({ product: p(id), score: 10, reason: 'Raison ' + id });
+/** The picker rows the desk builds for a draft (App.tsx): every line of the basket with its state, plus `others` to add. */
+const rowsFor = (d: cs.CallDraft, others: string[] = []) => { const lines = cs.basketLines(d, catalogue); return cs.pickerPool(d, catalogue, new Set()).filter(x => lines.has(x.id) || others.includes(x.id)).map(x => req(x.id, { added: d.adds.includes(x.id), line: lines.get(x.id) })); };
 const described = (html: string, button: RegExp) => { const id = html.match(button)?.[1]; return !!id && html.includes(`id="${id}" class="reason"`); };
 
 describe('closing the call (B3, M5, REFUSE, F4)', () => {
@@ -237,10 +242,11 @@ describe('step 3 picker (B5, DBL, CONFIRMBOX, STEP3, SEARCH, PACK, F4)', () => {
     expect(html).not.toContain('Ingrédients & argumentaire');
   });
 
-  it('an added product keeps its row as « Ajouté ✓ · Retirer », on the same row button', () => {
-    const html = render(<ProductPicker/>, { step: 2, requests: [req('wcgel', { added: true }), req('total', { suggestion: suggested('total') })], adds: ['wcgel'], count: 2 });
+  it('an added product keeps its row as « Dans la routine ✓ · Retirer », on the same row button', () => {
+    const line = { initial: false, quantity: 1, extra: 0, refusal: null };
+    const html = render(<ProductPicker/>, { step: 2, requests: [req('wcgel', { added: true, line }), req('total', { suggestion: suggested('total') })], adds: ['wcgel'], count: 2 });
     expect(html).toMatch(/<li id="picker-row-wcgel" class="call-product" data-state="added">/);
-    expect(html).toMatch(/class="call-product__added"><svg[\s\S]*?<\/svg>Ajouté<\/span><button type="button" class="btn btn--secondary btn--sm call-product__action" aria-label="Retirer Water Complex Gel de la routine">Retirer<\/button>/);
+    expect(html).toMatch(/class="call-product__added"><svg[\s\S]*?<\/svg>Dans la routine · <span class="num">×1<\/span><\/span><button type="button" class="btn btn--secondary btn--sm call-product__action" aria-label="Retirer Water Complex Gel de la routine">Retirer<\/button>/);
     expect(html).toMatch(/class="btn btn--secondary btn--sm call-product__action" aria-label="Ajouter Total Cleanser[^"]*">/);
   });
 
@@ -251,9 +257,71 @@ describe('step 3 picker (B5, DBL, CONFIRMBOX, STEP3, SEARCH, PACK, F4)', () => {
     expect(html).not.toContain('Voir tout le catalogue');
   });
 
+  it('an added product keeps « + Une unité » beside « Retirer »', () => {
+    const d = { ...cs.newDraft({ id: 'call-1' }), step: 2, baseIds: ['antiacne'], baseQuantities: { antiacne: 1 }, profile: face, profileDomain: 'face', adds: ['wcgel'] };
+    const html = render(<ProductPicker/>, { step: 2, requests: rowsFor(d), adds: ['wcgel'], count: 2 });
+    expect(html).toMatch(/<li id="picker-row-wcgel" class="call-product" data-state="added">/);
+    expect(html).toMatch(/aria-label="Retirer Water Complex Gel de la routine">Retirer<\/button><button type="button" class="btn btn--secondary btn--sm call-product__unit" aria-label="Ajouter une unité de Water Complex Gel"><svg[\s\S]*?<\/svg>Une unité<\/button>/);
+  });
+
   it('a pack held back by an addition says what to remove', () => {
     const html = render(<PackUpgrades base={p('shpousse')}/>, { products: catalogue, heldPacks: [p('packpousse')], adds: ['conditioner'] });
     expect(html).toContain('Pack Pousse et Croissance : pack officiel disponible si vous retirez Après-Shampooing Densité de la routine.');
+  });
+});
+
+describe('one more unit of a product already in the order (UNIT)', () => {
+  const order = (extra: Partial<cs.CallDraft> = {}): cs.CallDraft => ({ ...cs.newDraft({ id: 'call-1' }), step: 2, baseIds: ['antiacne'], baseQuantities: { antiacne: 1 }, profile: face, profileDomain: 'face', ...extra });
+  const unitButton = (name: string) => new RegExp(`<button type="button" class="btn btn--secondary btn--sm call-product__unit"[^>]*aria-label="Ajouter une unité de ${name}"[^>]*>`);
+
+  it('the initial product is listed first as « Déjà dans la commande · ×1 », with « + Une unité », without a search', () => {
+    const html = render(<ProductPicker/>, { step: 2, requests: rowsFor(order(), ['wcgel', 'vitc']).map(r => r.product.id === 'wcgel' ? { ...r, suggestion: suggested('wcgel') } : r), candidates: [suggested('wcgel')] });
+    expect(html).toMatch(/<li id="picker-row-antiacne" class="call-product" data-state="ordered">/);
+    expect(html.indexOf('id="picker-row-antiacne"')).toBeLessThan(html.indexOf('id="picker-row-wcgel"'));
+    expect(html).toMatch(/class="call-product__added"><svg[\s\S]*?<\/svg>Déjà dans la commande · <span class="num">×1<\/span><\/span>/);
+    expect(html).toMatch(unitButton('Sérum Anti-Acné'));
+    expect(html).toMatch(/aria-label="Ajouter une unité de Sérum Anti-Acné"><svg[\s\S]*?<\/svg>Une unité<\/button>/);
+    // Nothing to add twice: no « Ajouter », no « Retirer », no compatibility box on the order's own line.
+    const row = html.slice(html.indexOf('id="picker-row-antiacne"'), html.indexOf('</li>', html.indexOf('id="picker-row-antiacne"')));
+    expect(row).not.toMatch(/call-product__action|Retirer|Déjà dans la routine\./);
+    expect(html).not.toContain('id="picker-row-vitc"');
+    expect(html).toContain('Voir tout le catalogue (1)');
+    // Searching its name finds it too: the desk lists the products of the pool that match the search.
+    const found = cs.pickerPool(order(), catalogue, new Set()).filter(x => searchIds(catalogue, 'sérum anti-acné').has(x.id)).map(x => x.id);
+    expect(found).toContain('antiacne');
+    expect(render(<ProductPicker/>, { step: 2, requests: rowsFor(order()).filter(r => found.includes(r.product.id)), requestSearch: 'sérum anti-acné' })).toMatch(unitButton('Sérum Anti-Acné'));
+  });
+
+  it('after « + Une unité », the row and the rail show ×2 and « Dont 1 unité ajoutée »', () => {
+    const next = (cs.addUnit(order(), 'antiacne', catalogue) as { draft: cs.CallDraft }).draft;
+    const { initial, basket } = cs.basketOf(next, catalogue);
+    const picker = render(<ProductPicker/>, { step: 2, requests: rowsFor(next), count: 2 });
+    expect(picker).toMatch(/Déjà dans la commande · <span class="num">×2<\/span>/);
+    expect(picker).toContain('<p class="call-product__reason">Dont 1 unité ajoutée</p>');
+    const rail = render(<RoutineRail/>, { step: 2, initial, basket, count: 2, total: 3600 });
+    expect(rail).toContain(`<span class="num">2 × ${money(1800)}</span> par unité`);
+    expect(rail).toContain('Dont 1 unité ajoutée');
+    expect(rail).toMatch(/aria-label="Quantité de Sérum Anti-Acné" value="2"/);
+  });
+
+  it('a refusal of the rail keeps the button focusable with its reason; a saved or busy call disables it', () => {
+    const toVerify = order({ baseIds: ['nia12'], baseQuantities: { nia12: 1 } });
+    const html = render(<ProductPicker/>, { step: 2, requests: rowsFor(toVerify) });
+    expect(html).toMatch(/<button type="button" class="btn btn--secondary btn--sm call-product__unit" aria-disabled="true" aria-describedby="unit-reason-nia12" aria-label="Ajouter une unité de Niacinamide 12 % Ultra Pure">/);
+    expect(html).toMatch(/<p id="unit-reason-nia12" class="call-product__blocked"><svg[\s\S]*?<\/svg>Confirmez la vérification de cette référence avant d’augmenter la quantité\.<\/p>/);
+    const full = render(<ProductPicker/>, { step: 2, requests: rowsFor(order({ quantities: { antiacne: 99 } })) });
+    expect(full).toContain('99 unités au maximum par référence.');
+    expect(full).toContain('aria-describedby="unit-reason-antiacne"');
+    for (const state of [{ saved: true }, { busy: true }, { presenting: true }]) {
+      expect(render(<ProductPicker/>, { step: 2, requests: rowsFor(order()), ...state })).toMatch(/class="btn btn--secondary btn--sm call-product__unit" disabled=""/);
+    }
+  });
+
+  it('the specific verification a refused unit waits for can be reached from its row', () => {
+    const checks = render(<SpecificChecks/>, { step: 2, domain: 'face' });
+    expect(checks).toMatch(/<input type="checkbox" id="verify-nia12"/);
+    const picker = readFileSync(new URL('../src/ui/call/ProductPicker.tsx', import.meta.url), 'utf8');
+    expect(picker).toContain("onBlocked={()=>showVerification(p.id)}");
   });
 });
 
@@ -414,6 +482,15 @@ describe('source guards', () => {
   });
   it('an unchanged quantity never reaches the call (CN1)', () => {
     expect(readFileSync(new URL('../src/ui/QuantityControl.tsx', import.meta.url), 'utf8')).toContain('next>MAX_ITEM_QUANTITY||next===value)return;');
+  });
+  it('« + Une unité » lists the basket lines and goes through the rail’s quantity change, announced (UNIT)', () => {
+    expect(app).toContain('const lines=callState.basketLines(d,products);');
+    expect(app).toContain('callState.pickerPool(d,products,packIds)');
+    expect(app).toContain('suggestion:candidates.find(r=>r.product.id===p.id),line:lines.get(p.id)}');
+    expect(app).toContain('const changeQuantity=(id:string,next:number)=>applyQuantity(callState.changeQuantity(current(),id,next,products));');
+    expect(app).toContain('if(!applyQuantity(callState.addUnit(current(),id,products)))return false;');
+    expect(app).toContain('announce(`${productName(id)} : une unité ajoutée, ×${current().quantities[id]} · ${unitsOf(current())}`)');
+    expect(app).toMatch(/addComplement,removeComplement,changeQuantity,addUnit,/);
   });
   it('additions, removals and a replaced concern are announced; a copy failure shows the text (B5, F5, COPY)', () => {
     expect(app).toContain('announce(`${productName(id)} ajouté · ${unitsOf(current())}`)');
