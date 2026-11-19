@@ -246,7 +246,7 @@ export class CallsService {
     user: DeskUser,
     body: unknown,
     client: DeskClient = NEW_DESK,
-  ): Promise<{ ok: true; duplicate?: true; closedReminderId?: string }> {
+  ): Promise<{ ok: true; duplicate?: true; outcome?: string; closedReminderId?: string }> {
     const v = saveCallSchema.parse(body);
     // A retry of a call already recorded answers as before, whatever the catalogue became since.
     const retry = await this.existingCall(user, v.id);
@@ -544,19 +544,23 @@ export class CallsService {
     return linkedCallId;
   }
 
-  /** Existing-call check of save-call: the owner's retry is a duplicate, another account's id is 409. */
+  /**
+   * Existing-call check of save-call: the owner's retry is a duplicate, another account's id is 409.
+   * The duplicate answer names the outcome stored the first time, so the desk shows what was
+   * recorded rather than the button clicked on the retry (additive field: older desks ignore it).
+   */
   private async existingCall(
     user: DeskUser,
     id: string,
-  ): Promise<{ ok: true; duplicate: true } | null> {
+  ): Promise<{ ok: true; duplicate: true; outcome: string } | null> {
     const [existing] = await this.db
-      .select({ id: tcCalls.id, user_id: tcCalls.user_id })
+      .select({ id: tcCalls.id, user_id: tcCalls.user_id, outcome: tcCalls.outcome })
       .from(tcCalls)
       .where(eq(tcCalls.id, id))
       .limit(1);
     if (!existing) return null;
     if (existing.user_id !== user.id) throw new DeskError(409, 'Identifiant déjà utilisé.');
-    return { ok: true, duplicate: true };
+    return { ok: true, duplicate: true, outcome: existing.outcome };
   }
 
   /** A call with a reminder this user may handle: 404, 403 or 400 otherwise. */

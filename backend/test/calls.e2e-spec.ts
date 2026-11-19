@@ -502,7 +502,7 @@ describe('save-call', () => {
     expect((await post({ action: 'product', product: { ...fixture('wcgel'), price: 1600, enabled: false } }, admin)).status).toBe(200);
     const again = await post(body);
     expect(again.status).toBe(200);
-    expect(again.body).toEqual({ ok: true, duplicate: true });
+    expect(again.body).toEqual({ ok: true, duplicate: true, outcome: 'duo' });
   });
 
   it('retrying save-call is idempotent', async () => {
@@ -511,9 +511,20 @@ describe('save-call', () => {
     expect((await post(body)).status).toBe(200);
     const again = await post(body);
     expect(again.status).toBe(200);
-    expect(again.body).toEqual({ ok: true, duplicate: true });
+    expect(again.body).toEqual({ ok: true, duplicate: true, outcome: 'duo' });
     expect(await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, p.callId))).toHaveLength(1);
     expect(await ctx.db.select().from(tcAcceptedDossiers)).toHaveLength(1);
+    expect(await auditRows('call.closed')).toHaveLength(1);
+  });
+
+  it('a retry with another outcome answers with the outcome stored the first time', async () => {
+    const body = save({ outcome: 'initial', consent: false, checked: false });
+    expect((await post(body)).status).toBe(200);
+    const again = await post({ ...body, outcome: 'noanswer' });
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual({ ok: true, duplicate: true, outcome: 'initial' });
+    const [row] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, body.id));
+    expect(row!.outcome).toBe('initial');
     expect(await auditRows('call.closed')).toHaveLength(1);
   });
 
@@ -618,7 +629,7 @@ describe('save-call', () => {
     expect(results.map((r) => r.status)).toEqual([200, 200]);
     expect(
       results.map((r) => r.body).sort((a, b) => Object.keys(a).length - Object.keys(b).length),
-    ).toEqual([{ ok: true }, { ok: true, duplicate: true }]);
+    ).toEqual([{ ok: true }, { ok: true, duplicate: true, outcome: 'initial' }]);
     expect(await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, body.id))).toHaveLength(1);
     expect(
       await ctx.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, body.id)),

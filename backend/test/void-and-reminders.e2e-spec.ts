@@ -202,6 +202,16 @@ describe('void-call (H5)', () => {
 });
 
 describe('reminders (M2)', () => {
+  it('a targeted check saved with a callback date is listed in the reminders', async () => {
+    // The desk records the stop panel's callback as outcome « review » with meta.callbackAt.
+    const body = saveBody({ outcome: 'review', meta: { eligible: false, callbackAt: at(DAY) } });
+    const res = await post(body);
+    expect(res.status).toBe(200);
+    expect(await reminderIds(lina)).toEqual([body.id]);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, body.id));
+    expect(call!.outcome).toBe('review');
+  });
+
   it('the follow-up call made from a reminder closes it in the same save', async () => {
     const first = await callback();
     const body = saveBody({ outcome: 'initial', meta: { linkedCallId: first } });
@@ -212,7 +222,7 @@ describe('reminders (M2)', () => {
     const [closed] = await audits('reminder.closed', first);
     expect(closed!.detail).toEqual({ callId: body.id });
     const again = await post(body);
-    expect(again.body).toEqual({ ok: true, duplicate: true });
+    expect(again.body).toEqual({ ok: true, duplicate: true, outcome: 'initial' });
     expect(await audits('reminder.closed', first)).toHaveLength(1);
   });
 
