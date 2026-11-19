@@ -54,6 +54,17 @@ export function basketProblem(basket:OrderItem[],catalogue:Product[]):string|nul
  if(new Set(flat.map(p=>p.id)).size!==flat.length)return'Un produit est déjà inclus dans le pack ou la routine.';
  return null;
 }
+/** An add-on must raise the order: a discount on the whole basket may not bring it to, or below, what the customer already ordered. */
+export function offerProblem(initial:OrderItem[],basket:OrderItem[],tier:Tier):string|null{
+ if(!initial.length||sameOrder(initial,basket))return null;
+ const offer=orderOffer(initial,basket,tier),base=itemsTotal(initial);
+ return offer>base?null:`À ce niveau de prix, l’offre (${money(offer)}) ne dépasse pas la commande initiale (${money(base)}) : choisissez un autre prix ou ajoutez un produit.`;
+}
+/** A product ordered together with a pack that already contains it. */
+export function packDuplicate(items:Product[],catalogue:Product[]):{pack:Product;product:Product}|null{
+ for(const pack of items.filter(isPack))for(const product of items)if(product.id!==pack.id&&expand(pack,catalogue).some(x=>x.id===product.id||(isPack(product)&&expand(product,catalogue).some(y=>y.id===x.id))))return{pack,product};
+ return null;
+}
 export function questionsReady(p:Profile,base?:Product):boolean{
  return p.concerns.length>0&&!!p.skin&&!!p.sensitive&&p.routineKnown&&p.safety.length>0&&(!p.concerns.includes('acne')||!!p.severity)&&(!p.concerns.includes('marks')||!!p.marks)&&(!p.concerns.includes('red')||!!p.redState)&&(!p.concerns.includes('fall')||!!p.hairPattern)&&(!p.safety.includes('allergy')||!!p.allergens?.length)&&(!p.safety.includes('minor')||!!p.age);
 }
@@ -74,15 +85,21 @@ export function missingAnswers(p:Profile,base?:Product):MissingAnswer[]{
  if(p.safety.includes('minor')&&!p.age)m.push({question:'04',label:'l’âge d’utilisation'});
  return m;
 }
-export function reviewReason(p:Profile):string|null{
- if(p.safety.includes('urgent'))return'Réaction sévère ou gonflement important : arrêter la proposition commerciale et demander un avis médical rapidement. Difficulté à respirer, lèvres ou langue gonflées : aide médicale urgente.';
- if(p.safety.includes('irritation')||p.redState==='severe')return'Ne pas ajouter de soin sur une zone actuellement brûlante, douloureuse, lésée ou très irritée. Faire vérifier la situation avant de poursuivre ; si elle est importante ou persiste, avis médical.';
- if(p.severity==='severe')return'Boutons profonds, très douloureux ou laissant des cicatrices : ne pas traiter cette situation comme un simple upsell cosmétique. Orientation vers l’encadrement médical.';
- if(p.hairPattern==='sudden'||p.hairPattern==='patchy')return'Une chute brusque, par plaques, ou associée à une douleur/plaie du cuir chevelu nécessite une évaluation professionnelle. Ne pas promettre une repousse avec un cosmétique.';
- if(p.safety.includes('minor')&&p.age==='child')return'Produit pour un enfant : faire vérifier l’âge autorisé et la formule par votre encadrement avant de proposer la gamme adulte. Ce n’est pas une urgence médicale.';
- if(p.safety.includes('allergy')&&p.allergens?.includes('unknown'))return'Allergène non identifié : vérifier l’étiquette et l’allergie avant de choisir un complément. Vérification interne, sans renvoi médical systématique.';
+export type ReviewStopCode='urgent'|'irritation'|'severe-acne'|'hair-loss'|'child'|'unknown-allergen';
+/** Why the offer stops, what the adviser reads to the customer for that exact reason, and whether a follow-up call is expected. */
+export type ReviewStop={code:ReviewStopCode;text:string;script:string;urgent:boolean;followUp:boolean};
+export function reviewStop(p:Profile):ReviewStop|null{
+ if(p.safety.includes('urgent'))return{code:'urgent',urgent:true,followUp:false,text:'Réaction sévère ou gonflement important : arrêter la proposition commerciale et demander un avis médical rapidement. Difficulté à respirer, lèvres ou langue gonflées : aide médicale urgente.',script:'« Ce que vous me décrivez doit être vu rapidement par un médecin : je ne vous propose aucun produit aujourd’hui. Si vous avez du mal à respirer, ou si vos lèvres ou votre langue gonflent, contactez immédiatement les secours. »'};
+ if(p.safety.includes('irritation')||p.redState==='severe')return{code:'irritation',urgent:false,followUp:true,text:'Ne pas ajouter de soin sur une zone actuellement brûlante, douloureuse, lésée ou très irritée. Faire vérifier la situation avant de poursuivre ; si elle est importante ou persiste, avis médical.',script:'« Je ne vais rien ajouter sur une zone irritée ou douloureuse. Je fais vérifier votre situation par notre équipe avant de compléter votre routine, et je vous rappelle. Si l’irritation est importante ou persiste, consultez un médecin. »'};
+ if(p.severity==='severe')return{code:'severe-acne',urgent:false,followUp:true,text:'Boutons profonds, très douloureux ou laissant des cicatrices : ne pas traiter cette situation comme un simple upsell cosmétique. Orientation vers l’encadrement médical.',script:'« Des boutons profonds et douloureux méritent l’avis d’un professionnel. Je fais vérifier votre situation par notre encadrement médical avant de vous proposer un complément, et je vous rappelle. »'};
+ if(p.hairPattern==='sudden'||p.hairPattern==='patchy')return{code:'hair-loss',urgent:false,followUp:true,text:'Une chute brusque, par plaques, ou associée à une douleur/plaie du cuir chevelu nécessite une évaluation professionnelle. Ne pas promettre une repousse avec un cosmétique.',script:'« Une chute brusque ou par plaques doit être évaluée par un professionnel de santé. Je ne vous promets pas de repousse avec un cosmétique ; je fais vérifier votre situation avant toute proposition et je vous rappelle. »'};
+ if(p.safety.includes('minor')&&p.age==='child')return{code:'child',urgent:false,followUp:true,text:'Produit pour un enfant : faire vérifier l’âge autorisé et la formule par votre encadrement avant de proposer la gamme adulte. Ce n’est pas une urgence médicale.',script:'« Pour un enfant, je vérifie avec mon équipe l’âge d’utilisation et la formule avant de vous proposer un complément. Je vous rappelle dès que c’est fait. »'};
+ if(p.safety.includes('allergy')&&p.allergens?.includes('unknown'))return{code:'unknown-allergen',urgent:false,followUp:true,text:'Allergène non identifié : vérifier l’étiquette et l’allergie avant de choisir un complément. Vérification interne, sans renvoi médical systématique.',script:'« Je vérifie la composition avec mon équipe par rapport à votre allergie avant de vous proposer un complément. Pouvez-vous retrouver le nom de l’allergène ? Je vous rappelle ensuite. »'};
  return null;
 }
+export function reviewReason(p:Profile):string|null{return reviewStop(p)?.text??null;}
+/** The situations that stop the offer, in reviewStop order, for the Protocole page. */
+export const REVIEW_SITUATIONS:[ReviewStopCode,string][]=[['urgent','Gonflement important ou réaction sévère (urgence possible)'],['irritation','Irritation active, brûlure, zone douloureuse ou rougeurs sévères'],['severe-acne','Boutons profonds, douloureux ou laissant des cicatrices'],['hair-loss','Chute de cheveux brusque ou par plaques'],['child','Produit destiné à un enfant'],['unknown-allergen','Allergie à un ingrédient non identifié']];
 export function safetyNotes(p:Profile):string[]{
  const n:string[]=[];
  if(p.sensitive==='yes'||p.sensitive==='unknown'||p.concerns.includes('red')||p.concerns.includes('scalpcomfort'))n.push('Conseil prudent, pas de renvoi automatique : privilégier les formules douces documentées, sans parfum ni huiles essentielles listés. Introduire un produit à la fois et tester la tolérance.');
