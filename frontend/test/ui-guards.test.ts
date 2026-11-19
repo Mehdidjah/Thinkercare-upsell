@@ -23,8 +23,13 @@ test('Apports & primes treats CM accounts like call-center accounts', () => {
   assert.ok(!/role\s*!==\s*'advisor'\s*\?\s*'Non concerné'/.test(dashboard), "prime column and cell must not mark CMs 'Non concerné' (p.role!=='advisor'?'Non concerné'…)");
   assert.ok(!/role\s*!==\s*'advisor'\s*\?\s*'Compte '/.test(dashboard), "account caption must not hide a CM's bonus progress (p.role!=='advisor'?'Compte '…)");
 });
+test('Apports & primes CSV export names each account role so CM and Call center rows can be told apart', () => {
+  const exportTable = commission.slice(commission.indexOf('function exportTable()'), commission.indexOf('a.download='));
+  assert.ok(exportTable.includes("'Compte','Rôle','Équipe'"), 'CSV header has a Rôle column right after Compte');
+  assert.ok(exportTable.includes('p.label,accountRoleLabel(p.role),p.team'), 'each CSV row writes the role label (Call center, CM, Manager, Direction)');
+});
 test('Account form offers every member role from MEMBER_ROLES', () => {
-  const accounts = ui('AccountManagement.tsx');
+  const accounts = readFileSync(new URL('../src/ui/AccountManagement.tsx', import.meta.url), 'utf8');
   assert.ok(/import \{[^}]*\bMEMBER_ROLES\b[^}]*\} from '@touche\/domain'/.test(accounts), 'MEMBER_ROLES imported from @touche/domain');
   assert.equal((accounts.match(/MEMBER_ROLES\.map\(/g) || []).length, 2, 'create form and edit dialog both list MEMBER_ROLES');
   assert.ok(!/<option\s+value=["'](advisor|manager)["']/.test(accounts), 'no hard-coded role <option>');
