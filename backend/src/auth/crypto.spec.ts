@@ -6,3 +6,4 @@ it('sha256Hex', () => expect(sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5da
 it('token and salt formats', () => { expect(newSessionToken()).toMatch(/^[a-f0-9]{64}$/); expect(newSaltHex()).toMatch(/^[a-f0-9]{32}$/); });
 it('safeEqualHex', () => { expect(safeEqualHex('ab', 'ab')).toBe(true); expect(safeEqualHex('ab', 'ac')).toBe(false); expect(safeEqualHex('ab', 'abc')).toBe(false); });
 it('cookie strings', () => { expect(sessionCookie('a'.repeat(64))).toBe(`__Host-touche-session=${'a'.repeat(64)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800`); expect(readSessionToken(`x=1; __Host-touche-session=${'b'.repeat(64)}`)).toBe('b'.repeat(64)); });
+it('a renewed cookie keeps the flags with the remaining lifetime', () => expect(sessionCookie('c'.repeat(64), 3600)).toBe(`__Host-touche-session=${'c'.repeat(64)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=3600`));

@@ -4,6 +4,7 @@ import { ZodError } from 'zod';
 import { isUniqueViolation } from './db-errors.js';
 import { describeError } from './log.js';
 import { DeskError, sendJson } from './http.js';
+import { describeIssues } from './validation-messages.js';
 
 @Catch()
 export class DeskExceptionFilter implements ExceptionFilter {
@@ -13,14 +14,13 @@ export class DeskExceptionFilter implements ExceptionFilter {
     const http = host.switchToHttp();
     const req = http.getRequest<Request>();
     const res = http.getResponse<Response>();
-    if (exception instanceof DeskError) return sendJson(res, { error: exception.message }, exception.status);
-    if (exception instanceof ZodError) {
-      const detail = exception.issues
-        .map((i) => i.path.join('.') + ' ' + i.message)
-        .slice(0, 2)
-        .join('; ');
-      return sendJson(res, { error: 'Vérifiez les champs du formulaire : ' + detail }, 400);
+    if (exception instanceof DeskError) {
+      const body = exception.code
+        ? { error: exception.message, code: exception.code }
+        : { error: exception.message };
+      return sendJson(res, body, exception.status);
     }
+    if (exception instanceof ZodError) return sendJson(res, { error: describeIssues(exception.issues) }, 400);
     if (isUniqueViolation(exception, 'tc_accepted_dossiers')) {
       return sendJson(
         res,

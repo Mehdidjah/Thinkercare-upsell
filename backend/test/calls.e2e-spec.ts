@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { tcAcceptedDossiers, tcAudit, tcCallMeta, tcCalls, tcProposals } from '../src/db/schema.js';
-import { EMPTY_PROFILE, type Product, type CallMeta, basketOffer, recommend, localDay } from '@touche/domain';
+import { EMPTY_PROFILE, type Product, type CallMeta, type OrderItem, basketOffer, recommend, localDay, money, offerProblem } from '@touche/domain';
 import { contributions } from '../src/desk/contributions.js';
 import { productStats } from '@touche/domain';
 import type { DeskUser } from '../src/desk/desk.types.js';
@@ -160,15 +160,54 @@ describe('present-offer', () => {
     expect(audit!.detail).toEqual({ callId: body.callId });
   });
 
-  it('a stale price is 409', async () => {
+  it('a stale price is 409 with the new amount and the price-changed code', async () => {
     const body = present({ agreedTotal: 3100 });
     const res = await post(body);
     expect(res.status).toBe(409);
     expect(res.body).toEqual({
-      error: 'Le tarif a changé. Actualisez et annoncez le montant corrigé.',
+      error: `Le tarif a changé : cette offre vaut maintenant ${money(3000)}. Le catalogue a été mis à jour, annoncez le nouveau montant.`,
+      code: 'price-changed',
     });
+    expect(res.body.error).not.toMatch(/Actualisez/);
     expect(await ctx.db.select().from(tcProposals)).toEqual([]);
     expect(await auditRows('offer.presented')).toEqual([]);
+  });
+
+  it('a catalogue price edited during the call names the new offer amount (H2)', async () => {
+    expect((await post({ action: 'product', product: { ...fixture('wcgel'), price: 1600 } }, admin)).status).toBe(200);
+    const res = await post(present());
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('price-changed');
+    expect(res.body.error).toBe(
+      `Le tarif a changé : cette offre vaut maintenant ${money(3100)}. Le catalogue a été mis à jour, annoncez le nouveau montant.`,
+    );
+    expect((await post(present({ agreedTotal: 3100 }))).status).toBe(200);
+  });
+
+  it('an offer that does not raise the order is refused with the shared message (M5)', async () => {
+    const order = { baseId: 'serumspf', baseQuantities: { serumspf: 3 }, quantities: { serumspf: 3, wcgel: 1 }, productIds: ['serumspf', 'wcgel'] };
+    const initial = [{ ...fixture('serumspf'), quantity: 3 }] as unknown as OrderItem[];
+    const basket = [...initial, { ...fixture('wcgel'), quantity: 1 }] as unknown as OrderItem[];
+    const message = offerProblem(initial, basket, 'final');
+    expect(message).toContain(money(8500));
+    const res = await post(present({ ...order, tier: 'final', agreedTotal: 8500 }));
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: message });
+    expect(await ctx.db.select().from(tcProposals)).toEqual([]);
+    expect((await post(present({ ...order, tier: 'duo', agreedTotal: 9500 }))).status).toBe(200);
+  });
+
+  it('a product added to the offer must still be available, the customer’s own products need not be (M3)', async () => {
+    const off = (id: string) => post({ action: 'product', product: { ...fixture(id), enabled: false } }, admin);
+    expect((await off('antiacne')).status).toBe(200);
+    expect((await post(present())).status).toBe(200);
+    expect((await off('wcgel')).status).toBe(200);
+    const res = await post(present());
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: '« Water Complex Gel » n’est plus disponible dans le catalogue : retirez-le de l’offre et présentez-la de nouveau.',
+      code: 'product-disabled',
+    });
   });
 
   it('retrying present-offer with the same id is idempotent', async () => {
@@ -253,7 +292,7 @@ describe('save-call', () => {
     expect(data.acceptedProposalId).toBe(p.id);
     expect(data.completedAt).toBe(call!.created_at.toISOString());
     expect(await ctx.db.select().from(tcAcceptedDossiers)).toEqual([
-      { order_ref: 'DOS-001', call_id: p.callId, user_id: linaUser.id },
+      { order_ref: 'DOS-001', call_id: p.callId, user_id: linaUser.id, voided_at: null },
     ]);
     const [audit] = await auditRows('call.closed');
     expect(audit!.target).toBe(p.callId);
@@ -300,19 +339,114 @@ describe('save-call', () => {
     expect(await ctx.db.select().from(tcCalls)).toEqual([]);
   });
 
-  it('a catalogue price change after presentation is 409', async () => {
+  it('a catalogue price change after presentation does not block the presented sale (H2)', async () => {
     const p = await presented();
-    const changed = await post(
-      { action: 'product', product: { ...fixture('wcgel'), price: 1600 } },
-      admin,
-    );
-    expect(changed.status).toBe(200);
+    for (const [id, price] of [['wcgel', 1600], ['antiacne', 1900]] as const) {
+      expect((await post({ action: 'product', product: { ...fixture(id), price } }, admin)).status).toBe(200);
+    }
     const res = await post(save({ id: p.callId, meta: { acceptedProposalId: p.id } }));
-    expect(res.status).toBe(409);
-    expect(res.body).toEqual({
-      error: 'Le catalogue a changé : actualisez puis faites confirmer le nouveau montant.',
-    });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, p.callId));
+    expect(call).toMatchObject({ offered_total: 3000, base_total: 1800, catalogue_total: 3300, extra: 1200 });
+    expect(call!.products.map((x) => [x.id, x.price])).toEqual([['antiacne', 1800], ['wcgel', 1500]]);
+    const [meta] = await ctx.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, p.callId));
+    expect((meta!.data as CallMeta).originals?.map((x) => x.price)).toEqual([1800]);
+  });
+
+  it('a sale that differs from the presented snapshot is still 409, whatever the catalogue', async () => {
+    const p = await presented();
+    expect((await post({ action: 'product', product: { ...fixture('wcgel'), price: 1600 } }, admin)).status).toBe(200);
+    for (const change of [{ agreedTotal: 3100 }, { delivery: 400 }, { tier: 'final', agreedTotal: 2700 }]) {
+      const res = await post(save({ id: p.callId, ...change, meta: { acceptedProposalId: p.id } }));
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({ error: 'La composition ou le tarif a changé. Présentez de nouveau l’offre exacte.' });
+    }
     expect(await ctx.db.select().from(tcCalls)).toEqual([]);
+  });
+
+  it('a price change never blocks a non-sale outcome; a refusal keeps the presented amounts (H2)', async () => {
+    const p = await presented();
+    for (const [id, price] of [['wcgel', 1600], ['antiacne', 1900]] as const) {
+      expect((await post({ action: 'product', product: { ...fixture(id), price } }, admin)).status).toBe(200);
+    }
+    const refused = await post(save({ id: p.callId, outcome: 'refused', refusal: 'budget', consent: false, checked: false }));
+    expect(refused.status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, p.callId));
+    expect(call).toMatchObject({ outcome: 'refused', offered_total: 1800, base_total: 1800, catalogue_total: 3300, extra: 0 });
+    for (const outcome of ['initial', 'noanswer', 'review'] as const) {
+      const body = save({ outcome, consent: false, checked: false });
+      expect((await post(body)).status).toBe(200);
+      const [row] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, body.id));
+      expect(row).toMatchObject({ base_total: 1900, catalogue_total: 3500, offered_total: outcome === 'initial' ? 1900 : 0, extra: 0 });
+    }
+  });
+
+  it('an accepted sale on a stored offer that does not raise the order is refused (M5)', async () => {
+    const callId = randomUUID();
+    const id = randomUUID();
+    const item = (x: string, quantity = 1) => ({ id: x, name: x, price: fixture(x).price as number, quantity, category: fixture(x).category as string, components: [] });
+    const snapshot = {
+      id, call_id: callId, user_id: linaUser.id, created_at: new Date().toISOString(),
+      base: item('serumspf', 3), originals: [item('serumspf', 3)], products: [item('serumspf', 3), item('wcgel')],
+      catalogueTotal: 10350, offerTotal: 8500, extra: -350, tier: 'final', delivery: null, version: 3,
+    };
+    await ctx.db.insert(tcProposals).values({ id, call_id: callId, user_id: linaUser.id, created_at: new Date(), snapshot });
+    const res = await post(save({
+      id: callId, baseId: 'serumspf', baseQuantities: { serumspf: 3 }, quantities: { serumspf: 3, wcgel: 1 },
+      productIds: ['serumspf', 'wcgel'], tier: 'final', agreedTotal: 8500, outcome: 'routine', meta: { acceptedProposalId: id },
+    }));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(offerProblem(snapshot.originals as unknown as OrderItem[], snapshot.products as unknown as OrderItem[], 'final'));
+    expect(await ctx.db.select().from(tcCalls)).toEqual([]);
+  });
+
+  it('a disabled product blocks only a sale that adds it (M3)', async () => {
+    const p = await presented();
+    const off = (id: string) => post({ action: 'product', product: { ...fixture(id), enabled: false } }, admin);
+    expect((await off('antiacne')).status).toBe(200);
+    expect((await off('wcgel')).status).toBe(200);
+    const sale = await post(save({ id: p.callId, meta: { acceptedProposalId: p.id } }));
+    expect(sale.status).toBe(400);
+    expect(sale.body.code).toBe('product-disabled');
+    for (const outcome of ['refused', 'initial', 'noanswer', 'review', 'callback'] as const) {
+      const body = save({ outcome, refusal: outcome === 'refused' ? 'budget' : '', consent: false, checked: false, meta: outcome === 'callback' ? { callbackAt: at(DAY) } : {} });
+      const res = await post(body);
+      expect(res.status, outcome).toBe(200);
+    }
+    const kept = save({ productIds: ['antiacne'], outcome: 'initial', consent: false, checked: false });
+    delete kept.meta;
+    expect((await post(kept)).status).toBe(200);
+  });
+
+  it('an accepted sale without call context is refused; old saved rows still report (H4)', async () => {
+    const p = await presented();
+    const legacy = save({ id: p.callId });
+    delete legacy.meta;
+    const res = await post(legacy);
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Marquez l’offre comme présentée avant de confirmer la vente.' });
+    const today = localDay(new Date());
+    const old = await ctx.db.insert(tcCalls).values({
+      id: randomUUID(), user_id: linaUser.id, operator: 'Lina B.', created_at: new Date(), outcome: 'duo', base_id: 'antiacne',
+      products: [{ id: 'antiacne', name: 'Sérum Anti-Acné', price: 1800 }, { id: 'wcgel', name: 'Water Complex Gel', price: 1500 }],
+      catalogue_total: 3300, base_total: 1800, offered_total: 3000, delivery: null, tier: 'duo', extra: 1200,
+    }).returning({ id: tcCalls.id });
+    const report = await deskGet(ctx, `?action=analytics&from=${today}&to=${today}`, admin);
+    expect(report.status).toBe(200);
+    expect(report.body.calls.find((c: { id: string }) => c.id === old[0]!.id)).toMatchObject({ meta: {}, proposals: [] });
+    const progress = await deskGet(ctx, '?action=my-progress', lina);
+    expect(progress.body).toMatchObject({ progress: { count: 1 }, withoutReference: 1 });
+  });
+
+  it('a retry of a recorded call is a duplicate even after the catalogue changed', async () => {
+    const p = await presented();
+    const body = save({ id: p.callId, meta: { acceptedProposalId: p.id } });
+    expect((await post(body)).status).toBe(200);
+    expect((await post({ action: 'product', product: { ...fixture('wcgel'), price: 1600, enabled: false } }, admin)).status).toBe(200);
+    const again = await post(body);
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual({ ok: true, duplicate: true });
   });
 
   it('retrying save-call is idempotent', async () => {
@@ -409,7 +543,7 @@ describe('save-call', () => {
     expect(calls.map((c) => c.id)).toEqual([winner.callId]);
     expect(metas.map((m) => m.call_id)).toEqual([winner.callId]);
     expect(await ctx.db.select().from(tcAcceptedDossiers)).toEqual([
-      { order_ref: 'DOS-777', call_id: winner.callId, user_id: winnerUser.id },
+      { order_ref: 'DOS-777', call_id: winner.callId, user_id: winnerUser.id, voided_at: null },
     ]);
     expect((await auditRows('call.closed')).map((a) => a.target)).toEqual([winner.callId]);
   });
@@ -488,15 +622,22 @@ describe('save-call', () => {
     expect((meta!.data as Record<string, unknown>).callbackAt).toBe(tomorrow);
   });
 
-  it('a call started more than 7 days ago is rejected', async () => {
-    const old = await post(save({ meta: { startedAt: at(-8 * DAY) } }));
-    expect(old.status).toBe(400);
-    expect(old.body).toEqual({ error: 'Horodatage de début invalide. Ouvrez un nouvel appel.' });
-    const future = await post(save({ meta: { startedAt: at(5 * 60_000) } }));
-    expect(future.status).toBe(400);
-    expect(future.body).toEqual({
-      error: 'Horodatage de début invalide. Ouvrez un nouvel appel.',
-    });
+  it('a start time over a day old is rejected', async () => {
+    for (const startedAt of [at(-8 * DAY), at(-DAY - 60_000)]) {
+      const old = await post(save({ outcome: 'initial', consent: false, checked: false, meta: { startedAt } }));
+      expect(old.status).toBe(400);
+      expect(old.body).toEqual({ error: 'Horodatage de début invalide. Ouvrez un nouvel appel.' });
+    }
+    expect((await post(save({ outcome: 'initial', consent: false, checked: false, meta: { startedAt: at(-DAY + 60_000) } }))).status).toBe(200);
+  });
+
+  it('a desk clock ahead of the server is clamped to the server time, not refused (M4)', async () => {
+    const p = await presented();
+    const res = await post(save({ id: p.callId, meta: { startedAt: at(2 * 60 * 60_000), acceptedProposalId: p.id } }));
+    expect(res.status).toBe(200);
+    const [meta] = await ctx.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, p.callId));
+    const data = meta!.data as CallMeta & { completedAt: string };
+    expect(Date.parse(data.startedAt!)).toBeLessThanOrEqual(Date.parse(data.completedAt));
   });
 
   it('pack upgrade replaces the shampoo without double billing', async () => {
@@ -527,6 +668,29 @@ describe('save-call', () => {
       extra: 1350,
       tier: 'catalogue',
     });
+  });
+
+  it('a verified pack that is not suggested automatically can be presented, sold or refused (H3)', async () => {
+    const pack = { baseId: 'shpso', upgradeId: 'packpso', productIds: ['packpso'], tier: 'catalogue', agreedTotal: 3450, verifiedProducts: ['packpso'] };
+    const unverified = { ...pack, verifiedProducts: undefined };
+    expect((await post(present(unverified))).status).toBe(400);
+    const declined = await presented(lina, pack);
+    const refused = await post(save({ ...unverified, id: declined.callId, outcome: 'refused', refusal: 'budget', consent: false, checked: false }));
+    expect(refused.status).toBe(200);
+    for (const outcome of ['noanswer', 'initial', 'review'] as const) {
+      expect((await post(save({ ...unverified, outcome, consent: false, checked: false }))).status, outcome).toBe(200);
+    }
+    const sold = await presented(lina, pack);
+    const missing = await post(save({ ...unverified, id: sold.callId, outcome: 'duo', meta: { acceptedProposalId: sold.id } }));
+    expect(missing.status).toBe(400);
+    expect(missing.body).toEqual({ error: 'Cette référence nécessite une vérification de sa fiche avant ajout automatique.' });
+    const ok = await post(save({ ...pack, id: sold.callId, outcome: 'duo', meta: { orderRef: 'DOS-PSO', acceptedProposalId: sold.id } }));
+    expect(ok.status).toBe(200);
+    const [call] = await ctx.db.select().from(tcCalls).where(eq(tcCalls.id, sold.callId));
+    expect(call).toMatchObject({ offered_total: 3450, base_total: 1900, extra: 1550 });
+    const wrong = await post(save({ ...pack, baseId: 'antiacne', outcome: 'noanswer', consent: false, checked: false }));
+    expect(wrong.status).toBe(400);
+    expect(wrong.body).toEqual({ error: 'Pack de remplacement non compatible avec le produit initial.' });
   });
 
   it('a product the customer asks for, outside the suggestions, can be presented and saved', async () => {

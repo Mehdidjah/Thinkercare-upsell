@@ -7,10 +7,12 @@ export function sendJson(res: Response, data: unknown, status = 200, headers: Re
   res.status(status).json(data);
 }
 
+/** A French, actionable error for the desk; `code` is an optional machine hint next to `error`. */
 export class DeskError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly code?: string,
   ) {
     super(message);
   }

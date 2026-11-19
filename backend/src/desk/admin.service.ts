@@ -51,22 +51,28 @@ export class AdminService {
     return { ok: true };
   }
 
-  async setClinical(_user: DeskUser, body: unknown): Promise<{ ok: true }> {
+  async setClinical(user: DeskUser, body: unknown): Promise<{ ok: true }> {
     const v = clinicalSchema.parse(body);
     if (v.validated && v.by.length < 2) {
       throw new DeskError(400, 'Indiquez le responsable ayant effectivement validé le protocole.');
     }
-    await this.db
-      .update(tcSettings)
-      .set({
-        data: {
+    const data = { validated: v.validated, by: v.by, at: new Date().toISOString(), version: 3 };
+    await this.db.transaction(async (tx) => {
+      const [previous] = await tx
+        .select({ data: tcSettings.data })
+        .from(tcSettings)
+        .where(eq(tcSettings.id, 'clinical'))
+        .for('update');
+      await tx.update(tcSettings).set({ data }).where(eq(tcSettings.id, 'clinical'));
+      // Who validated or withdrew the protocol, and what it replaced, stays traceable.
+      await tx.insert(tcAudit).values(
+        auditRow(user, 'clinical.updated', 'clinical', {
           validated: v.validated,
           by: v.by,
-          at: new Date().toISOString(),
-          version: 3,
-        },
-      })
-      .where(eq(tcSettings.id, 'clinical'));
+          previous: previous?.data ?? null,
+        }),
+      );
+    });
     return { ok: true };
   }
 

@@ -20,6 +20,9 @@ import { BootstrapService } from './bootstrap.service.js';
 import { CallsService } from './calls.service.js';
 import { ReportingService } from './reporting.service.js';
 
+const ACCOUNT_CHANGED =
+  'Ce poste est maintenant connecté avec un autre compte. Rechargez la page pour continuer avec ce compte.';
+
 @Controller('api/desk')
 @UseFilters(DeskExceptionFilter)
 export class DeskController {
@@ -39,13 +42,16 @@ export class DeskController {
     const action = params.get('action');
     if (action === 'health')
       return sendJson(res, { ok: true, app: 'ThinkerCare' });
-    const user = await this.auth.resolveUser(req.headers.cookie);
-    if (!user)
+    const session = await this.auth.resolveSession(req.headers.cookie);
+    if (!session)
       return sendJson(
         res,
         { error: 'Connectez-vous pour accéder à cet espace.' },
         401,
       );
+    // H1: the session slid forward; the browser gets the cookie with its new lifetime.
+    if (session.cookie) res.setHeader('Set-Cookie', session.cookie);
+    const { user } = session;
     // GET order: analytics, my-progress/contributions, audit, reminders (T7), default bootstrap.
     if (action === 'analytics')
       return sendJson(res, await this.reporting.analytics(user, params));
@@ -70,12 +76,16 @@ export class DeskController {
     const text = typeof req.body === 'string' ? req.body : '';
     if (text.length > 28000)
       throw new DeskError(413, 'Requête trop volumineuse.');
-    let body: { action?: unknown } & Record<string, unknown>;
+    let parsed: unknown;
     try {
-      body = JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch {
       throw new DeskError(400, 'Données invalides.');
     }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new DeskError(400, 'Données invalides.');
+    }
+    let body = parsed as { action?: unknown } & Record<string, unknown>;
     if (body.action === 'login') {
       const cookie = await this.auth.login(body, req.ip ?? 'unknown');
       // Deliver the workspace with the login response, avoiding another browser round trip.
@@ -87,9 +97,25 @@ export class DeskController {
       }
       return sendJson(res, { ok: true }, 200, { 'Set-Cookie': cookie });
     }
-    const user = await this.auth.resolveUser(req.headers.cookie);
+    const session = await this.auth.resolveSession(req.headers.cookie);
+    if (session?.cookie) res.setHeader('Set-Cookie', session.cookie);
+    const user = session?.user;
+    // Signing out of a session that already ended still clears the browser cookie.
+    if (!user && body.action === 'logout') {
+      await this.auth.logout(req.headers.cookie);
+      return sendJson(res, { ok: true }, 200, { 'Set-Cookie': clearedSessionCookie() });
+    }
     if (!user)
       throw new DeskError(401, 'Votre session a expiré. Reconnectez-vous.');
+    // X1: a tab still showing another account must not write as the account now signed in.
+    const { expectedUserId, ...rest } = body;
+    if (expectedUserId !== undefined) {
+      if (typeof expectedUserId !== 'string' || expectedUserId.length > 64) {
+        throw new DeskError(400, 'Données invalides.');
+      }
+      if (expectedUserId !== user.id) throw new DeskError(409, ACCOUNT_CHANGED, 'account-changed');
+    }
+    body = rest;
     if (body.action === 'logout') {
       await this.auth.logout(req.headers.cookie);
       return sendJson(res, { ok: true }, 200, {
@@ -98,12 +124,17 @@ export class DeskController {
     }
     if (body.action === 'bonus-rule')
       return sendJson(res, await this.bonus.saveRule(user, body));
-    // POST order after the session check: logout, bonus-rule, present-offer and complete-reminder (T7),
-    // user-settings, save-call (T7), password, non-management -> 403, then product, clinical and account management.
+    // POST order after the session check: logout, bonus-rule, present-offer, complete-reminder,
+    // reopen-reminder and void-call (each checks its own access), user-settings, save-call, password,
+    // non-management -> 403, then product, clinical and account management.
     if (body.action === 'present-offer')
       return sendJson(res, await this.calls.presentOffer(user, body));
     if (body.action === 'complete-reminder')
       return sendJson(res, await this.calls.completeReminder(user, body));
+    if (body.action === 'reopen-reminder')
+      return sendJson(res, await this.calls.reopenReminder(user, body));
+    if (body.action === 'void-call')
+      return sendJson(res, await this.calls.voidCall(user, body));
     if (body.action === 'user-settings')
       return sendJson(res, await this.admin.updateUserSettings(user, body));
     if (body.action === 'save-call')

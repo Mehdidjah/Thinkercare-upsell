@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import { validMonth, MAX_ITEM_QUANTITY } from '@touche/domain';
+import { frenchIssue } from '../common/validation-messages.js';
+
+// Every validation message is French; DeskExceptionFilter adds the field label (M6).
+z.config(z.locales.fr());
+z.config({ customError: frenchIssue });
 
 export const loginSchema = z
   .object({
@@ -270,6 +275,18 @@ export const saveCallSchema = z
 
 export const completeReminderSchema = z
   .object({ action: z.literal('complete-reminder'), callId: z.string().uuid() })
+  .strict();
+
+export const reopenReminderSchema = z
+  .object({ action: z.literal('reopen-reminder'), id: z.string().uuid() })
+  .strict();
+
+export const voidCallSchema = z
+  .object({
+    action: z.literal('void-call'),
+    id: z.string().uuid(),
+    reason: z.string().trim().min(3).max(300),
+  })
   .strict();
 
 export const bonusRuleSchema = z

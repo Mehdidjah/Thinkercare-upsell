@@ -110,6 +110,7 @@ describe('bootstrap', () => {
       expect(u).not.toHaveProperty('password_hash');
     }
     expect(res.body.calls).toEqual([]);
+    expect(res.body.features).toEqual(expect.arrayContaining(['expected-user']));
   });
   it('adviser bootstrap never includes calls or colleagues', async () => {
     await insertCall(randomUUID(), '2026-11-01T10:00:00Z');
@@ -166,6 +167,22 @@ describe('product', () => {
     });
     expect(res.status).toBe(400);
     expect(res.body.error.startsWith(FORM)).toBe(true);
+    expect(res.body).toEqual({
+      error: FORM + 'Image du produit — adresse non autorisée, utilisez une image /assets/… ou une adresse https://cdn.shopify.com/….',
+    });
+  });
+  it('validation messages are French and name the field, never its technical path', async () => {
+    const res = await post({ action: 'product', product: { ...fixture('antiacne'), name: 'X', source: 'http://touchelab.com/x' } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(
+      FORM + 'Nom du produit — 2 caractères minimum ; Fiche officielle — adresse non autorisée, utilisez une page https://www.touchelab.com/….',
+    );
+    const account = await post({ action: 'user', username: 'é', label: 'Nouvelle', password: 'x' });
+    expect(account.status).toBe(400);
+    expect(account.body.error).toBe(
+      FORM + 'Identifiant — 3 à 40 caractères : lettres minuscules, chiffres, point, tiret ou tiret bas.',
+    );
+    for (const text of [res.body.error, account.body.error]) expect(text).not.toMatch(/product\.|username|Invalid|expected/);
   });
   it('a pack cannot contain itself', async () => {
     const product = {
@@ -218,6 +235,16 @@ describe('clinical', () => {
     expect(got.body.clinical.validated).toBe(true);
     expect(got.body.clinical.by).toBe('Dr Benali');
     expect(got.body.clinical.version).toBe(3);
+  });
+  it('every protocol validation change is audited with what it replaced', async () => {
+    expect((await post({ action: 'clinical', validated: true, by: 'Dr Benali' })).status).toBe(200);
+    expect((await post({ action: 'clinical', validated: false, by: '' })).status).toBe(200);
+    const rows = await ctx.db.select().from(tcAudit).where(eq(tcAudit.action, 'clinical.updated'));
+    const [direction] = await ctx.db.select().from(tcUsers).where(eq(tcUsers.username, 'direction'));
+    expect(rows.map((r) => [r.target, r.user_id])).toEqual([['clinical', direction!.id], ['clinical', direction!.id]]);
+    const detail = (validated: boolean) => rows.find((r) => (r.detail as { validated: boolean }).validated === validated)!.detail;
+    expect(detail(true)).toEqual({ validated: true, by: 'Dr Benali', previous: { validated: false, by: '', at: '' } });
+    expect(detail(false)).toMatchObject({ validated: false, by: '', previous: { validated: true, by: 'Dr Benali', version: 3 } });
   });
 });
 

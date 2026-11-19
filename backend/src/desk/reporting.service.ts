@@ -11,10 +11,12 @@ import {
   gte,
   inArray,
   isNotNull,
+  isNull,
   lt,
   or,
   sql,
 } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { DeskError } from '../common/http.js';
 import type { Db } from '../db/schema.js';
 import {
@@ -25,6 +27,8 @@ import {
   tcUsers,
 } from '../db/schema.js';
 import type { DeskUser } from './desk.types.js';
+
+const voider = alias(tcUsers, 'voider');
 
 @Injectable()
 export class ReportingService {
@@ -101,11 +105,13 @@ export class ReportingService {
     const rows = await this.db
       .select({
         ...getTableColumns(tcCalls),
+        voided_by_label: voider.label,
         callback_done: tcCallMeta.callback_done,
         meta_data: tcCallMeta.data,
       })
       .from(tcCalls)
       .leftJoin(tcCallMeta, eq(tcCallMeta.call_id, tcCalls.id))
+      .leftJoin(voider, eq(voider.id, tcCalls.voided_by))
       .where(and(...filters))
       .orderBy(desc(tcCalls.created_at), sql`${tcCalls.id} COLLATE "C" DESC`)
       .limit(501);
@@ -147,7 +153,7 @@ export class ReportingService {
     };
   }
 
-  /** Port of activity.server.ts line 67: open reminders, oldest callback first, scoped to the user. */
+  /** Port of activity.server.ts line 67: open reminders of active calls, oldest callback first, scoped to the user. */
   async reminders(user: DeskUser) {
     const { userId } = reportScope(user);
     const reminders = await this.db
@@ -168,6 +174,7 @@ export class ReportingService {
         and(
           isNotNull(tcCallMeta.callback_at),
           eq(tcCallMeta.callback_done, 0),
+          isNull(tcCalls.voided_at),
           userId === null ? undefined : eq(tcCalls.user_id, userId),
         ),
       )

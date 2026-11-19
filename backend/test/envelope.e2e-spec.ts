@@ -52,6 +52,11 @@ describe('/api/desk envelope', () => {
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: 'Données invalides.' });
   });
+  it.each(['null', '[]', '42', '"login"'])('POST of a JSON value that is not an object (%s) is 400', async (raw) => {
+    const res = await deskPost(ctx, null, { raw });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Données invalides.' });
+  });
   it('POST without a session is 401', async () => {
     const res = await deskPost(ctx, { action: 'save-call' });
     expect(res.status).toBe(401);
