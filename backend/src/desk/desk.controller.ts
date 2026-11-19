@@ -42,13 +42,16 @@ export class DeskController {
     const action = params.get('action');
     if (action === 'health')
       return sendJson(res, { ok: true, app: 'ThinkerCare' });
-    const user = await this.auth.resolveUser(req.headers.cookie);
-    if (!user)
+    const session = await this.auth.resolveSession(req.headers.cookie);
+    if (!session)
       return sendJson(
         res,
         { error: 'Connectez-vous pour accéder à cet espace.' },
         401,
       );
+    // H1: the session slid forward; the browser gets the cookie with its new lifetime.
+    if (session.cookie) res.setHeader('Set-Cookie', session.cookie);
+    const { user } = session;
     // GET order: analytics, my-progress/contributions, audit, reminders (T7), default bootstrap.
     if (action === 'analytics')
       return sendJson(res, await this.reporting.analytics(user, params));
@@ -94,7 +97,9 @@ export class DeskController {
       }
       return sendJson(res, { ok: true }, 200, { 'Set-Cookie': cookie });
     }
-    const user = await this.auth.resolveUser(req.headers.cookie);
+    const session = await this.auth.resolveSession(req.headers.cookie);
+    if (session?.cookie) res.setHeader('Set-Cookie', session.cookie);
+    const user = session?.user;
     // Signing out of a session that already ended still clears the browser cookie.
     if (!user && body.action === 'logout') {
       await this.auth.logout(req.headers.cookie);
