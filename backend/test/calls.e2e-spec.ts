@@ -1163,6 +1163,24 @@ describe('quantities in original orders and accepted offers', () => {
     expect(dashboard.people.find((p: { id: string }) => p.id === linaUser.id).period).toMatchObject({ upsells: units, initialDzd: baseTotal, confirmedDzd: selection.agreedTotal });
   });
 
+  it('accepts one more unit of the ordered product at the usual offer and counts it for its adviser (UNIT)', async () => {
+    // The desk's « + Une unité » on the initial line: Anti-Acné × 1 ordered, × 2 offered at the first offer.
+    const agreedTotal = basketOffer([{ ...fixture('antiacne'), quantity: 2 } as unknown as OrderItem], 'duo');
+    expect(agreedTotal).toBe(3300); // priceOffer(3 600 DA, duo, 2 units)
+    const selection = { baseId: 'antiacne', baseIds: ['antiacne'], productIds: ['antiacne'], baseQuantities: { antiacne: 1 }, quantities: { antiacne: 2 }, tier: 'duo', agreedTotal };
+    const offer = present(selection);
+    const shown = await post(offer);
+    expect(shown.status).toBe(200);
+    expect(shown.body.proposal).toMatchObject({ catalogueTotal: 3600, offerTotal: 3300, extra: 1500 });
+    expect(shown.body.proposal.products).toEqual([expect.objectContaining({ id: 'antiacne', quantity: 2 })]);
+    const result = await post(save({ ...selection, id: offer.callId, outcome: 'duo', meta: { acceptedProposalId: offer.id } }));
+    expect(result.status).toBe(200);
+    expect((await deskGet(ctx, '?action=my-progress', lina)).body.progress.count).toBe(1);
+    expect((await deskGet(ctx, '?action=my-progress', sara)).body.progress.count).toBe(0);
+    const { body: dashboard } = await deskGet(ctx, '?action=contributions', admin);
+    expect(dashboard.people.find((p: { id: string }) => p.id === linaUser.id).period).toMatchObject({ upsells: 1, initialDzd: 1800, confirmedDzd: 3300 });
+  });
+
   it.each([0, -1, 1.5, 100, '2', null])('rejects an invalid quantity (%s) in either order', async quantity => {
     expect((await post(present({ quantities: { antiacne: quantity } }))).status).toBe(400);
     expect((await post(save({ baseQuantities: { antiacne: quantity } }))).status).toBe(400);

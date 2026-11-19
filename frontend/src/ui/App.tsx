@@ -206,12 +206,14 @@ export default function Desk(){
  const offerIssue=offerProblem(initial,basket,tier),duplicate=packDuplicate(initial,products);
  const selectedQuantities=Object.fromEntries(basket.map(p=>[p.id,quantityOf(p)]));
  const requestIds=searchIds(products,requestSearch),orderIds=searchIds(products,search);
- // Step 3: every product that may be added, the added ones kept in their row (B5). A pack offered as the upgrade is never a
- // blocked row here (PACK). A search with no exact match lists the closest products (SEARCH).
+ // Step 3: every product that may be added, the added ones kept in their row (B5), and every line of the basket with
+ // « + Une unité » (UNIT). A pack offered as the upgrade is never a blocked row here (PACK). A search with no exact match
+ // lists the closest products (SEARCH).
  const packIds=new Set(packsAlone.map(c=>c.product.id));
- const pool=d.step===2&&activeBase&&!blocked?products.filter(p=>p.enabled&&!d.baseIds.includes(p.id)&&p.id!==activeBase.id&&!packIds.has(p.id)):[];
+ const lines=callState.basketLines(d,products);
+ const pool=d.step===2&&activeBase&&!blocked?callState.pickerPool(d,products,packIds):[];
  const exact=pool.filter(p=>requestIds.has(p.id)),requestApproximate=!!requestSearch.trim()&&!exact.length;
- const requestable=(requestApproximate?closestProducts(pool,requestSearch,5):exact).map(p=>{const added=d.adds.includes(p.id);return {product:p,added,check:manualAddCheck(activeBase!,added?companions.filter(c=>c.id!==p.id):companions,p,{...profile,verifiedProducts},products),suggestion:candidates.find(r=>r.product.id===p.id)};});
+ const requestable=(requestApproximate?closestProducts(pool,requestSearch,5):exact).map(p=>{const added=d.adds.includes(p.id);return {product:p,added,check:manualAddCheck(activeBase!,added?companions.filter(c=>c.id!==p.id):companions,p,{...profile,verifiedProducts},products),suggestion:candidates.find(r=>r.product.id===p.id),line:lines.get(p.id)};});
  const suggestionRanks=new Map(candidates.map((r,i)=>[r.product.id,i]));
  const requests=requestApproximate?requestable:requestable.sort((a,b)=>(suggestionRanks.get(a.product.id)??candidates.length)-(suggestionRanks.get(b.product.id)??candidates.length)||Number(domainOf(b.product)===domain)-Number(domainOf(a.product)===domain));
  const inScope=scopeFilter(scope);
@@ -259,14 +261,21 @@ export default function Desk(){
   return !!r;
  }
  const changeInitialQuantity=(id:string,next:number)=>commit(callState.changeInitialQuantity(current(),id,next));
- // The search stays after an addition: the list keeps its order and the row says « Ajouté ✓ » (B5).
+ // The search stays after an addition: the list keeps its order and the row says « Dans la routine ✓ » (B5).
  function addComplement(id:string,verify:string[],requested:boolean){if(commit(callState.addComplement(current(),id,verify,requested))){setConfirmId('');announce(`${productName(id)} ajouté · ${unitsOf(current())}`);}}
  function removeComplement(id:string){if(!busy&&!presenting&&commit(callState.removeComplement(current(),id)))announce(`${productName(id)} retiré · ${unitsOf(current())}`);}
- function changeQuantity(id:string,next:number){
+ /** The rail's quantity and « + Une unité » share one change (callState.changeQuantity): a refusal says why. */
+ function applyQuantity(r:ReturnType<typeof callState.changeQuantity>){
   if(busy||presenting)return false;
-  const r=callState.changeQuantity(current(),id,next,products);
   if(r&&'error' in r){notify(r.error,'error');return false;}
   return commit(r?.draft??null);
+ }
+ const changeQuantity=(id:string,next:number)=>applyQuantity(callState.changeQuantity(current(),id,next,products));
+ /** « + Une unité » in the step-3 list: focus stays on its button, the new quantity is announced (UNIT). */
+ function addUnit(id:string){
+  if(!applyQuantity(callState.addUnit(current(),id,products)))return false;
+  announce(`${productName(id)} : une unité ajoutée, ×${current().quantities[id]} · ${unitsOf(current())}`);
+  return true;
  }
  function chooseUpgrade(id:string){if(commit(callState.chooseUpgrade(current(),id))){setConfirmId('');setRequestSearch('');}}
  const clearUpgrade=()=>applyRemoval(current(),callState.clearUpgrade(current(),products));
@@ -385,7 +394,7 @@ export default function Desk(){
   domain,profile,changeProfile,toggleConcern,blocked,stop,notes,missing,
   upgrades,heldPacks,upgrade,upgradeId:d.upgradeId,chooseUpgrade,clearUpgrade,adds:d.adds,requestedIds:d.requestedIds,
   verifiedProducts,toggleVerified,setDetail,
-  candidates,requests,requestApproximate,requestSearch,setRequestSearch,confirmId,setConfirmId,addComplement,removeComplement,changeQuantity,
+  candidates,requests,requestApproximate,requestSearch,setRequestSearch,confirmId,setConfirmId,addComplement,removeComplement,changeQuantity,addUnit,
   basket,count,total,altered,tier,chooseTier:(t:Tier)=>commit(callState.chooseTier(current(),t)),offer,offerIssue,delivery:d.delivery,changeDelivery:value=>commit(callState.changeDelivery(current(),value)),fee,copy,copyFallback,closeCopyFallback:()=>setCopyFallback(null),
   presented:d.presented,matchingOffer,keepsPresentedPrice,presentOffer,handledObjections:d.handledObjections,toggleObjection:key=>commit(callState.toggleObjection(current(),key)),
   consent:d.consent,setConsent:edit('consent'),checked:d.checked,setChecked:edit('checked'),callbackAt:d.callbackAt,setCallbackAt:edit('callbackAt'),refusal:d.refusal,setRefusal:edit('refusal'),record,

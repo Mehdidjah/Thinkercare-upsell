@@ -1,10 +1,12 @@
 import {createContext,useContext,type Dispatch,type SetStateAction} from 'react';
 import {type domainOf,type Candidate,type ManualAddCheck,type MissingAnswer,type OrderItem,type Product,type Profile,type Proposal,type ReviewStop,type Tier} from '@touche/domain';
-import {type ExampleKind} from './callState';
+import {type BasketLine,type ExampleKind} from './callState';
 
 type Setter<T>=Dispatch<SetStateAction<T>>;
-/** A row of the step-3 picker. An added product keeps its row (« Ajouté ✓ · Retirer », B5); its check ignores itself. */
-export type CallRequest={product:Product;check:ManualAddCheck;suggestion:Candidate|undefined;added:boolean};
+/** A row of the step-3 picker. An added product keeps its row (« Dans la routine ✓ · Retirer », B5); its check ignores
+ *  itself. `line`: the product is already in the basket (initial order, chosen pack or addition), with « + Une unité »
+ *  (UNIT); its check then does not apply. */
+export type CallRequest={product:Product;check:ManualAddCheck;suggestion:Candidate|undefined;added:boolean;line?:BasketLine};
 /** Additions removed by a change of answers, order or verification, with « Annuler » while it still applies. */
 export type RemovalNotice={id:number;names:string[];undo:(()=>void)|null};
 /** The catalogue changed under the call (price or disabled product): reloaded in place, the call kept (H2). */
@@ -48,6 +50,8 @@ export type CallModel={
  /** No exact match for the picker search: `requests` holds the closest products instead (SEARCH). */
  requestApproximate:boolean;requestSearch:string;setRequestSearch:Setter<string>;confirmId:string;setConfirmId:Setter<string>;
  addComplement:(id:string,verify:string[],requested:boolean)=>void;removeComplement:(id:string)=>void;changeQuantity:(id:string,next:number)=>boolean;
+ /** « + Une unité » in the picker: the rail's quantity change, one unit up, announced (UNIT). */
+ addUnit:(id:string)=>boolean;
  basket:OrderItem[];count:number;total:number;altered:boolean;
  tier:Tier;chooseTier:(tier:Tier)=>void;offer:number;
  /** Why this price cannot be presented: the offer does not exceed the initial order (M5). */

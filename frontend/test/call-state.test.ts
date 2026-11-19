@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { EMPTY_PROFILE, recommend, type Product, type Profile, type Proposal } from '@touche/domain';
+import { EMPTY_PROFILE, orderOffer, recommend, type Product, type Profile, type Proposal } from '@touche/domain';
 import * as cs from '../src/ui/call/callState';
 
 // Call-state transitions as plain objects in, plain objects out (X13). Every wipe of the scan (A1, A3, CN1, SPEC) has a case here.
@@ -229,6 +229,94 @@ describe('routine', () => {
     // Guards the scenarios above: wcgel and wcspf are genuine suggestions for Anti-acné with these answers.
     const ids = recommend(catalogue, p('antiacne'), face).map(c => c.product.id);
     expect(ids).toEqual(expect.arrayContaining(['wcgel', 'wcspf']));
+  });
+});
+
+describe('one more unit of a product already in the order (UNIT)', () => {
+  const ordered = (extra: Partial<cs.CallDraft> = {}) => liveCall({ adds: [], consent: true, checked: true, ...extra });
+  const hairOrder = (extra: Partial<cs.CallDraft> = {}) => liveCall({ baseIds: ['shpousse'], baseQuantities: { shpousse: 1 }, profile: hair, profileDomain: 'hair', adds: [], ...extra });
+
+  it('« + Une unité » on a line of the initial order: 1 → 2, one added unit, an upsell at the usual offer', () => {
+    const d = ordered();
+    const r = cs.addUnit(d, 'antiacne', catalogue);
+    // The rail's own quantity change, one unit up: same draft, same checks.
+    expect(r).toEqual(cs.changeQuantity(d, 'antiacne', 2, catalogue));
+    const next = (r as { draft: cs.CallDraft }).draft;
+    expect(next).toMatchObject({ baseQuantities: { antiacne: 1 }, quantities: { antiacne: 2 }, consent: false, checked: false });
+    const { initial, basket } = cs.basketOf(next, catalogue);
+    expect(basket.map(x => [x.id, x.quantity])).toEqual([['antiacne', 2]]);
+    expect(cs.basketLines(next, catalogue).get('antiacne')).toEqual({ initial: true, quantity: 2, extra: 1, refusal: null });
+    expect(orderOffer(initial, basket, 'duo')).toBe(3300);
+    // And once more: 2 → 3.
+    expect((cs.addUnit(next, 'antiacne', catalogue) as { draft: cs.CallDraft }).draft.quantities).toEqual({ antiacne: 3 });
+  });
+
+  it('works for an addition and for the pack that replaced the initial product', () => {
+    expect((cs.addUnit(ordered({ adds: ['wcgel'] }), 'wcgel', catalogue) as { draft: cs.CallDraft }).draft.quantities).toEqual({ wcgel: 2 });
+    const packed = hairOrder({ upgradeId: 'packpousse' });
+    expect((cs.addUnit(packed, 'packpousse', catalogue) as { draft: cs.CallDraft }).draft.quantities).toEqual({ packpousse: 2 });
+  });
+
+  it('refuses as the rail does: a reference to verify first, a duplicate in the basket, 99 at most', () => {
+    const toVerify = ordered({ baseIds: ['nia12'], baseQuantities: { nia12: 1 } });
+    const verifyFirst = { error: 'Confirmez la vérification de cette référence avant d’augmenter la quantité.' };
+    expect(cs.addUnit(toVerify, 'nia12', catalogue)).toEqual(verifyFirst);
+    expect(cs.changeQuantity(toVerify, 'nia12', 2, catalogue)).toEqual(verifyFirst);
+    expect(cs.addUnit({ ...toVerify, verifiedProducts: ['nia12'] }, 'nia12', catalogue)).toMatchObject({ draft: { quantities: { nia12: 2 } } });
+    // A pack whose exact content is not confirmed may not go above one unit (basketProblem).
+    const unsure = catalogue.map(x => x.id === 'packpousse' ? { ...x, components: ['shpousse', 'retired'] } : x);
+    const pack = hairOrder({ baseIds: ['packpousse'], baseQuantities: { packpousse: 1 } });
+    expect(cs.addUnit(pack, 'packpousse', unsure)).toEqual({ error: 'Le contenu exact de ce pack doit être confirmé avant tout ajout.' });
+    expect(cs.addUnit(pack, 'packpousse', unsure)).toEqual(cs.changeQuantity(pack, 'packpousse', 2, unsure));
+    // 99 is the most the rail and the server take: the list says so instead of doing nothing.
+    const full = ordered({ quantities: { antiacne: 99 } });
+    expect(cs.addUnit(full, 'antiacne', catalogue)).toEqual({ error: '99 unités au maximum par référence.' });
+    expect(cs.changeQuantity(full, 'antiacne', 100, catalogue)).toEqual({ error: '99 unités au maximum par référence.' });
+    expect(cs.basketLines(full, catalogue).get('antiacne')).toEqual({ initial: true, quantity: 99, extra: 98, refusal: '99 unités au maximum par référence.' });
+    expect(cs.basketLines(toVerify, catalogue).get('nia12')!.refusal).toBe(verifyFirst.error);
+  });
+
+  it('changes nothing once saved, during a targeted stop, or for a product outside the basket', () => {
+    expect(cs.addUnit(cs.markSaved(ordered(), 'initial', T0), 'antiacne', catalogue)).toBeNull();
+    const stopped = ordered({ profile: { ...face, safety: ['urgent'] } });
+    expect(cs.addUnit(stopped, 'antiacne', catalogue)).toBeNull();
+    // The rail shares the rule: nothing is added during a stop.
+    expect(cs.changeQuantity(stopped, 'antiacne', 2, catalogue)).toBeNull();
+    expect(cs.addUnit(ordered(), 'vitc', catalogue)).toBeNull();
+    // The initial product a pack replaced is no longer a line of the basket.
+    expect(cs.addUnit(hairOrder({ upgradeId: 'packpousse' }), 'shpousse', catalogue)).toBeNull();
+  });
+
+  it('the step-3 list holds every line of the basket, besides the products that may be added', () => {
+    const ids = (d: cs.CallDraft, offered: string[] = []) => cs.pickerPool(d, catalogue, new Set(offered)).map(x => x.id);
+    const d = ordered({ baseIds: ['antiacne', 'wcspf'], baseQuantities: { antiacne: 1, wcspf: 2 }, adds: ['wcgel'] });
+    expect(ids(d)).toEqual(expect.arrayContaining(['antiacne', 'wcspf', 'wcgel', 'vitc']));
+    // A disabled product is never listed.
+    expect(cs.pickerPool(d, catalogue.map(x => x.id === 'vitc' ? { ...x, enabled: false } : x), new Set()).map(x => x.id)).not.toContain('vitc');
+    // A pack offered as the upgrade is offered there, not here (PACK); once chosen, it is a line and the product it replaced goes.
+    expect(ids(hairOrder(), ['packpousse'])).toEqual(expect.arrayContaining(['shpousse', 'conditioner']));
+    expect(ids(hairOrder(), ['packpousse'])).not.toContain('packpousse');
+    const packed = hairOrder({ upgradeId: 'packpousse' });
+    expect(ids(packed)).toContain('packpousse');
+    expect(ids(packed)).not.toContain('shpousse');
+    const lines = cs.basketLines(d, catalogue);
+    expect([...lines.keys()]).toEqual(['antiacne', 'wcspf', 'wcgel']);
+    expect(lines.get('wcspf')).toEqual({ initial: true, quantity: 2, extra: 0, refusal: null });
+    expect(lines.get('wcgel')).toEqual({ initial: false, quantity: 1, extra: 0, refusal: null });
+    expect(cs.basketLines(packed, catalogue).get('packpousse')).toEqual({ initial: false, quantity: 1, extra: 0, refusal: null });
+  });
+
+  it('the order’s lines come first and always show, with or without a search', () => {
+    const rows = [
+      { id: 'wcgel', suggested: true, added: false },
+      { id: 'vitc', suggested: false, added: false },
+      { id: 'antiacne', suggested: false, added: false, ordered: true },
+      { id: 'spray', suggested: false, added: true },
+    ];
+    expect(cs.pickerOrder(rows)).toEqual({ ids: ['antiacne', 'wcgel', 'spray'], hidden: 1 });
+    expect(cs.pickerOrder(rows, { searching: true }).ids).toEqual(['antiacne', 'wcgel', 'vitc', 'spray']);
+    // The order on screen still holds once shown.
+    expect(cs.pickerOrder(rows, { previous: ['wcgel', 'antiacne', 'spray'] }).ids).toEqual(['wcgel', 'antiacne', 'spray']);
   });
 });
 
