@@ -246,7 +246,7 @@ describe('one more unit of a product already in the order (UNIT)', () => {
     const { initial, basket } = cs.basketOf(next, catalogue);
     expect(basket.map(x => [x.id, x.quantity])).toEqual([['antiacne', 2]]);
     expect(cs.basketLines(next, catalogue).get('antiacne')).toEqual({ initial: true, quantity: 2, extra: 1, refusal: null });
-    expect(orderOffer(initial, basket, 'duo')).toBe(3300);
+    expect(orderOffer(initial, basket, 'duo', catalogue)).toBe(3300);
     // And once more: 2 → 3.
     expect((cs.addUnit(next, 'antiacne', catalogue) as { draft: cs.CallDraft }).draft.quantities).toEqual({ antiacne: 3 });
   });
