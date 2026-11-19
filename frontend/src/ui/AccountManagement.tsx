@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { canManageAccount, canManageWorkspace, canRemoveAccount } from '@touche/domain';
 import { requestJson } from '../data/api';
 import AccountTable, { type AccountUser } from './AccountTable';
 import AccountPassword, { NewPasswordField } from './AccountPassword';
 import { Icon } from './shared/Icon';
 import { Dialog } from './shared/Dialog';
+import { useConfirm } from './shared/Confirm';
 import { type NoteKind } from './shell/Notifications';
 
 type Props = {
@@ -24,16 +25,38 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
   const [removing, setRemoving] = useState<AccountUser | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // The access form as it was opened, and a typed but unsaved new password (PN8).
+  const [opened, setOpened] = useState('');
+  const [passwordDraft, setPasswordDraft] = useState(false);
+  // F2: a new account's identifier and password, shown once with « Copier ».
+  const [created, setCreated] = useState<{ label: string; username: string; password: string } | null>(null);
+  const [copied, setCopied] = useState('');
+  const hintId = useId();
+  const confirm = useConfirm();
+  useEffect(() => {
+    if (!created) return;
+    const timer = window.setTimeout(() => setCreated(null), 5 * 60_000);
+    return () => window.clearTimeout(timer);
+  }, [created]);
 
-  // Escape (the dialog's cancel) closes either dialog unless a request is running.
-  const closeDialogs = () => { if (!busy) { setAccount(null); setRemoving(null); setError(''); } };
+  const accessOf = (a: AccountUser) => JSON.stringify([a.label, a.team || '', a.role, a.active !== 0]);
+  function openAccount(target: AccountUser) { setError(''); setPasswordDraft(false); setOpened(accessOf(target)); setAccount({ ...target }); }
+  /** Escape, ✕: close unless a request is running; unsaved access changes or a typed password ask first. */
+  async function closeAccount() {
+    if (busy || !account) return;
+    if ((accessOf(account) !== opened || passwordDraft) && !(await confirm({ title: 'Abandonner les modifications ?',
+      body: <p>Les modifications de l’accès de {account.label} ne sont pas enregistrées.</p>,
+      cancelLabel: 'Continuer la modification', confirmLabel: 'Abandonner les modifications', tone: 'danger' }))) return;
+    setAccount(null); setError(''); setPasswordDraft(false);
+  }
+  const closeRemoving = () => { if (!busy) { setRemoving(null); setError(''); } };
 
   async function save(body: unknown, message: string) {
     setBusy(true); setError('');
     try {
       await requestJson('', body);
       await reload();
-      notify(message);
+      if (message) notify(message);
       return true;
     } catch (cause) {
       setError((cause as Error).message);
@@ -48,12 +71,15 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
       <p>Créez un accès Conseillère ou Manager. Les managers disposent de tous les onglets et options de gestion, sauf la modification du compte Direction.</p>
       <form className="admin-form" onSubmit={async event => {
         event.preventDefault();
-        if (await save({ action: 'user', username, label, password, role }, 'Compte créé.')) {
+        setCreated(null); setCopied('');
+        if (await save({ action: 'user', username, label, password, role }, '')) {
+          setCreated({ label, username, password });
           setUsername(''); setLabel(''); setPassword(''); setRole('advisor');
         }
       }}>
-        <label className="field">Identifiant<input value={username} onChange={e => setUsername(e.target.value)} placeholder="ex. conseil.lina"
-          pattern="[a-z0-9._-]{3,40}" required maxLength={40} disabled={busy} autoCapitalize="none" spellCheck={false}/><small>3 à 40 caractères : minuscules, chiffres, point, tiret, tiret bas</small></label>
+        {/* E5: `-` escaped so the pattern stays valid under the `v` flag browsers now use. */}
+        <div className="field"><label className="field__label" htmlFor={hintId + '-id'}>Identifiant</label><input id={hintId + '-id'} value={username} onChange={e => setUsername(e.target.value)} placeholder="ex. conseil.lina"
+          pattern="[a-z0-9._\-]{3,40}" required maxLength={40} disabled={busy} autoCapitalize="none" spellCheck={false} aria-describedby={hintId}/><small id={hintId} className="field__help">3 à 40 caractères : minuscules, chiffres, point, tiret, tiret bas</small></div>
         <label className="field">Nom affiché<input value={label} onChange={e => setLabel(e.target.value)} required minLength={2} maxLength={80} disabled={busy}/></label>
         <label className="field">Rôle<select value={role} onChange={e => setRole(e.target.value)} disabled={busy}>
           <option value="advisor">Conseillère</option><option value="manager">Manager</option>
@@ -62,19 +88,29 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
         <div className="admin-form__submit"><button type="submit" className="btn btn--primary" disabled={busy}><Icon name="plus"/>Créer l’accès</button></div>
       </form>
       {error && !account && !removing && <p className="notice notice--danger" role="alert"><Icon name="alert" className="notice__icon"/><span className="notice__text">{error}</span></p>}
-      <AccountTable user={user} users={users} onManage={target => { setError(''); setAccount({ ...target }); }}
+      {created && <div className="notice notice--success admin-created" role="status"><Icon name="check" className="notice__icon"/>
+        <div className="notice__text"><p className="notice__title">Accès créé pour {created.label}</p>
+          <dl className="admin-created__list"><div><dt>Identifiant</dt><dd>{created.username}</dd></div><div><dt>Mot de passe</dt><dd>{created.password}</dd></div></dl>
+          <p>Transmettez ces accès maintenant : ils ne seront plus affichés ici.{passwordViewingEnabled ? ' Le mot de passe reste consultable dans « Gérer l’accès… ».' : ''}</p>
+          {copied && <p>{copied}</p>}</div>
+        <div className="admin-actions"><button type="button" className="btn btn--secondary btn--sm" onClick={async () => {
+          try { await navigator.clipboard.writeText(`Identifiant : ${created.username}\nMot de passe : ${created.password}`); setCopied('Identifiant et mot de passe copiés.'); }
+          catch { setCopied('Copie indisponible : sélectionnez l’identifiant et le mot de passe affichés.'); }
+        }}><Icon name="copy"/>Copier</button><button type="button" className="link-btn" onClick={() => setCreated(null)}>Masquer</button></div>
+      </div>}
+      <AccountTable user={user} users={users} onManage={openAccount}
         onRemove={target => { setError(''); setRemoving(target); }}/>
     </section>
 
-    {account && canManageAccount(user, account) && <Dialog open onClose={closeDialogs} labelledBy="admin-account-title" className="dialog--wide admin-dialog">
+    {account && canManageAccount(user, account) && <Dialog open onClose={() => void closeAccount()} labelledBy="admin-account-title" className="dialog--wide admin-dialog">
         <div className="dialog__head"><div><p className="caption">Gérer l’accès</p><h2 id="admin-account-title" className="dialog__title" data-dialog-title tabIndex={-1}>{account.username}</h2></div><button type="button" className="icon-btn dialog__close"
-          onClick={() => setAccount(null)} aria-label="Fermer" disabled={busy}><Icon name="close"/></button></div>
+          onClick={() => void closeAccount()} aria-label="Fermer" disabled={busy}><Icon name="close"/></button></div>
         <div className="dialog__body">
         <form className="admin-form admin-form--stack" onSubmit={async event => {
           event.preventDefault();
           if (await save({ action: 'user-settings', id: account.id, label: account.label, team: account.team || '',
             active: account.active !== 0, reporting_scope: 'own', ...(account.role === 'admin' ? {} : { role: account.role }) },
-          'Accès et équipe mis à jour.')) setAccount(null);
+          'Accès et équipe mis à jour.')) { setOpened(accessOf(account)); if (!passwordDraft) setAccount(null); }
         }}>
           <label className="field">Nom affiché<input data-autofocus value={account.label} onChange={e => setAccount({ ...account, label: e.target.value })}
             minLength={2} maxLength={80} required disabled={busy}/></label>
@@ -96,11 +132,11 @@ export default function AccountManagement({ user, users, passwordViewingEnabled,
         </form>
         {error && <p className="notice notice--danger" role="alert"><Icon name="alert" className="notice__icon"/><span className="notice__text">{error}</span></p>}
         {account.role !== 'admin' && <AccountPassword key={account.id} account={users.find(u => u.id === account.id) || account}
-          enabled={passwordViewingEnabled} request={body => requestJson('', body)} saved={reload}/>}
+          enabled={passwordViewingEnabled} request={body => requestJson('', body)} saved={reload} onDraft={setPasswordDraft}/>}
         </div>
     </Dialog>}
 
-    {removing && canRemoveAccount(user, removing) && <Dialog open onClose={closeDialogs} labelledBy="remove-account-title" variant="confirm">
+    {removing && canRemoveAccount(user, removing) && <Dialog open onClose={closeRemoving} labelledBy="remove-account-title" variant="confirm">
         <h2 id="remove-account-title" className="dialog__title" data-dialog-title tabIndex={-1}>Supprimer {removing.label} ?</h2>
         <div className="dialog__body">
         <p><b>{removing.label}</b> ({removing.username})</p>

@@ -5,6 +5,21 @@
   .admin > .page-head { margin-block-end: 0; }
   .admin-section > p { max-inline-size: var(--measure-text); color: var(--color-text-secondary); font-size: var(--text-ui); }
 
+  /* In-page index of the sections (Catalogue, Protocole, Accès). */
+  .admin-index > ul { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+  .admin-index a { display: inline-flex; align-items: center; min-block-size: var(--control-height-sm); padding: 0 var(--space-4); border-radius: var(--radius-pill); background: var(--color-bg-sunken); color: var(--color-text-primary); font-size: var(--text-ui); text-decoration: none; transition: background-color var(--duration-fast) var(--ease-out); }
+  @media (hover: hover) { .admin-index a:hover { background: var(--color-bg-fill); } }
+  @media (max-width: 760px) { .admin-index a { min-block-size: var(--control-height-touch); } }
+  .admin-section > .cat-toolbar { margin-block-end: var(--space-4); }
+  .admin-section > .cat-toolbar > .cat-count { margin: 0; }
+
+  /* A new account's identifier and password, shown once with « Copier ». */
+  .admin-created .notice__text { gap: var(--space-2); }
+  .admin-created__list { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); margin: 0; }
+  .admin-created__list dt { font-size: var(--text-caption); color: var(--color-text-secondary); }
+  .admin-created__list dd { margin: 0; font-size: var(--text-h3); font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; user-select: all; }
+  .admin-created > .admin-actions { align-self: center; }
+
   /* Forms: a responsive grid of stacked fields, the submit on its own row. */
   .admin-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: var(--space-4); align-items: start; }
   .admin-form :where(input, select, textarea) { inline-size: 100%; }
@@ -28,6 +43,7 @@
   @media (max-width: 650px) { .admin-accounts .admin-row-actions { justify-content: flex-start; } }
 
   /* Dialog content: account access, password reveal and product edit */
+  .admin-dialog .dialog__actions > .admin-dialog__error { flex: 1 1 100%; margin: 0; }
   .admin-edit .form-grid { margin-block-end: var(--space-1); }
   .admin-password { display: flex; flex-direction: column; gap: var(--space-3); padding-block-start: var(--space-5); border-block-start: 1px solid var(--color-border-hairline); }
   .admin-password > h3 { font-size: var(--text-body); }
