@@ -20,16 +20,21 @@ test('Both upsell-rule footnotes count added products and cover an initial pack 
 test('Questionnaire says which answers still block "Construire la routine"', () => {
   assert.ok(/import \{[^}]*\bmissingAnswers\b[^}]*\} from '@touche\/domain'/.test(app), 'missingAnswers imported from @touche/domain');
   const question = ui('call/Question.tsx').slice(ui('call/Question.tsx').indexOf('function Question('));
-  assert.ok(question.includes(`<section className="call-question card" id={'question-'+n}>`), 'each Question section gets id="question-<n>"');
+  assert.ok(question.includes(`<section className="call-question card" id={'question-'+n} tabIndex={-1}>`), 'each Question section gets id="question-<n>" and can take focus (E6)');
   assert.ok(callView.includes('{step===1&&<StepNeeds/>}'), 'step 1 renders the questionnaire step');
   const step1 = ui('call/StepNeeds.tsx');
   const actions = step1.slice(step1.indexOf('<div className="call-actions">'));
   assert.ok(app.includes('missing=missingAnswers(profile,base)'), 'hint is computed from missingAnswers(profile,base)');
   assert.ok(/const \{[^}]*\bmissing\b[^}]*\}=useCall\(\)/.test(step1), 'step 1 reads that computed hint from the call model');
-  assert.ok(actions.includes('{missing.length>0&&<p className="call-missing" role="status">Pour construire la routine, répondez à : {missing.map('), 'hint rendered in the step 1 action bar while answers are missing');
+  // A targeted stop replaces the list of missing answers: they no longer matter (MEDREADY).
+  assert.ok(actions.includes(':missing.length>0&&<p className="call-missing" role="status">Pour construire la routine, répondez à : {missing.map('), 'hint rendered in the step 1 action bar while answers are missing');
   assert.ok(actions.includes('className="link-btn call-missing__link"') && actions.includes('type="button"'), 'each missing answer is a button');
-  assert.ok(actions.includes("document.getElementById('question-'+") && actions.includes("scrollIntoView({behavior:'smooth',block:'center'})"), 'clicking scrolls to its question');
-  assert.ok(actions.includes('disabled={!questionsReady(profile,base)}'), 'button rule unchanged');
+  // Clicking scrolls to its question (without smooth scrolling when motion is reduced) and moves focus there (E6).
+  assert.ok(actions.includes("reveal(document.getElementById('question-'+"), 'clicking reveals its question');
+  const reveal = ui('call/reveal.ts');
+  assert.ok(reveal.includes("matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'") && reveal.includes('target.focus({preventScroll:true})'));
+  // The questions block the routine, never the targeted check (MEDREADY).
+  assert.ok(actions.includes('disabled={!blocked&&!ready}') && step1.includes('ready=questionsReady(profile,base)'), 'button rule');
   const css = styles('call.css');
   for (const rule of ['.call-missing {', '.call-missing__link {', '.call-missing__link:focus-visible {']) assert.ok(css.includes(rule), rule);
 });
@@ -45,9 +50,10 @@ test('Step 3 combines suggested and requested products without bypassing compati
   assert.ok(routine.includes('{!blocked&&<ProductPicker/>}') && ui('call/ProductPicker.tsx').includes('return <section className="card call-picker"'), 'only shown when additions are allowed');
   assert.ok(step2.includes('aria-label="Rechercher un produit à ajouter"'), 'one search for both sources');
   assert.ok(step2.includes('>Suggéré<'), 'recommendations are labelled');
-  assert.ok(step2.includes('Ingrédients & argumentaire'), 'product details remain accessible');
+  assert.ok(step2.includes('>Voir la fiche<') && !step2.includes('Ingrédients & argumentaire') && !step2.includes('>Fiche<'), 'product details remain accessible, under one label (F4)');
   assert.ok(step2.includes('Confirmer : la cliente le demande, compatibilité vérifiée') && step2.includes('>Annuler<'), 'requested products retain warning confirmation');
-  assert.ok(app.includes('manualAddCheck(activeBase,companions,'), 'checks include every original and added product');
+  // Every original and added product is checked; an added row is checked without itself (B5).
+  assert.ok(app.includes('manualAddCheck(activeBase!,added?companions.filter(c=>c.id!==p.id):companions,'), 'checks include every original and added product');
   const railFile = ui('call/RoutineRail.tsx');
   const rail = railFile.slice(railFile.indexOf('<aside className="call-rail"'));
   assert.ok(rail.length > 0 && railFile.includes('<aside className="call-rail"'));

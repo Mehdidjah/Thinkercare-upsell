@@ -8,6 +8,7 @@ import {StepRoutine} from './StepRoutine';
 import {RoutineRail} from './RoutineRail';
 import {SavedPanel} from './SavedPanel';
 import {CallNotices} from './CallNotices';
+import {CopyFallback} from './CopyFallback';
 
 /** Guided call: step navigation, heading, call context, the saved outcome and call notices, then the current step, beside the live routine rail. */
 export function CallView(){const {step,base}=useCall();
@@ -23,5 +24,6 @@ export function CallView(){const {step,base}=useCall();
    {step===2&&base&&<StepRoutine base={base}/>}
   </div>
   <RoutineRail/>
+  <CopyFallback/>
  </div>;
 }

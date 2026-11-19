@@ -18,6 +18,10 @@
   }
   .call-actions__status { flex: 1 1 14rem; color: var(--color-text-secondary); font-size: var(--text-ui); }
   .call-actions__back { margin-inline-end: auto; }
+  /* Step 3 (STEP3): the offer status, or what keeps « J’ai présenté » from being used (M5). */
+  .call-actions > .reason { flex: 1 1 14rem; }
+  .call-actions__status--done { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-primary); }
+  .call-actions__status--done > svg { inline-size: var(--icon); block-size: var(--icon); flex: none; color: var(--color-success-text); }
   .call-missing { flex: 1 1 18rem; color: var(--color-text-secondary); font-size: var(--text-ui); line-height: var(--leading-body); }
   .call-missing__link { vertical-align: baseline; }
   .call-missing__link:focus-visible { outline-offset: var(--space-1); border-radius: var(--radius-tag); }
@@ -67,6 +71,13 @@
   .call-context__action { flex: none; }
   .call-context__linked { grid-column: 1 / -1; font-size: var(--text-caption); color: var(--color-text-secondary); }
   @media (max-width: 900px) { .call-context { grid-template-columns: minmax(0, 1fr); } }
+  /* From step 1 the context is one line that opens on demand (C3); « Cliente non jointe » stays beside it. */
+  .call-context--compact { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-2) var(--space-4); padding-block: var(--space-2); }
+  .call-context__details { flex: 1 1 20rem; min-inline-size: 0; }
+  .call-context__details > summary { flex-wrap: wrap; column-gap: var(--space-3); }
+  .call-context__summary { font-size: var(--text-ui); font-weight: var(--font-weight-regular); color: var(--color-text-secondary); }
+  .call-context__body { display: flex; flex-direction: column; gap: var(--space-3); padding-block: var(--space-2); }
+  .call-context__note { font-size: var(--text-caption); color: var(--color-text-secondary); }
 
   /* ── Step 0: initial order ────────────────────────────────────────────── */
   .call-order { display: flex; flex-direction: column; gap: var(--space-5); }
@@ -90,6 +101,11 @@
   @container call-notebook (min-width: 700px) { .call-order__grid { grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); } }
   @media (max-width: 359px) { .call-order__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); } }
   .call-order__grid .photo { border-radius: 0; }
+  /* No exact match: the closest products, under their own heading (SEARCH). */
+  .call-nearby { display: flex; flex-direction: column; gap: var(--space-3); }
+  .call-nearby__title { font-weight: var(--font-weight-semibold); }
+  /* A typed quantity out of range goes back at once and says why (QTY). */
+  .quantity-hint { flex-basis: 100%; order: 1; font-size: var(--text-caption); color: var(--color-warning-text); }
 
   /* ── Step 1: questions ────────────────────────────────────────────────── */
   .call-question { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-4); }
@@ -102,7 +118,8 @@
   .call-followup { display: flex; flex-direction: column; gap: var(--space-2); margin-block-start: var(--space-2); padding: var(--space-4); border-radius: var(--radius-option); background: var(--color-bg-sunken); }
   .call-followup__title { font-size: var(--text-label); font-weight: var(--font-weight-semibold); }
   .call-followup__note { font-size: var(--text-caption); color: var(--color-text-secondary); }
-  .call-followup .chip { border-color: var(--color-border-control-strong); }
+  .call-followup .option { border-color: var(--color-border-control-strong); }
+  .call-followup .choice-group__options { grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr)); }
   @media (max-width: 760px) { .call-question { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); } }
 
   /* The words read aloud to the customer. */
@@ -130,6 +147,14 @@
   .call-stop__reason { color: var(--color-text-secondary); max-inline-size: var(--measure-text); }
   .call-stop__say { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3) var(--space-4); border-radius: var(--radius-control); background: var(--color-bg-surface); }
   .call-stop__say-label { font-size: var(--text-label); font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); }
+  .call-stop[data-urgent] .call-stop__title { color: var(--color-danger-text); }
+  /* A callback from the stop (MEDCB): suggested when the script promises one, otherwise behind a disclosure. */
+  .call-stop__hint { font-size: var(--text-ui); }
+  .call-stop__callback { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-3); }
+  .call-stop__callback > .field { flex: 1 1 14rem; }
+  .call-stop__callback > .btn { margin-block-start: calc(var(--text-label) * 1.35 + var(--space-2)); }
+  .call-stop__later[open] > .call-stop__callback { margin-block-start: var(--space-2); }
+  .call-packs__held { margin: 0; }
 
   .call-packs__list { display: flex; flex-direction: column; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
   .call-pack { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--space-3) var(--space-4); align-items: start; padding: var(--space-4); border: 1px solid var(--color-border-hairline); border-radius: var(--radius-option); }
@@ -160,7 +185,12 @@
   .call-product[data-state="blocked"] .photo > img { filter: grayscale(1); }
   .call-product[data-state="check"] { background: var(--color-warning-tint); box-shadow: inset 3px 0 0 var(--color-warning-edge); }
   .call-product__confirm { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--color-warning-edge); border-radius: var(--radius-option); background: var(--color-bg-surface); }
-  .call-product__confirm-title { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--font-weight-semibold); color: var(--color-warning-text); }
+  .call-product__confirm-title { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-body); font-weight: var(--font-weight-semibold); letter-spacing: 0; color: var(--color-warning-text); }
+  /* An added product keeps its row (B5): « Ajouté ✓ » then « Retirer » on the same button. */
+  .call-product[data-state="added"] { background: var(--color-accent-tint); box-shadow: inset 3px 0 0 var(--color-accent-solid); }
+  .call-product__added { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-ui); font-weight: var(--font-weight-semibold); color: var(--color-accent-text-strong); }
+  .call-product__added > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); }
+  .call-picker__approx { font-size: var(--text-ui); font-weight: var(--font-weight-semibold); }
   .call-product__confirm-title > svg { inline-size: var(--icon); block-size: var(--icon); }
   .call-product__warnings { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding-inline-start: var(--space-6); font-size: var(--text-ui); color: var(--color-text-primary); }
   .call-product__confirm-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-block-start: var(--space-1); }
@@ -203,8 +233,10 @@
   .call-close__row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-3); }
   .call-close__row > .field { flex: 1 1 16rem; }
   .call-close__row > .btn { margin-block-start: calc(var(--text-label) * 1.35 + var(--space-2)); }
-  @media (max-width: 760px) { .call-close__row > .btn, .call-close__accept-btn { flex: 1 1 100%; inline-size: 100%; margin-block-start: 0; } }
+  @media (max-width: 760px) { .call-close__row > .btn, .call-close__accept-btn, .call-stop__callback > .btn { flex: 1 1 100%; inline-size: 100%; margin-block-start: 0; } }
   .call-saved { align-items: center; }
+  /* COPY: the text the browser refused to copy, to select by hand. */
+  .call-copy__text { inline-size: 100%; min-block-size: 12rem; margin-block-start: var(--space-3); }
   /* Call notices (removed additions with « Annuler », catalogue reloaded in place): close button beside the text. */
   .call-notice > .icon-btn { flex: none; align-self: flex-start; }
 
@@ -212,7 +244,7 @@
   .call-rail {
     position: sticky; inset-block-start: calc(var(--topbar-height) + var(--space-6));
     display: flex; flex-direction: column; max-block-size: calc(100dvh - var(--topbar-height) - var(--space-6) - var(--space-4));
-    overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+    overflow-y: auto; scrollbar-width: thin;
     background: var(--color-bg-surface); border: 1px solid transparent; border-radius: var(--radius-card); box-shadow: var(--shadow-1);
   }
   .call-rail > * { flex: none; }
@@ -232,7 +264,16 @@
   .call-basket__price { font-size: var(--text-ui); font-weight: var(--font-weight-semibold); }
   .call-rail__hint { display: flex; gap: var(--space-2); margin: 0 var(--space-5) var(--space-3); padding: var(--space-3); border-radius: var(--radius-control); background: var(--color-bg-sunken); color: var(--color-text-secondary); font-size: var(--text-caption); }
   .call-rail__hint > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); flex: none; margin-block-start: 1px; }
-  .call-rail__totals { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-block-start: 1px solid var(--color-border-hairline); }
+  /* Price options, delivery, total and copy (OfferTotals): in the rail, and under 1024px in step 3 instead (C1). */
+  .call-totals, .call-total-bar { display: flex; flex-direction: column; gap: var(--space-3); }
+  .call-price__issue { margin: 0; }
+  .call-rail > .call-totals { padding: var(--space-4) var(--space-5) var(--space-3); border-block-start: 1px solid var(--color-border-hairline); }
+  .call-rail > .call-total-bar { padding: var(--space-3) var(--space-5) var(--space-4); background: var(--color-bg-surface); }
+  /* RAIL: on a short laptop screen the total to announce and « Copier » stay pinned to the bottom of the rail. */
+  @media (min-width: 1024px) {
+    .call-rail > .call-total-bar { position: sticky; inset-block-end: 0; z-index: var(--z-raised); border-block-start: 1px solid var(--color-border-hairline); }
+  }
+  .call-offer { display: none; }
   .call-rail__row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); font-size: var(--text-ui); color: var(--color-text-secondary); }
   .call-rail__row > b { color: var(--color-text-primary); }
   .call-rail__note { font-size: var(--text-caption); color: var(--color-text-secondary); line-height: var(--leading-body); }
@@ -248,6 +289,8 @@
   .call-rail__foot > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); flex: none; margin-block-start: 2px; }
   @media (max-width: 1023px) {
     .call-rail { position: static; max-block-size: none; overflow: visible; }
-    .call-basket { overflow: visible; }
+    /* C1: the rail drops below the call; step 3 shows the price block before the presentation, the rail keeps the basket. */
+    .call-offer { display: block; }
+    .call-layout:has(.call-offer) .call-rail > :is(.call-totals, .call-total-bar) { display: none; }
   }
 }

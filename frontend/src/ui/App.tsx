@@ -1,5 +1,5 @@
 import {useState,useEffect,useRef,type ReactNode} from 'react';
-import {money,quantityOf,itemsTotal,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewReason,recommend,manualAddCheck,orderOffer,proposalOriginals,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,OUTCOMES,type Profile,type Product,type Tier} from '@touche/domain';
+import {money,quantityOf,itemsTotal,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,offerProblem,packDuplicate,proposalOriginals,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,type Profile,type Product,type Tier} from '@touche/domain';
 import {reportCache} from '../data/report-cache';
 import {setExpectedUser,lockRequests,type RequestError} from '../data/api';
 import {announceSession,onSessionMessage,sessionReaction} from '../data/session-channel';
@@ -21,7 +21,7 @@ import {Coverage} from './pages/Coverage';
 import {Protocol} from './pages/Protocol';
 import {Admin} from './pages/Admin';
 import {Account} from './pages/Account';
-import {CallModelContext,type CallModel,type RemovalNotice,type CatalogueNotice} from './call/callModel';
+import {CallModelContext,type CallModel,type RemovalNotice,type CatalogueNotice,type CopyFallback} from './call/callModel';
 import * as callState from './call/callState';
 import {CallView} from './call/CallView';
 
@@ -40,8 +40,9 @@ export default function Desk(){
  const [store,setStore]=useState<callState.CallStore>(()=>({draft:callState.newDraft(),parked:null}));
  const [busy,setBusy]=useState(false),[presenting,setPresenting]=useState(false),[search,setSearch]=useState(''),[scope,setScope]=useState('Tous'),[category,setCategory]=useState('Tous'),[detail,setDetail]=useState<Product|null>(null);
  const [confirmId,setConfirmId]=useState(''),[requestSearch,setRequestSearch]=useState(''),[removal,setRemoval]=useState<RemovalNotice|null>(null),[catalogueNotice,setCatalogueNotice]=useState<CatalogueNotice|null>(null),[clock,setClock]=useState(()=>Date.now());
+ const [copyFallback,setCopyFallback]=useState<CopyFallback|null>(null);
  const storeRef=useRef(store),stateRef=useRef(state),ownerRef=useRef<string|null>(null),viewRef=useRef(view),lockedRef=useRef(false),callScroll=useRef(0),allowLeave=useRef(false),firstView=useRef(true);
- const {notify:push}=useNotify(),confirmAction=useConfirm();
+ const {notify:push,announce}=useNotify(),confirmAction=useConfirm();
  /** Results not tied to a control. Errors stay on screen (role="alert") until closed. */
  function notify(title:string,kind:NoteKind='success'){push({kind,title});}
 
@@ -50,7 +51,7 @@ export default function Desk(){
  /** Every call change goes through here; a transition that returns null changed nothing. */
  function commit(next:callState.CallDraft|null){if(!next)return false;replaceStore({...storeRef.current,draft:next});return true;}
  function putState(next:State|null){stateRef.current=next;setState(next);}
- function resetScreen(){setConfirmId('');setRequestSearch('');setSearch('');setScope('Tous');setCategory('Tous');setRemoval(null);setCatalogueNotice(null);}
+ function resetScreen(){setConfirmId('');setRequestSearch('');setSearch('');setScope('Tous');setCategory('Tous');setRemoval(null);setCatalogueNotice(null);setCopyFallback(null);}
  function lock(){if(lockedRef.current)return;lockedRef.current=true;lockRequests();setLocked(true);}
  const keptNotice=(reason:string)=>reason+(callState.isOpenCall(callState.liveCall(storeRef.current))?' Reconnectez-vous : l’appel en cours est conservé.':' Reconnectez-vous.');
 
@@ -167,17 +168,30 @@ export default function Desk(){
  const d=store.draft,products=state?.products||[];
  const {base,upgrade,active:activeBase,initial,companions,basket}=callState.basketOf(d,products);
  const baseId=d.baseIds[0]||'',baseTotal=itemsTotal(initial),profile=d.profile,verifiedProducts=d.verifiedProducts,tier=d.tier;
- const total=itemsTotal(basket),offer=orderOffer(initial,basket,tier),fee=d.delivery===''?null:Number(d.delivery),blocked=reviewReason(profile);
- const candidates=activeBase?recommend(products,activeBase,{...profile,verifiedProducts},companions):[],upgrades=base&&initial.length===1&&!d.upgradeId&&!d.adds.length?packUpgrades(products,base,{...profile,verifiedProducts}):[],count=physicalCount(basket,products),altered=!sameOrder(initial,basket),domain=domainOf(base),notes=safetyNotes(profile),missing=missingAnswers(profile,base);
+ const total=itemsTotal(basket),offer=orderOffer(initial,basket,tier),fee=d.delivery===''?null:Number(d.delivery),stop=reviewStop(profile),blocked=stop?.text??null;
+ // The official pack offered for a single initial product. Once something is added it is held back, with a note (PACK).
+ const packsAlone=base&&initial.length===1&&!d.upgradeId?packUpgrades(products,base,{...profile,verifiedProducts}):[];
+ const upgrades=d.adds.length?[]:packsAlone,heldPacks=d.adds.length?packsAlone.map(c=>c.product):[];
+ const candidates=activeBase?recommend(products,activeBase,{...profile,verifiedProducts},companions):[],count=physicalCount(basket,products),altered=!sameOrder(initial,basket),domain=domainOf(base),notes=safetyNotes(profile),missing=missingAnswers(profile,base);
+ const offerIssue=offerProblem(initial,basket,tier),duplicate=packDuplicate(initial,products);
  const selectedQuantities=Object.fromEntries(basket.map(p=>[p.id,quantityOf(p)]));
  const requestIds=searchIds(products,requestSearch),orderIds=searchIds(products,search);
- const requestable=d.step===2&&activeBase&&!blocked?products.filter(p=>p.enabled&&!d.baseIds.includes(p.id)&&p.id!==activeBase.id&&!d.adds.includes(p.id)&&requestIds.has(p.id)).map(p=>({product:p,check:manualAddCheck(activeBase,companions,p,{...profile,verifiedProducts},products),suggestion:candidates.find(r=>r.product.id===p.id)})):[];
+ // Step 3: every product that may be added, the added ones kept in their row (B5). A pack offered as the upgrade is never a
+ // blocked row here (PACK). A search with no exact match lists the closest products (SEARCH).
+ const packIds=new Set(packsAlone.map(c=>c.product.id));
+ const pool=d.step===2&&activeBase&&!blocked?products.filter(p=>p.enabled&&!d.baseIds.includes(p.id)&&p.id!==activeBase.id&&!packIds.has(p.id)):[];
+ const exact=pool.filter(p=>requestIds.has(p.id)),requestApproximate=!!requestSearch.trim()&&!exact.length;
+ const requestable=(requestApproximate?closestProducts(pool,requestSearch,5):exact).map(p=>{const added=d.adds.includes(p.id);return {product:p,added,check:manualAddCheck(activeBase!,added?companions.filter(c=>c.id!==p.id):companions,p,{...profile,verifiedProducts},products),suggestion:candidates.find(r=>r.product.id===p.id)};});
  const suggestionRanks=new Map(candidates.map((r,i)=>[r.product.id,i]));
- const requests=requestable.sort((a,b)=>(suggestionRanks.get(a.product.id)??candidates.length)-(suggestionRanks.get(b.product.id)??candidates.length)||Number(domainOf(b.product)===domain)-Number(domainOf(a.product)===domain));
+ const requests=requestApproximate?requestable:requestable.sort((a,b)=>(suggestionRanks.get(a.product.id)??candidates.length)-(suggestionRanks.get(b.product.id)??candidates.length)||Number(domainOf(b.product)===domain)-Number(domainOf(a.product)===domain));
  const inScope=scopeFilter(scope);
  const visible=products.filter(p=>p.enabled&&inScope(p)&&(category==='Tous'||p.category===category)&&orderIds.has(p.id));
+ const nearby=!visible.length&&search.trim()?closestProducts(products.filter(p=>p.enabled),search,6):[];
  const matchingOffer=[...d.presented].reverse().find(p=>orderSignature(proposalOriginals(p))===orderSignature(initial)&&p.offerTotal===offer&&p.tier===tier&&p.delivery===fee&&orderSignature(p.products)===orderSignature(basket));
- async function copy(text:string){try{await navigator.clipboard.writeText(text);notify('Récapitulatif copié.');}catch{notify('Copie indisponible : sélectionnez le texte affiché.','error');}}
+ /** Each copy says what was copied; when the browser refuses, the text opens in a dialog to select by hand (COPY). */
+ async function copy(text:string,label:string){try{await navigator.clipboard.writeText(text);notify(label);}catch{setCopyFallback({text,label});}}
+ const productName=(id:string)=>(stateRef.current?.products||[]).find(p=>p.id===id)?.short||id;
+ const unitsOf=(draft:callState.CallDraft)=>{const list=stateRef.current?.products||[];const n=physicalCount(callState.basketOf(draft,list).basket,list);return `${n} unité${n>1?'s':''}`;};
 
  /** A change that may remove additions: they are listed with « Annuler » (A3, SPEC). */
  function applyRemoval(previous:callState.CallDraft,r:callState.Revalidated|null,offerUndo=true){
@@ -189,7 +203,12 @@ export default function Desk(){
   setRemoval({id:Date.now(),names,undo:()=>{commit(callState.undoRemoval(current(),previous));setRemoval(null);}});
  }
  const changeProfile=(patch:Partial<Profile>)=>applyRemoval(current(),callState.changeProfile(current(),patch,products));
- const toggleConcern=(id:string)=>changeProfile(callState.concernPatch(current().profile,id));
+ /** A third concern replaces the second: screen readers hear which one (F5). */
+ function toggleConcern(id:string){
+  const before=current().profile,replaced=callState.replacedConcern(before,id);
+  changeProfile(callState.concernPatch(before,id));
+  if(replaced&&current().profile!==before){const label=(c:string)=>concernsFor(products.find(p=>p.id===current().baseIds[0])).find(x=>x[0]===c)?.[1]||c;announce(`« ${label(replaced)} » remplacé par « ${label(id)} ».`);}
+ }
  async function changeInitial(ids:string[]){
   const now=current();
   if(callState.orderLocked(now))return;
@@ -202,8 +221,9 @@ export default function Desk(){
   applyRemoval(now,callState.changeInitialOrder(now,ids,products),!clears);
  }
  const changeInitialQuantity=(id:string,next:number)=>commit(callState.changeInitialQuantity(current(),id,next));
- function addComplement(id:string,verify:string[],requested:boolean){if(commit(callState.addComplement(current(),id,verify,requested))){setConfirmId('');setRequestSearch('');}}
- function removeComplement(id:string){if(!busy&&!presenting)commit(callState.removeComplement(current(),id));}
+ // The search stays after an addition: the list keeps its order and the row says « Ajouté ✓ » (B5).
+ function addComplement(id:string,verify:string[],requested:boolean){if(commit(callState.addComplement(current(),id,verify,requested))){setConfirmId('');announce(`${productName(id)} ajouté · ${unitsOf(current())}`);}}
+ function removeComplement(id:string){if(!busy&&!presenting&&commit(callState.removeComplement(current(),id)))announce(`${productName(id)} retiré · ${unitsOf(current())}`);}
  function changeQuantity(id:string,next:number){
   if(busy||presenting)return false;
   const r=callState.changeQuantity(current(),id,next,products);
@@ -234,7 +254,7 @@ export default function Desk(){
  }
  async function presentOffer(){
   const now=current();
-  if(!base||!altered||blocked||now.saved||presenting)return;
+  if(!base||!altered||blocked||offerIssue||now.saved||presenting)return;
   setPresenting(true);try{
    let proposal:Proposal;
    if(now.demo){const snap=(p:OrderItem):ItemSnapshot=>({id:p.id,name:p.name,price:p.price,quantity:quantityOf(p),components:isPack(p)?expand(p,products).map(x=>({id:x.id,name:x.name,price:x.price})):[]});proposal={id:crypto.randomUUID(),call_id:now.callId,user_id:state!.user.id,created_at:new Date().toISOString(),base:snap(initial[0]),originals:initial.map(snap),products:basket.map(snap),catalogueTotal:total,offerTotal:offer,extra:offer-baseTotal,tier,delivery:fee,version:3};}
@@ -250,11 +270,11 @@ export default function Desk(){
   }catch(e){await callError(e);}finally{setPresenting(false);}
  }
  const voidable=!!state?.features?.includes('void-call'),voidMinutes=state?.void_window_minutes??30;
- /** « Sans réponse » and « Conserver la commande initiale » were one tap and permanent: they ask first (A2). */
+ /** « Cliente non jointe » (« Sans réponse » in Pilotage) and « Conserver la commande initiale » were one tap and permanent: they ask first (A2). */
  function outcomeConfirm(outcome:string):ConfirmOptions{
   const after:ReactNode=voidable?<> Vous pourrez l’annuler pendant {voidMinutes} minutes.</>:' Il ne pourra plus être modifié.';
   return outcome==='noanswer'
-   ?{title:'Enregistrer « Sans réponse » ?',body:<p>L’appel sera enregistré comme « {OUTCOMES.noanswer} » : cliente non jointe.{after}</p>,cancelLabel:'Revenir à l’appel',confirmLabel:'Enregistrer « Sans réponse »',tone:'primary'}
+   ?{title:'Cliente non jointe ?',body:<p>L’appel sera enregistré comme cliente non jointe (« Sans réponse » dans le pilotage).{after}</p>,cancelLabel:'Revenir à l’appel',confirmLabel:'Enregistrer : cliente non jointe',tone:'primary'}
    :{title:'Conserver la commande initiale ?',body:<p>L’appel sera enregistré sans ajout : la cliente garde sa commande initiale.{after}</p>,cancelLabel:'Revenir à l’appel',confirmLabel:'Enregistrer sans ajout',tone:'primary'};
  }
  async function record(outcome:string){
@@ -262,6 +282,7 @@ export default function Desk(){
   if(!base)return;if(now.demo){notify('Exemple : aucun résultat n’est enregistré.','info');return;}if(now.saved||busy)return;
   const won=['duo','trio','routine'].includes(outcome);
   if(blocked&&won){notify('Vérification ciblée nécessaire.','error');return;}
+  if(won&&offerIssue){notify(offerIssue,'error');return;}
   if(won&&!matchingOffer){notify('Marquez d’abord cette offre exacte comme présentée.','error');return;}
   if(outcome==='refused'&&!now.presented.length){notify('Pour mesurer un refus d’ajout, marquez l’offre réellement présentée. Sinon, conservez la commande initiale.','error');return;}
   if(outcome==='callback'&&!now.callbackAt){notify('Renseignez la date et l’heure du rappel.','error');return;}
@@ -294,13 +315,13 @@ export default function Desk(){
   savedOutcome:d.savedOutcome,savedAt:d.savedAt,canVoid:deadline!==null&&clock<deadline,voidCall,
   newCall:()=>void newCall(),startExample:kind=>void startExample(kind),exitExample,hasParkedCall:!!store.parked,
   orderRef:d.orderRef,setOrderRef:edit('orderRef'),customerStage:d.customerStage,setCustomerStage:edit('customerStage'),linkedCallId:d.linkedCallId,
-  products,visible,search,setSearch,scope,setScope,category,setCategory,
-  baseId,baseIds:d.baseIds,base,initial,baseTotal,orderLocked:callState.orderLocked(d),changeInitial:ids=>void changeInitial(ids),changeInitialQuantity,
-  domain,profile,changeProfile,toggleConcern,blocked,notes,missing,
-  upgrades,upgrade,upgradeId:d.upgradeId,chooseUpgrade,clearUpgrade,adds:d.adds,requestedIds:d.requestedIds,
+  products,visible,nearby,search,setSearch,scope,setScope,category,setCategory,
+  baseId,baseIds:d.baseIds,base,initial,baseTotal,orderLocked:callState.orderLocked(d),changeInitial:ids=>void changeInitial(ids),changeInitialQuantity,duplicate,
+  domain,profile,changeProfile,toggleConcern,blocked,stop,notes,missing,
+  upgrades,heldPacks,upgrade,upgradeId:d.upgradeId,chooseUpgrade,clearUpgrade,adds:d.adds,requestedIds:d.requestedIds,
   verifiedProducts,toggleVerified,setDetail,
-  candidates,requests,requestSearch,setRequestSearch,confirmId,setConfirmId,addComplement,removeComplement,changeQuantity,
-  basket,count,total,altered,tier,chooseTier:(t:Tier)=>commit(callState.chooseTier(current(),t)),offer,delivery:d.delivery,changeDelivery:value=>commit(callState.changeDelivery(current(),value)),fee,copy,
+  candidates,requests,requestApproximate,requestSearch,setRequestSearch,confirmId,setConfirmId,addComplement,removeComplement,changeQuantity,
+  basket,count,total,altered,tier,chooseTier:(t:Tier)=>commit(callState.chooseTier(current(),t)),offer,offerIssue,delivery:d.delivery,changeDelivery:value=>commit(callState.changeDelivery(current(),value)),fee,copy,copyFallback,closeCopyFallback:()=>setCopyFallback(null),
   presented:d.presented,matchingOffer,presentOffer,handledObjections:d.handledObjections,toggleObjection:key=>commit(callState.toggleObjection(current(),key)),
   consent:d.consent,setConsent:edit('consent'),checked:d.checked,setChecked:edit('checked'),callbackAt:d.callbackAt,setCallbackAt:edit('callbackAt'),refusal:d.refusal,setRefusal:edit('refusal'),record,
   removal,dismissRemoval:()=>setRemoval(null),catalogueNotice,dismissCatalogueNotice:()=>setCatalogueNotice(null)};
