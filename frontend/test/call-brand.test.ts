@@ -54,6 +54,14 @@ describe('call brand', () => {
     expect(s.draft.brand).toBe('belnco');
     expect(s.parked).toBe(live);
   });
+  it('a server that doesn’t list brands keeps the desk Touché: no BEL.NCO product, no « Marque »', () => {
+    expect(cs.deskProducts(all, ['void-call', 'order-check'])).toEqual(touche);
+    expect(cs.deskProducts(all, undefined)).toEqual(touche);
+    expect(cs.deskProducts(all, ['brands'])).toBe(all);
+    const app = readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8');
+    expect(app).toContain('products=useMemo(()=>callState.deskProducts(state?.products||[],state?.features),[state?.products,state?.features]);');
+    expect(app).toContain('const brands=availableBrands(products);');
+  });
   it('the brand goes only to a server that lists brands; a reminder keeps its brand', () => {
     expect(cs.brandField({ brand: 'belnco' }, ['void-call'])).toEqual({});
     expect(cs.brandField({ brand: 'belnco' }, ['brands'])).toEqual({ brand: 'belnco' });

@@ -221,6 +221,8 @@ export function brandFromReference(previous:string,next:string,current:Brand,ava
 }
 /** The call's brand goes to a server that lists `brands`; an older one refuses unknown fields. */
 export const brandField=(d:Pick<CallDraft,'brand'>,features:string[]|undefined):{brand?:Brand}=>features?.includes('brands')?{brand:d.brand}:{};
+/** The products the desk sells from: a server that doesn't list `brands` can't keep a call to one brand, so the desk stays Touché. */
+export const deskProducts=(products:Product[],features:string[]|undefined):Product[]=>features?.includes('brands')?products:products.filter(p=>brandOf(p)==='touche');
 
 // ── Routine ──────────────────────────────────────────────────────────────────────────────────────────────────
 export function addComplement(d:CallDraft,id:string,verify:string[],requested:boolean):CallDraft|null{

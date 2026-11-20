@@ -1,4 +1,4 @@
-import {useState,useEffect,useRef,type ReactNode} from 'react';
+import {useState,useEffect,useMemo,useRef,type ReactNode} from 'react';
 import {normalizeOrderReference,profileChanges,money,quantityOf,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,packDuplicate,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,brandOf,availableBrands,BRAND_LABELS,type Brand,type Profile,type Product,type Tier} from '@touche/domain';
 import {reportCache} from '../data/report-cache';
 import {setExpectedUser,lockRequests,requestJson,type RequestError} from '../data/api';
@@ -197,8 +197,8 @@ export default function Desk(){
  async function resume(call:any){if(await guardLeaveCall('resume'))startFresh({draft:callState.resumeDraft(call),parked:null});}
 
  // ── The call on screen ────────────────────────────────────────────────────────────────────────────────────
- const d=store.draft,products=state?.products||[];
- // One brand per call: « Marque » shows once two brands have enabled products (a server from before BEL.NCO sends Touché only).
+ const d=store.draft,products=useMemo(()=>callState.deskProducts(state?.products||[],state?.features),[state?.products,state?.features]);
+ // One brand per call: « Marque » shows once two brands have enabled products, and only with a server that lists `brands`.
  const brands=availableBrands(products);
  // EcoManager (server features order-check, order-check-bel): the dossier reference must be a real order of the store of
  // the call's brand (TOU, BEL). Checked while typing (700 ms after a complete reference), on leaving the field, and before
