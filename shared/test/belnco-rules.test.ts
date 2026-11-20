@@ -28,6 +28,20 @@ describe('BEL.NCO selling rules',()=>{
   expect(productTags(get('bel-retinol'))).toEqual(['Soir uniquement / SPF le lendemain matin']);
   expect(productTags(get('antiacne'))).toEqual([]);
  });
+ it('a cautious profile still gets the SPF first after an evening serum; other non-gentle products stay out',()=>{
+  const sun='Le soin du soir choisi rend la peau plus sensible au soleil : un SPF le lendemain matin est indispensable.';
+  const cautious:[string,Profile][]=[['sensitive yes',{...dehydrated,sensitive:'yes'}],['sensitive unknown',{...dehydrated,sensitive:'unknown'}],['red',{...dehydrated,concerns:['dehydration','red'],redState:'mild'}],['treatment',{...dehydrated,safety:['treatment']}],['pregnancy',{...dehydrated,safety:['pregnancy']}],['teen',{...dehydrated,safety:['minor'],age:'teen'}],['scars',{...dehydrated,concerns:['dehydration','scars']}]];
+  for(const [label,p] of cautious){
+   const r=recommend(all,get('bel-retinol'),p);
+   expect(ids(r)[0],label).toBe('bel-uv50');
+   expect(r[0].reason,label).toBe(sun);
+   expect(ids(r),label).not.toContain('bel-oil');
+   const c=recommend(all,get('bel-clarifying'),{...p,concerns:['acne',...p.concerns.slice(1)],severity:'mild',skin:'oily'});
+   expect(ids(c)[0],label).toBe('bel-uv50');
+  }
+  // Without an evening serum in the basket the cautious rule is unchanged: no non-gentle SPF.
+  expect(ids(recommend(all,get('bel-moist'),{...dehydrated,sensitive:'yes'}))).not.toContain('bel-uv50');
+ });
  it('pairings from synthese §4 lead the suggestions; the brand’s moisturizer answers an unknown skin',()=>{
   expect(ids(recommend(all,get('bel-gel'),acne))[0]).toBe('bel-clarifying');
   expect(ids(recommend(all,get('bel-uv50'),{...dehydrated,skin:'unknown'}))).toContain('bel-moist');

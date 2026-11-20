@@ -206,7 +206,8 @@ export function canCombine(base:Product,added:Product[],candidate:Product,profil
   if(current.some(x=>group(x)===group(p))&&group(p)!==sharedStep)return false;
   if(profile.routine.includes(group(p)))return false;
   if(ingredientRisk(p,profile))return false;
-  if(restricted(profile)&&!p.gentle)return false;
+  // After an evening serum that sensitizes to the sun, the brand's SPF stays offered to a cautious profile: no SPF is the bigger risk.
+  if(restricted(profile)&&!p.gentle&&!(p.category==='Protection solaire'&&current.some(x=>x.photosensitizing)))return false;
   if(domainOf(p)==='face'){
    if(p.active&&(current.some(x=>x.active)||profile.routine.includes('Soin ciblé')||profile.skin==='unknown'))return false;
    if(p.category==='Hydratant'&&profile.skin!=='unknown'&&!p.skins.includes(profile.skin))return false;
