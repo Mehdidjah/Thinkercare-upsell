@@ -52,6 +52,8 @@ export class OrdersService {
     if (!this.client) throw new DeskError(404, 'Vérification de commande non configurée.', 'order-check-off');
     const parsed = parseOrderReference(raw, this.client.prefix);
     if (!parsed) throw new DeskError(400, ORDER_REFERENCE_HINT, 'order-ref-format');
-    return { ...(await this.client.lookup(parsed.reference)), reference: parsed.reference, id: parsed.id };
+    const result = await this.client.lookup(parsed.reference);
+    // A found order is stored under EcoManager's own reference.
+    return { ...result, reference: result.status === 'found' ? result.order.reference : parsed.reference, id: parsed.id };
   }
 }

@@ -55,3 +55,9 @@ test('order check labels', () => {
   assert.equal(c.ORDER_CHECK_LABELS['not-found'], 'Introuvable dans EcoManager');
   assert.match(c.ORDER_REFERENCE_HINT, /TOU1763816/);
 });
+
+test('leading zeros are the same order', () => {
+  assert.deepEqual(c.parseOrderReference('TOU01763816'), { reference: 'TOU1763816', id: 1763816 });
+  assert.deepEqual(c.parseOrderReference('001763816'), { reference: 'TOU1763816', id: 1763816 });
+  assert.equal(c.parseOrderReference('TOU0000'), null);
+});

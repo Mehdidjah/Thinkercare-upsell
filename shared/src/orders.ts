@@ -79,7 +79,8 @@ export function parseOrderReference(raw: string, prefix = 'TOU'): { reference: s
   const digits = value.startsWith(prefix) ? value.slice(prefix.length) : value;
   if (!/^\d{4,12}$/.test(digits)) return null;
   const id = Number(digits);
-  return Number.isSafeInteger(id) ? { reference: prefix + digits, id } : null;
+  // One order, one reference: leading zeros typed by mistake (TOU01763816) are the same order as TOU1763816.
+  return Number.isSafeInteger(id) && id > 0 ? { reference: prefix + String(id), id } : null;
 }
 
 const ACCEPTED = new Set(['duo', 'trio', 'routine']);

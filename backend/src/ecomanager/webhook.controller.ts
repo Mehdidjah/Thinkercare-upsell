@@ -1,6 +1,6 @@
 import { Controller, Get, Inject, Logger, Post, Req, Res, UseFilters } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, lte, or } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 import { DeskExceptionFilter } from '../common/desk-exception.filter.js';
 import { DeskError, sendJson } from '../common/http.js';
@@ -57,7 +57,13 @@ export class EcoManagerWebhookController {
           order_state_at: order.updatedAt ? new Date(order.updatedAt) : now,
           order_synced_at: now,
         })
-        .where(eq(tcCallMeta.ecomanager_order_id, String(order.id)))
+        .where(
+          and(
+            eq(tcCallMeta.ecomanager_order_id, String(order.id)),
+            // A late retry of an older event never overwrites a newer state.
+            order.updatedAt ? or(isNull(tcCallMeta.order_state_at), lte(tcCallMeta.order_state_at, new Date(order.updatedAt))) : undefined,
+          ),
+        )
         .returning({ id: tcCallMeta.call_id });
       if (updated.length) this.logger.log(`Commande ${order.reference} : ${order.stateName ?? 'état inconnu'} (${updated.length} appel(s)).`);
     }

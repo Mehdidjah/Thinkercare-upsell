@@ -236,6 +236,16 @@ describe('order state webhook', () => {
     expect(await metaOf(id)).toMatchObject({ order_check: 'verified', order_state_group: 'shipping', order_state_name: 'En livraison' });
   });
 
+  it('a late retry of an older state does not overwrite a newer one', async () => {
+    fake.orders.set(3000005, ecoOrder(3000005, 'En confirmation'));
+    const { id, res } = saveInitial('TOU3000005');
+    expect((await res).status).toBe(200);
+    expect((await hook(ecoOrder(3000005, 'Livrée', { updated_at: '2026-11-22 10:00:00' }))).status).toBe(200);
+    expect((await hook(ecoOrder(3000005, 'En livraison', { updated_at: '2026-11-21 10:00:00' }))).status).toBe(200);
+    expect(await metaOf(id)).toMatchObject({ order_state_group: 'delivered', order_state_name: 'Livrée' });
+    expect((await lookup('TOU3000005')).body.order.stateGroup).toBe('delivered');
+  });
+
   it('an unknown order is acknowledged', async () => {
     expect((await hook(ecoOrder(3999999, 'Livrée'))).status).toBe(200);
     expect((await hook({ event: 'ping' })).status).toBe(200);
@@ -325,6 +335,29 @@ describe('catch-up of recorded calls (order sync)', () => {
     expect(await metaOf(a)).toMatchObject({ order_check: 'verified' });
   });
 
+  it('a server error on one order does not stop the others', async () => {
+    fake.orders.set(6000001, { __status: 500 });
+    fake.orders.set(6000002, ecoOrder(6000002, 'Livrée'));
+    const failing = await past('TOU6000001');
+    const fine = await past('TOU6000002');
+    await sync().runOnce();
+    expect(await metaOf(fine)).toMatchObject({ order_check: 'verified', order_state_group: 'delivered' });
+    expect(await metaOf(failing)).toMatchObject({ order_check: '' });
+    expect((await metaOf(failing))?.order_synced_at).not.toBeNull();
+  });
+
+  it('a verified order EcoManager no longer finds is not re-checked every run', async () => {
+    const id = await past('TOU6000003');
+    await setMeta(id, { order_check: 'verified', ecomanager_order_id: '6000003', order_state_group: 'shipping', order_state_name: 'En livraison', order_synced_at: new Date(Date.now() - 2 * 86_400_000) });
+    await sync().runOnce();
+    await sync().runOnce();
+    expect(fake.calls.filter((c) => c.endsWith('/6000003'))).toHaveLength(1);
+    const meta = await metaOf(id);
+    expect(meta).toMatchObject({ order_check: 'verified', order_state_group: 'shipping' });
+    // Stamped by the run, so it waits a day like any other checked order (not only the client's 2-minute cache).
+    expect(meta!.order_synced_at!.getTime()).toBeGreaterThan(Date.now() - 60_000);
+  });
+
   it('one catch-up at a time (advisory lock)', async () => {
     fake.orders.set(4000012, ecoOrder(4000012));
     fake.setDelay(150);
@@ -344,5 +377,36 @@ describe('catch-up of recorded calls (order sync)', () => {
     await sync().runOnce();
     expect((await deskGet(syncCtx, '?action=order-sync', admin)).body).toEqual({ total: 3, known: 1, pending: 0, notFound: 1, unrecognized: 1 });
     expect((await deskGet(off, '?action=order-sync', await loginCookie(off, 'direction', PASSWORD))).status).toBe(404);
+  });
+});
+
+/** Present the antiacne + wcgel duo and save it as accepted on `orderRef` (today's desk unless oldTab). */
+async function acceptedSale(orderRef: string, { oldTab = false } = {}) {
+  const callId = randomUUID(), id = randomUUID();
+  const offer = { baseId: 'antiacne', productIds: ['antiacne', 'wcgel'], tier: 'duo', delivery: null, agreedTotal: 3000 };
+  const who = oldTab ? {} : { expectedUserId: linaUser.id };
+  const opts = { cookie: lina, ...(oldTab ? { pricing: null } : {}) };
+  expect((await deskPost(on, { action: 'present-offer', id, callId, ...offer, ...who }, opts)).status).toBe(200);
+  return deskPost(on, {
+    action: 'save-call', id: callId, ...offer, outcome: 'duo', consent: true, checked: true, refusal: '', ...who,
+    meta: { version: 3, source: 'manual', customerStage: 'new', orderRef, startedAt: new Date(Date.now() - 60_000).toISOString(), eligible: true, objections: [], acceptedProposalId: id },
+  }, opts);
+}
+
+describe('one accepted add-on per order, whatever form the reference was typed in', () => {
+  const DUPLICATE = 'Un ajout accepté existe déjà pour cette référence de dossier. Vérifiez le journal pour éviter un double comptage.';
+  it('a sale recorded under the bare number blocks a second sale on its TOU reference', async () => {
+    await insertCall(on.db, { user_id: linaUser.id, created_at: new Date(Date.now() - 86_400_000), outcome: 'duo', order_ref: '5000001' });
+    fake.orders.set(5000001, ecoOrder(5000001));
+    const res = await acceptedSale('TOU5000001');
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe(DUPLICATE);
+  });
+
+  it('an older tab typing the bare number after a TOU sale is blocked', async () => {
+    await insertCall(on.db, { user_id: linaUser.id, created_at: new Date(Date.now() - 86_400_000), outcome: 'duo', order_ref: 'TOU5000002' });
+    const res = await acceptedSale('5000002', { oldTab: true });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe(DUPLICATE);
   });
 });

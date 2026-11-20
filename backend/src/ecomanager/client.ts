@@ -73,6 +73,10 @@ export class EcoManagerClient {
 
   /** An order state received from a webhook: later lookups answer from it. */
   remember(order: EcoOrder): void {
+    const cached = this.cache.get(order.id)?.result;
+    const known = cached?.status === 'found' ? cached.order.updatedAt : null;
+    // An older event (a late webhook retry) does not replace a newer state.
+    if (known && order.updatedAt && Date.parse(order.updatedAt) < Date.parse(known)) return;
     this.store(order.id, { status: 'found', order }, FOUND_TTL);
   }
 

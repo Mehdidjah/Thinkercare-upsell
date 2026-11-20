@@ -81,6 +81,13 @@ describe('EcoManagerClient', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('a leading zero reads the same order and shares its answer', async () => {
+    const { client, calls } = setup(() => reply({ data: ORDER }));
+    expect((await client.lookup('TOU01763816')).status).toBe('found');
+    expect((await client.lookup('TOU1763816')).status).toBe('found');
+    expect(calls).toHaveLength(1);
+  });
+
   it('dedupes concurrent lookups of one id', async () => {
     const { client, calls } = setup(() => reply({ data: ORDER }));
     const [a, b] = await Promise.all([client.lookup('TOU1763816'), client.lookup('1763816')]);

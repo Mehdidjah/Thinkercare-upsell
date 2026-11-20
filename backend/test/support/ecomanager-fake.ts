@@ -44,6 +44,8 @@ export async function startFakeEcoManager(): Promise<FakeEcoManager> {
       const match = (req.url ?? '').match(/^\/api\/shop\/v2\/orders\/(\d+)$/);
       const order = match ? orders.get(Number(match[1])) : undefined;
       if (!order) return json(404, { message: 'Not found' });
+      // An order stored with __status answers that error (one failing order among others).
+      if (typeof order.__status === 'number') return json(order.__status, { message: 'Erreur simulée' });
       return json(200, { data: order });
     };
     if (delay) setTimeout(answer, delay);

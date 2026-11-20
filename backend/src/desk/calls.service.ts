@@ -1,4 +1,4 @@
-import { canManageWorkspace } from '@touche/domain';
+import { parseOrderReference, canManageWorkspace } from '@touche/domain';
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import type { ItemSnapshot, Product, Proposal, OrderItem } from '@touche/domain';
@@ -17,7 +17,7 @@ import {
   sameOrder,
   orderSignature,
 } from '@touche/domain';
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { or, and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { isUniqueViolation } from '../common/db-errors.js';
 import { DeskError } from '../common/http.js';
 import type { EcoOrder } from '../ecomanager/client.js';
@@ -437,13 +437,20 @@ export class CallsService {
         if (lowOffer) throw new DeskError(400, lowOffer);
       }
       if (v.meta.orderRef && accepted) {
+        // One accepted add-on per order, whatever form the reference was typed in: TOU1763816, the number alone
+        // (allowed before the EcoManager check, and still sent by older tabs), or the order a call was matched to.
+        const typed = v.meta.orderRef.toUpperCase();
+        const parsed = parseOrderReference(typed, this.orders.client?.prefix);
+        const forms = [...new Set([typed, ...(parsed ? [parsed.reference, String(parsed.id)] : [])])];
         const [duplicate] = await this.db
           .select({ id: tcCalls.id })
           .from(tcCalls)
           .innerJoin(tcCallMeta, eq(tcCallMeta.call_id, tcCalls.id))
           .where(
             and(
-              eq(tcCallMeta.order_ref, v.meta.orderRef.toUpperCase()),
+              parsed
+                ? or(inArray(tcCallMeta.order_ref, forms), eq(tcCallMeta.ecomanager_order_id, String(parsed.id)))
+                : eq(tcCallMeta.order_ref, typed),
               inArray(tcCalls.outcome, ['duo', 'trio', 'routine']),
               isNull(tcCalls.voided_at),
             ),

@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import { FINAL_ORDER_STATES, parseOrderReference } from '@touche/domain';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Pool, PoolClient } from 'pg';
 import { ENV, type Env } from '../config/env.js';
 import { type Db, tcCallMeta } from '../db/schema.js';
@@ -85,9 +85,11 @@ export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
           .from(tcCallMeta)
           .where(this.due())
           .groupBy(tcCallMeta.order_ref)
-          .orderBy(sql`2`, tcCallMeta.order_ref)
+          // Within a rank, references never tried come first: one that failed or was just checked waits its turn.
+          .orderBy(sql`2`, sql`min(${tcCallMeta.order_synced_at}) NULLS FIRST`, tcCallMeta.order_ref)
           .limit(limit);
         for (const { ref } of refs) {
+          const all = and(eq(tcCallMeta.order_ref, ref), active);
           const unchecked = and(eq(tcCallMeta.order_ref, ref), inArray(tcCallMeta.order_check, ['', 'unverified']), active);
           const parsed = parseOrderReference(ref, client.prefix);
           if (!parsed) {
@@ -96,12 +98,21 @@ export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
             continue;
           }
           const result = await client.lookup(parsed.reference, 'background');
-          if (result.status === 'unavailable') break;
+          if (result.status === 'unavailable') {
+            // EcoManager down or out of quota: stop and resume later. One order answering an error: move on.
+            if (result.reason !== 'server') break;
+            await this.mark(all, { order_synced_at: new Date() });
+            continue;
+          }
           if (result.status === 'not-found') {
             updated += await this.mark(unchecked, { order_check: 'not-found', order_synced_at: new Date() });
+            // A call verified earlier keeps its last known state; it is checked again in a day, not on every run.
+            await this.mark(and(all, eq(tcCallMeta.order_check, 'verified')), { order_synced_at: new Date() });
           } else {
             const { order } = result;
-            updated += await this.mark(and(eq(tcCallMeta.order_ref, ref), active), {
+            const newer = order.updatedAt ? or(isNull(tcCallMeta.order_state_at), lte(tcCallMeta.order_state_at, new Date(order.updatedAt))) : undefined;
+            await this.mark(all, { order_synced_at: new Date() });
+            updated += await this.mark(and(all, newer), {
               ecomanager_order_id: String(order.id),
               order_check: 'verified',
               order_state_group: order.stateGroup,
