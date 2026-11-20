@@ -106,10 +106,20 @@ export const tcCallMeta = pgTable(
     customer_stage: text('customer_stage').notNull().default('unknown'),
     team: text('team').notNull().default(''),
     version: integer('version').notNull().default(3),
+    // EcoManager order behind order_ref (migration 0006): never customer data, only the order and its state.
+    ecomanager_order_id: text('ecomanager_order_id'),
+    /** '' not checked, 'verified', 'unverified' (EcoManager unreachable), 'not-found', 'unrecognized'. */
+    order_check: text('order_check').notNull().default(''),
+    order_state_group: text('order_state_group'),
+    order_state_name: text('order_state_name'),
+    order_state_at: timestamptz('order_state_at'),
+    order_synced_at: timestamptz('order_synced_at'),
   },
   (t) => [
     index('tc_meta_callback').on(t.callback_at, t.callback_done),
     index('tc_meta_reference').on(t.order_ref),
+    index('tc_meta_ecomanager_order').on(t.ecomanager_order_id),
+    index('tc_meta_order_sync').on(t.order_check, t.order_synced_at),
   ],
 );
 
