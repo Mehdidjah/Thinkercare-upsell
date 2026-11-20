@@ -599,3 +599,14 @@ describe('EcoManager order check in the call context', () => {
   });
 });
 
+describe('accepted sale locked by the EcoManager check', () => {
+  it('names the refusal in the reasons and runs the check when clicked', () => {
+    const missing = 'Commande TOU9 introuvable dans EcoManager. Vérifiez la référence.';
+    const html = render(<CallClose/>, { altered: true, count: 2, checked: true, consent: true, orderRef: 'TOU9', matchingOffer: { id: 'offer-1' } as CallModel['matchingOffer'], orderCheck: { reference: 'TOU9', status: 'not-found', message: missing } });
+    expect(html).toMatch(/call-close__accept-btn" aria-disabled="true"/);
+    expect(html).toContain(missing);
+    expect(html).not.toContain('Vérifiez la commande dans EcoManager<');
+    expect(readFileSync(new URL('../src/ui/call/CallClose.tsx', import.meta.url), 'utf8')).toMatch(/onBlocked=\{orderBlocked\?/);
+  });
+});
+

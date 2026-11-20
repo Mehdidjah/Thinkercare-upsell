@@ -191,3 +191,10 @@ test('Pilotage: the calls CSV says how each order was checked and its state', ()
   expect(src).toContain("'Vérification commande','État commande'");
 });
 
+test('Pilotage: the order state filter resets the journal page, is announced and counts as an active filter', () => {
+  const src = ui('Analytics.tsx');
+  expect(src).toMatch(/useEffect\(\(\)=>\{setPage\(0\)\},\[[^\]]*\borderState\b/);
+  expect(src).toMatch(/const filterSig=\[[^\]]*\borderState\b/);
+  expect(src).toMatch(/const activeFilters=\[[^\]]*\borderState\b/);
+});
+
