@@ -1,5 +1,5 @@
 import {useState,useEffect,useRef,type ReactNode} from 'react';
-import {normalizeOrderReference,profileChanges,money,quantityOf,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,packDuplicate,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,type Profile,type Product,type Tier} from '@touche/domain';
+import {normalizeOrderReference,profileChanges,money,quantityOf,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,packDuplicate,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,brandOf,availableBrands,BRAND_LABELS,type Brand,type Profile,type Product,type Tier} from '@touche/domain';
 import {reportCache} from '../data/report-cache';
 import {setExpectedUser,lockRequests,requestJson,type RequestError} from '../data/api';
 import {startCheck,checkFromResponse,checkFromError,orderCheckBlocksSave,advanceBlocker,type OrderCheck} from './call/orderCheck';
@@ -198,6 +198,8 @@ export default function Desk(){
 
  // ── The call on screen ────────────────────────────────────────────────────────────────────────────────────
  const d=store.draft,products=state?.products||[];
+ // One brand per call: « Marque » shows once two brands have enabled products (a server from before BEL.NCO sends Touché only).
+ const brands=availableBrands(products);
  // EcoManager (server feature order-check): the dossier reference must be a real TOU order. Checked while typing (700 ms
  // after a complete reference), on leaving the field, and before any save; the number alone becomes its TOU reference.
  const orderCheckOn=!!state?.features?.includes('order-check');
@@ -249,8 +251,8 @@ export default function Desk(){
  const suggestionRanks=new Map(candidates.map((r,i)=>[r.product.id,i]));
  const requests=requestApproximate?requestable:requestable.sort((a,b)=>(suggestionRanks.get(a.product.id)??candidates.length)-(suggestionRanks.get(b.product.id)??candidates.length)||Number(domainOf(b.product)===domain)-Number(domainOf(a.product)===domain));
  const inScope=scopeFilter(scope);
- const visible=products.filter(p=>p.enabled&&inScope(p)&&(category==='Tous'||p.category===category)&&orderIds.has(p.id));
- const nearby=!visible.length&&search.trim()?closestProducts(products.filter(p=>p.enabled),search,6):[];
+ const visible=products.filter(p=>p.enabled&&brandOf(p)===d.brand&&inScope(p)&&(category==='Tous'||p.category===category)&&orderIds.has(p.id));
+ const nearby=!visible.length&&search.trim()?closestProducts(products.filter(p=>p.enabled&&brandOf(p)===d.brand),search,6):[];
  // A server that keeps the presented price ('price-codes') checks a sale against the presented offer: a catalogue reloaded
  // since then does not change which offer the customer accepted, nor its amount (callState.matchingOffer).
  const keepsPresentedPrice=!!state?.features?.includes('price-codes');
@@ -293,6 +295,22 @@ export default function Desk(){
   return !!r;
  }
  const changeInitialQuantity=(id:string,next:number)=>commit(callState.changeInitialQuantity(current(),id,next));
+ /** One brand per call: another brand clears the chosen products, so it asks first; the answers and the dossier stay.
+  *  Nothing changes once the order is fixed or while a save or a presentation is on its way. */
+ async function switchBrand(next:Brand){
+  const now=current();
+  if(busy||presenting||next===now.brand||callState.orderLocked(now))return;
+  if(callState.brandNeedsConfirm(now,next)&&(!(await confirmAction({title:'Changer de marque ?',body:<p>La commande initiale et les produits ajoutés seront retirés : un appel ne mélange pas Touché et BEL.NCO. Les réponses aux questions sont conservées.</p>,cancelLabel:`Garder ${BRAND_LABELS[now.brand]}`,confirmLabel:`Passer à ${BRAND_LABELS[next]}`,tone:'danger'}))||current()!==now))return;
+  applyRemoval(now,callState.changeBrand(now,next),false);
+  setSearch('');setScope('Tous');setCategory('Tous');
+ }
+ /** The dossier reference; a typed BEL or TOU prefix that names another brand proposes it, once (callState.brandFromReference). */
+ function changeOrderRef(value:string){
+  const previous=current().orderRef;
+  edit('orderRef')(value);
+  const next=callState.brandFromReference(previous,value,current().brand,brands);
+  if(next)void switchBrand(next);
+ }
  // The search stays after an addition: the list keeps its order and the row says « Dans la routine ✓ » (B5).
  function addComplement(id:string,verify:string[],requested:boolean){if(commit(callState.addComplement(current(),id,verify,requested))){setConfirmId('');announce(`${productName(id)} ajouté · ${unitsOf(current())}`);}}
  function removeComplement(id:string){if(!busy&&!presenting&&commit(callState.removeComplement(current(),id)))announce(`${productName(id)} retiré · ${unitsOf(current())}`);}
@@ -360,12 +378,12 @@ export default function Desk(){
   if(!base||!altered||blocked||offerIssue||now.saved||presenting)return;
   setPresenting(true);try{
    let proposal:Proposal;
-   if(now.demo){const snap=(p:OrderItem):ItemSnapshot=>({id:p.id,name:p.name,price:p.price,quantity:quantityOf(p),components:isPack(p)?expand(p,products).map(x=>({id:x.id,name:x.name,price:x.price})):[]});proposal={id:crypto.randomUUID(),call_id:now.callId,user_id:state!.user.id,created_at:new Date().toISOString(),base:snap(initial[0]),originals:initial.map(snap),products:basket.map(snap),catalogueTotal:total,offerTotal:offer,extra:offer-baseTotal,tier,delivery:fee,version:3};}
+   if(now.demo){const snap=(p:OrderItem):ItemSnapshot=>({id:p.id,name:p.name,price:p.price,quantity:quantityOf(p),components:isPack(p)?expand(p,products).map(x=>({id:x.id,name:x.name,price:x.price})):[]});proposal={id:crypto.randomUUID(),call_id:now.callId,user_id:state!.user.id,created_at:new Date().toISOString(),base:snap(initial[0]),originals:initial.map(snap),products:basket.map(snap),catalogueTotal:total,offerTotal:offer,extra:offer-baseTotal,tier,delivery:fee,version:3,brand:now.brand};}
    else {
     // One idempotency key per exact offer, kept with the draft so a retry after a reload is the same request.
     const signature=JSON.stringify([now.callId,orderSignature(initial),orderSignature(basket),tier,fee,offer]);
     let key=now.presentationKeys[signature];if(!key){key=crypto.randomUUID();commit({...current(),presentationKeys:{...current().presentationKeys,[signature]:key}});}
-    const data=await api({action:'present-offer',id:key,callId:now.callId,baseId,baseIds:now.baseIds,baseQuantities:now.baseQuantities,quantities:selectedQuantities,productIds:basket.map(p=>p.id),upgradeId:now.upgradeId||undefined,tier,delivery:fee,agreedTotal:offer,verifiedProducts:now.verifiedProducts});proposal=data.proposal;
+    const data=await api({action:'present-offer',id:key,callId:now.callId,baseId,baseIds:now.baseIds,baseQuantities:now.baseQuantities,quantities:selectedQuantities,productIds:basket.map(p=>p.id),upgradeId:now.upgradeId||undefined,tier,delivery:fee,agreedTotal:offer,verifiedProducts:now.verifiedProducts,...callState.brandField(now,state?.features)});proposal=data.proposal;
    }
    // The answer lands on the call it was sent for, even if an example has set it aside since.
    const store=callState.applyToCall(storeRef.current,now.callId,call=>({...call,presented:[...call.presented,proposal]}));if(!store)return;
@@ -408,7 +426,7 @@ export default function Desk(){
   if(callState.CONFIRMED_OUTCOMES.includes(outcome)&&(!(await confirmAction(outcomeConfirm(outcome)))||current()!==now))return;
   setBusy(true);try{
    // An accepted sale carries the presented amount (equal to the current one unless the server keeps the presented price).
-   const result=await api({action:'save-call',id:now.callId,baseId,baseIds:now.baseIds,baseQuantities:now.baseQuantities,quantities:selectedQuantities,productIds:basket.map(p=>p.id),upgradeId:now.upgradeId||undefined,agreedTotal:won?matchingOffer!.offerTotal:offer,outcome,tier:altered?tier:'catalogue',delivery:fee,consent:now.consent,checked:now.checked,refusal:now.refusal,verifiedProducts:now.verifiedProducts,
+   const result=await api({action:'save-call',id:now.callId,baseId,baseIds:now.baseIds,baseQuantities:now.baseQuantities,quantities:selectedQuantities,productIds:basket.map(p=>p.id),upgradeId:now.upgradeId||undefined,agreedTotal:won?matchingOffer!.offerTotal:offer,outcome,tier:altered?tier:'catalogue',delivery:fee,consent:now.consent,checked:now.checked,refusal:now.refusal,verifiedProducts:now.verifiedProducts,...callState.brandField(now,state?.features),
     meta:{version:3,source:'manual',customerStage:now.customerStage,orderRef:now.orderRef,startedAt:now.startedAt||new Date().toISOString(),eligible:!blocked&&(altered||candidates.length>0||upgrades.length>0||now.presented.length>0),acceptedProposalId:won?matchingOffer!.id:undefined,objections:now.handledObjections,callbackAt:withCallback?new Date(now.callbackAt+':00+01:00').toISOString():undefined,linkedCallId:now.linkedCallId||undefined}});
    // The screen shows what the server recorded, even if a field was touched during the request: for a call id already
    // recorded (a retry, another tab), the stored outcome, never the button just clicked; a date not sent is not kept.
@@ -449,7 +467,8 @@ export default function Desk(){
   step:d.step,toStep,demo:d.demo,saved:d.saved,busy,presenting,
   savedOutcome:d.savedOutcome,savedAt:d.savedAt,canVoid:deadline!==null&&clock<deadline,voidCall,
   newCall:()=>void newCall(),startExample:kind=>void startExample(kind),exitExample,hasParkedCall:!!store.parked,parkedSaved:!!store.parked?.saved,
-  orderRef:d.orderRef,setOrderRef:edit('orderRef'),orderRefAsked:orderRefAsked&&!d.orderRef.trim(),orderCheck:orderCheckOn?orderCheck:null,checkOrder:()=>void runCheck(current().orderRef,true),customerStage:d.customerStage,setCustomerStage:edit('customerStage'),linkedCallId:d.linkedCallId,
+  brand:d.brand,brands,changeBrand:next=>void switchBrand(next),
+  orderRef:d.orderRef,setOrderRef:changeOrderRef,orderRefAsked:orderRefAsked&&!d.orderRef.trim(),orderCheck:orderCheckOn?orderCheck:null,checkOrder:()=>void runCheck(current().orderRef,true),customerStage:d.customerStage,setCustomerStage:edit('customerStage'),linkedCallId:d.linkedCallId,
   products,visible,nearby,search,setSearch,scope,setScope,category,setCategory,
   baseId,baseIds:d.baseIds,base,initial,baseTotal,orderLocked:callState.orderLocked(d),changeInitial,changeInitialQuantity,duplicate,
   domain,profile,changeProfile,toggleConcern,blocked,stop,notes,missing,

@@ -27,10 +27,11 @@ import * as cs from '../src/ui/call/callState';
 
 // Call screens rendered from a plain model (no DOM library), plus the source guards of the call flow.
 const catalogue: Product[] = JSON.parse(readFileSync(new URL('../../shared/test/fixtures/catalogue.json', import.meta.url), 'utf8'));
+const belnco: Product[] = JSON.parse(readFileSync(new URL('../../shared/test/fixtures/belnco.json', import.meta.url), 'utf8'));
 const noop = () => {};
 function model(extra: Partial<CallModel>): CallModel {
   const base = catalogue.find(p => p.id === 'antiacne')!;
-  return { step: 0, toStep: noop, demo: false, saved: false, busy: false, presenting: false, savedOutcome: '', savedAt: '', canVoid: false, voidCall: async () => '', newCall: noop, startExample: noop, exitExample: noop, hasParkedCall: false,
+  return { step: 0, toStep: noop, demo: false, saved: false, busy: false, presenting: false, savedOutcome: '', savedAt: '', canVoid: false, voidCall: async () => '', newCall: noop, startExample: noop, exitExample: noop, hasParkedCall: false, brand: 'touche', brands: ['touche'], changeBrand: noop,
     orderRef: '', setOrderRef: noop, orderRefAsked: false, orderCheck: null, checkOrder: noop, customerStage: 'unknown', setCustomerStage: noop, linkedCallId: '', products: catalogue, visible: catalogue.slice(0, 2), nearby: [], search: '', setSearch: noop, scope: 'Tous', setScope: noop, category: 'Tous', setCategory: noop,
     baseId: base.id, baseIds: [base.id], base, initial: [{ ...base, quantity: 1 }], baseTotal: base.price, orderLocked: false, changeInitial: noop, changeInitialQuantity: () => true, duplicate: null,
     domain: 'face', profile: face, changeProfile: noop, toggleConcern: noop, blocked: null, stop: null, notes: [], missing: [],
@@ -622,3 +623,45 @@ describe('accepted sale locked by the EcoManager check', () => {
   });
 });
 
+describe('call brand on screen', () => {
+  it('step 1 shows « Marque » only when both brands have products; the heading names the brand', () => {
+    const both = { brands: ['touche', 'belnco'], brand: 'belnco' } as Partial<CallModel>;
+    const panel = render(<CallContextPanel/>, { step: 0, ...both });
+    expect(panel).toContain('Marque');
+    expect(panel).toMatch(/aria-pressed="true"[^>]*>BEL\.NCO</);
+    expect(render(<CallContextPanel/>, { step: 0 })).not.toContain('Marque');
+    expect(render(<CallHeading/>, both)).toContain('BEL.NCO');
+    expect(render(<CallHeading/>, both)).not.toContain('Exemple cheveux');
+    expect(render(<StepOrder/>, both)).not.toContain('>Cheveux<');
+  });
+  it('present-offer and save-call carry the brand only through brandField', () => {
+    expect(readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8').match(/\.\.\.callState\.brandField\(now,state\?\.features\)/g)).toHaveLength(2);
+  });
+  it('step 1 lists only the call’s brand; the checks and the folded context follow it; the switch waits while the order is fixed', () => {
+    const products = [...catalogue, ...belnco], both = { products, brands: ['touche', 'belnco'] } as Partial<CallModel>;
+    const bel = render(<StepOrder/>, { ...both, brand: 'belnco' });
+    expect(bel).toMatch(/class="counter">9(<!-- -->)? produits/);
+    for (const label of ['Tous', 'Visage', 'Packs', 'Nettoyant', 'Soin ciblé', 'Hydratant', 'Protection solaire', 'Pack']) expect(bel).toContain(`>${label}<`);
+    for (const label of ['Corps', 'Shampoing', 'Soin local', 'Sérum hydratant']) expect(bel).not.toContain(`>${label}<`);
+    const tou = render(<StepOrder/>, { ...both, brand: 'touche' });
+    expect(tou).toMatch(/class="counter">32(<!-- -->)? produits/);
+    for (const label of ['Cheveux', 'Corps', 'Shampoing', 'Soin local', 'Sérum hydratant']) expect(tou).toContain(`>${label}<`);
+    expect(render(<SpecificChecks/>, { ...both, brand: 'belnco' })).not.toContain('Niacinamide');
+    expect(render(<SpecificChecks/>, { ...both, brand: 'touche' })).toContain('Niacinamide');
+    expect(render(<CallContextPanel/>, { ...both, brand: 'belnco', step: 1, orderRef: 'BEL1763838' })).toMatch(/class="call-context__summary">BEL\.NCO/);
+    expect(render(<CallContextPanel/>, { step: 1, orderRef: 'TOU1763838' })).not.toContain('Touché');
+    for (const fixed of [{ orderLocked: true }, { saved: true }, { busy: true }]) expect(render(<CallContextPanel/>, { ...both, step: 0, ...fixed })).toMatch(/aria-pressed="true"[^>]*disabled=""[^>]*>Touché</);
+    expect(render(<CallContextPanel/>, { ...both, step: 0 })).not.toMatch(/disabled=""[^>]*>(Touché|BEL\.NCO)</);
+  });
+  it('the desk keeps step 0 to the call’s brand, asks before a switch clears the order, and proposes the brand a reference names', () => {
+    const app = readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8');
+    expect(app).toContain('products.filter(p=>p.enabled&&brandOf(p)===d.brand&&inScope(p)&&');
+    expect(app).toContain('closestProducts(products.filter(p=>p.enabled&&brandOf(p)===d.brand),search,6)');
+    expect(app).toContain("title:'Changer de marque ?',body:<p>La commande initiale et les produits ajoutés seront retirés : un appel ne mélange pas Touché et BEL.NCO. Les réponses aux questions sont conservées.</p>,cancelLabel:`Garder ${BRAND_LABELS[now.brand]}`,confirmLabel:`Passer à ${BRAND_LABELS[next]}`,tone:'danger'");
+    expect(app).toContain('applyRemoval(now,callState.changeBrand(now,next),false);');
+    expect(app).toContain('callState.brandFromReference(previous,value,current().brand,brands)');
+    expect(app).toContain('setOrderRef:changeOrderRef,');
+    expect(app).toContain('brand:d.brand,brands,changeBrand:next=>void switchBrand(next),');
+    expect(app).toContain('version:3,brand:now.brand};');
+  });
+});

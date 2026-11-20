@@ -61,6 +61,7 @@
 
   /* ── Heading, demo, context ───────────────────────────────────────────── */
   .call-head .page-head__actions { align-self: flex-start; }
+  .call-head__title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
   .call-context { display: grid; grid-template-columns: minmax(12rem, 0.8fr) minmax(0, 2fr); gap: var(--space-3) var(--space-6); padding: var(--space-4) var(--space-5); border-radius: var(--radius-option); background: var(--color-bg-sunken); }
   .call-context__intro { display: flex; flex-direction: column; gap: var(--space-1); }
   .call-context__title { font-size: var(--text-body); line-height: var(--leading-heading); letter-spacing: 0; }
@@ -68,6 +69,7 @@
   /* The fields share three rows (label, control, help), so the controls and « Cliente non jointe » stay on one line
      whatever wraps above or below them; stacked when the fields have too little room side by side. */
   .call-context__fields { container: call-fields / inline-size; }
+  .call-context__brand { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-block-end: var(--space-3); }
   .call-context__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-4); align-items: start; }
   .call-context__grid > label { grid-row: span 3; display: grid; grid-template-rows: subgrid; gap: var(--space-2); }
   .call-context__grid > label > span { align-self: end; }

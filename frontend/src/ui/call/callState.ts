@@ -1,4 +1,4 @@
-import {EMPTY_PROFILE,MAX_ITEM_QUANTITY,OUTCOMES,basketProblem,domainOf,expand,isPack,itemsTotal,manualAddCheck,offerProblem,orderOffer,orderSignature,packUpgrades,pricedTotal,proposalOriginals,questionsReady,quantityOf,recommend,reviewReason,type ItemSnapshot,type OrderItem,type Product,type Profile,type Proposal,type Tier} from '@touche/domain';
+import {BRANDS,EMPTY_PROFILE,MAX_ITEM_QUANTITY,OUTCOMES,basketProblem,brandOf,domainOf,expand,isPack,itemsTotal,manualAddCheck,offerProblem,orderOffer,orderSignature,packUpgrades,pricedTotal,proposalOriginals,questionsReady,quantityOf,recommend,referenceBrand,reviewReason,type Brand,type ItemSnapshot,type OrderItem,type Product,type Profile,type Proposal,type Tier} from '@touche/domain';
 
 /**
  * The guided call as plain data, and every change to it as a pure function (plain objects in, plain objects out).
@@ -6,6 +6,8 @@ import {EMPTY_PROFILE,MAX_ITEM_QUANTITY,OUTCOMES,basketProblem,domainOf,expand,i
  */
 export type CallDraft={
  callId:string;startedAt:string;step:number;
+ /** One brand per call: the step-0 grid, the picker and every suggestion list only its products. */
+ brand:Brand;
  baseIds:string[];baseQuantities:Record<string,number>;
  profile:Profile;
  /** Domain the answers were given for ('' before any answer): a guiding product of another domain asks before clearing them. */
@@ -33,15 +35,15 @@ const uuid=()=>crypto.randomUUID();
 
 export function newDraft({id=uuid(),now=new Date().toISOString(),example}:{id?:string;now?:string;example?:ExampleKind}={}):CallDraft{
  const sample=example?EXAMPLES[example]:null;
- return {callId:id,startedAt:now,step:sample?1:0,baseIds:sample?[sample.baseId]:[],baseQuantities:{},profile:sample?{...sample.profile}:{...EMPTY_PROFILE},profileDomain:sample?example!:'',
+ return {callId:id,startedAt:now,step:sample?1:0,brand:'touche',baseIds:sample?[sample.baseId]:[],baseQuantities:{},profile:sample?{...sample.profile}:{...EMPTY_PROFILE},profileDomain:sample?example!:'',
   adds:[],quantities:{},requestedIds:[],verifiedProducts:[],upgradeId:'',tier:'duo',delivery:'',orderRef:'',customerStage:'unknown',callbackAt:'',handledObjections:[],linkedCallId:'',
   presented:[],presentationKeys:{},consent:false,checked:false,refusal:'',saved:false,savedOutcome:'',savedAt:'',demo:!!sample};
 }
 
 /** A follow-up call prepared from a recorded call (reminder): same initial order and file, linked to it, at the questions. */
-export function resumeDraft(call:{id:string;base_id?:string;order_ref?:string;meta?:{originals?:ItemSnapshot[];original?:ItemSnapshot;orderRef?:string;customerStage?:string}},options:{id?:string;now?:string}={}):CallDraft{
+export function resumeDraft(call:{id:string;base_id?:string;order_ref?:string;brand?:string;meta?:{originals?:ItemSnapshot[];original?:ItemSnapshot;orderRef?:string;customerStage?:string}},options:{id?:string;now?:string}={}):CallDraft{
  const originals=call.meta?.originals?.length?call.meta.originals:call.meta?.original?[call.meta.original]:[];
- return {...newDraft(options),step:1,baseIds:originals.length?originals.map(p=>p.id):call.base_id?[call.base_id]:[],baseQuantities:Object.fromEntries(originals.map(p=>[p.id,quantityOf(p)])),
+ return {...newDraft(options),step:1,brand:brandOf(call),baseIds:originals.length?originals.map(p=>p.id):call.base_id?[call.base_id]:[],baseQuantities:Object.fromEntries(originals.map(p=>[p.id,quantityOf(p)])),
   orderRef:call.meta?.orderRef||call.order_ref||'',customerStage:call.meta?.customerStage||'unknown',linkedCallId:call.id};
 }
 
@@ -200,6 +202,23 @@ export function changeInitialQuantity(d:CallDraft,id:string,next:number,newId:()
  return {...draft,quantities:pruneQuantities(draft)};
 }
 
+/** Another brand once initial products are chosen: they and everything added for them would go, so ask first. */
+export const brandNeedsConfirm=(d:CallDraft,brand:Brand)=>brand!==d.brand&&d.baseIds.length>0;
+/** One brand per call: another brand clears the initial order and everything added for it, and goes back to step 0.
+ *  The answers, the dossier and the purchase stage stay. Null when it is the same brand or the order is fixed. */
+export function changeBrand(d:CallDraft,brand:Brand,newId:()=>string=uuid):Revalidated|null{
+ if(brand===d.brand||orderLocked(d))return null;
+ const removed=[...d.baseIds,...d.adds,...(d.upgradeId?[d.upgradeId]:[])];
+ return {draft:{...d,...renewedId(d,newId),brand,step:0,baseIds:[],baseQuantities:{},adds:[],requestedIds:[],quantities:{},upgradeId:'',verifiedProducts:[],consent:false,checked:false},removed};
+}
+/** A dossier reference whose prefix now names another brand (`BEL…`, `TOU…`) proposes it, once, when it has products. */
+export function brandFromReference(previous:string,next:string,current:Brand,available:Brand[]):Brand|null{
+ const brand=referenceBrand(next);
+ return brand&&brand!==referenceBrand(previous)&&brand!==current&&available.includes(brand)?brand:null;
+}
+/** The call's brand goes to a server that lists `brands`; an older one refuses unknown fields. */
+export const brandField=(d:Pick<CallDraft,'brand'>,features:string[]|undefined):{brand?:Brand}=>features?.includes('brands')?{brand:d.brand}:{};
+
 // ── Routine ──────────────────────────────────────────────────────────────────────────────────────────────────
 export function addComplement(d:CallDraft,id:string,verify:string[],requested:boolean):CallDraft|null{
  if(d.saved||d.adds.includes(id))return null;
@@ -298,11 +317,11 @@ export function undoRemoval(current:CallDraft,previous:CallDraft):CallDraft|null
 /**
  * The products the step-3 picker may list (B5, UNIT): every line of the basket (initial order, chosen pack, additions), for
  * « + Une unité », and every other enabled product that may be added, except an initial product the pack replaced and the
- * packs offered as the upgrade (PACK).
+ * packs offered as the upgrade (PACK). Only the call's brand: one brand per call.
  */
 export function pickerPool(d:CallDraft,products:Product[],offeredPacks:Set<string>):Product[]{
  const lines=new Set(basketOf(d,products).basket.map(p=>p.id));
- return products.filter(p=>p.enabled&&(lines.has(p.id)||!d.baseIds.includes(p.id)&&!offeredPacks.has(p.id)));
+ return products.filter(p=>p.enabled&&(lines.has(p.id)||brandOf(p)===d.brand&&!d.baseIds.includes(p.id)&&!offeredPacks.has(p.id)));
 }
 
 /**
@@ -440,7 +459,8 @@ function asDraft(x:unknown):CallDraft|null{
  for(const [k,v] of Object.entries(fresh))out[k]=typeof o[k]===typeof v&&Array.isArray(o[k])===Array.isArray(v)&&o[k]!==null?o[k]:v;
  const draft=out as CallDraft;
  if(!draft.baseIds.every(id=>typeof id==='string')||![0,1,2].includes(draft.step)||!['catalogue','duo','final'].includes(draft.tier))return null;
- return {...draft,profile:{...EMPTY_PROFILE,...draft.profile}};
+ // A tab from before BEL.NCO stored no brand: its call is Touché, as is any value this desk does not know.
+ return {...draft,brand:BRANDS.includes(draft.brand)?draft.brand:'touche',profile:{...EMPTY_PROFILE,...draft.profile}};
 }
 export function parseStore(text:string|null|undefined):CallStore|null{
  if(!text)return null;
