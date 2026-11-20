@@ -15,6 +15,7 @@ import { DeskExceptionFilter } from '../common/desk-exception.filter.js';
 import { DeskError, sendJson } from '../common/http.js';
 import { ENV, type Env } from '../config/env.js';
 import { OrdersService, deskOrder, orderNotFound } from '../ecomanager/orders.service.js';
+import { OrderSyncService } from '../ecomanager/sync.service.js';
 import { AdminService } from './admin.service.js';
 import { BonusService } from './bonus.service.js';
 import { BootstrapService } from './bootstrap.service.js';
@@ -41,6 +42,7 @@ export class DeskController {
     private readonly calls: CallsService,
     private readonly bonus: BonusService,
     private readonly orders: OrdersService,
+    private readonly orderSync: OrderSyncService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -69,6 +71,11 @@ export class DeskController {
       return sendJson(res, await this.reporting.audit(user));
     if (action === 'reminders')
       return sendJson(res, await this.reporting.reminders(user));
+    if (action === 'order-sync') {
+      if (!this.orders.enabled) throw new DeskError(404, 'Vérification de commande non configurée.', 'order-check-off');
+      if (!canManageWorkspace(user)) throw new DeskError(403, 'Accès direction requis.');
+      return sendJson(res, await this.orderSync.status());
+    }
     if (action === 'order') {
       const found = await this.orders.check(user, params.get('ref') ?? '');
       if (found.status === 'not-found') throw orderNotFound(found.reference);

@@ -1,11 +1,13 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import request from 'supertest';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { localDay } from '@touche/domain';
 import type { Env } from '../src/config/env.js';
 import { tcCallMeta, tcCalls } from '../src/db/schema.js';
 import type { DeskUser } from '../src/desk/desk.types.js';
+import { OrderSyncService } from '../src/ecomanager/sync.service.js';
+import { insertCall } from './support/calls.js';
 import { type TestContext, createTestApp } from './support/context.js';
 import { resetDatabase } from './support/database.js';
 import { deskGet, deskPost } from './support/desk.js';
@@ -245,5 +247,102 @@ describe('order state webhook', () => {
     expect((await res).status).toBe(200);
     expect((await hook(ecoOrder(3000002, 'Annulée', { reference: 'SHT3000002' }))).status).toBe(200);
     expect(await metaOf(id)).toMatchObject({ order_state_group: 'pending', order_state_name: 'En confirmation' });
+  });
+});
+
+describe('catch-up of recorded calls (order sync)', () => {
+  // Its own app: the catch-up only uses half of EcoManager's quota, so it gets a client whose quota the lookups above
+  // have not used (same database, so the accounts and sessions are shared).
+  let syncCtx: TestContext;
+  beforeAll(async () => {
+    syncCtx = await createTestApp(ecomanager(fake.url));
+  });
+  afterAll(() => syncCtx.close());
+  const sync = () => syncCtx.app.get(OrderSyncService);
+  const past = (order_ref: string, extra: Partial<Parameters<typeof insertCall>[1]> = {}) =>
+    insertCall(on.db, { user_id: linaUser.id, created_at: new Date(Date.now() - 3 * 86_400_000), order_ref, ...extra });
+  const setMeta = (id: string, values: Partial<typeof tcCallMeta.$inferInsert>) => on.db.update(tcCallMeta).set(values).where(eq(tcCallMeta.call_id, id));
+
+  it('catches up calls recorded before the feature', async () => {
+    fake.orders.set(4000001, ecoOrder(4000001, 'Livrée'));
+    fake.orders.set(4000002, ecoOrder(4000002, 'En livraison'));
+    const full = await past('TOU4000001');
+    const digits = await past('4000002');
+    const other = await past('DOS-0142');
+    const unknown = await past('TOU4000009');
+    const none = await past('');
+    const r = await sync().runOnce();
+    expect(r).toEqual({ checked: 4, updated: 4, remaining: 0 });
+    expect(await metaOf(full)).toMatchObject({ order_check: 'verified', ecomanager_order_id: '4000001', order_state_group: 'delivered', order_ref: 'TOU4000001' });
+    expect(await metaOf(digits)).toMatchObject({ order_check: 'verified', ecomanager_order_id: '4000002', order_state_group: 'shipping', order_ref: '4000002' });
+    expect(await metaOf(other)).toMatchObject({ order_check: 'unrecognized', ecomanager_order_id: null });
+    expect(await metaOf(unknown)).toMatchObject({ order_check: 'not-found' });
+    expect(await metaOf(none)).toMatchObject({ order_check: '' });
+    expect(fake.calls).not.toContain('/api/shop/v2/orders/142');
+  });
+
+  it('two calls on one order cost one request', async () => {
+    fake.orders.set(4000003, ecoOrder(4000003, 'En confirmation'));
+    const a = await past('TOU4000003');
+    const b = await past('TOU4000003');
+    await sync().runOnce();
+    expect(fake.calls.filter((c) => c.endsWith('/4000003'))).toHaveLength(1);
+    const metas = await on.db.select().from(tcCallMeta).where(inArray(tcCallMeta.call_id, [a, b]));
+    expect(metas.map((m) => m.order_check)).toEqual(['verified', 'verified']);
+  });
+
+  it('a voided call is skipped', async () => {
+    fake.orders.set(4000004, ecoOrder(4000004));
+    const id = await past('TOU4000004');
+    await on.db.update(tcCalls).set({ voided_at: new Date() }).where(eq(tcCalls.id, id));
+    await sync().runOnce();
+    expect(await metaOf(id)).toMatchObject({ order_check: '' });
+    expect(fake.calls).toEqual([]);
+  });
+
+  it('final orders are not refreshed, others are after 24 h', async () => {
+    const twoDays = new Date(Date.now() - 2 * 86_400_000);
+    const delivered = await past('TOU4000005');
+    await setMeta(delivered, { order_check: 'verified', ecomanager_order_id: '4000005', order_state_group: 'delivered', order_state_name: 'Livrée', order_synced_at: twoDays });
+    const stale = await past('TOU4000006');
+    await setMeta(stale, { order_check: 'verified', ecomanager_order_id: '4000006', order_state_group: 'shipping', order_state_name: 'En livraison', order_synced_at: twoDays });
+    const fresh = await past('TOU4000007');
+    await setMeta(fresh, { order_check: 'verified', ecomanager_order_id: '4000007', order_state_group: 'shipping', order_state_name: 'En livraison', order_synced_at: new Date() });
+    fake.orders.set(4000006, ecoOrder(4000006, 'Retournée'));
+    await sync().runOnce();
+    expect(fake.calls).toEqual(['/api/shop/v2/orders/4000006']);
+    expect(await metaOf(stale)).toMatchObject({ order_state_group: 'failed', order_state_name: 'Retournée' });
+  });
+
+  it('stops when EcoManager is unavailable and resumes later', async () => {
+    fake.orders.set(4000008, ecoOrder(4000008));
+    const a = await past('TOU4000008');
+    fake.setStatus(503);
+    expect(await sync().runOnce()).toEqual({ checked: 0, updated: 0, remaining: 1 });
+    expect(await metaOf(a)).toMatchObject({ order_check: '' });
+    fake.setStatus(0);
+    expect(await sync().runOnce()).toEqual({ checked: 1, updated: 1, remaining: 0 });
+    expect(await metaOf(a)).toMatchObject({ order_check: 'verified' });
+  });
+
+  it('one catch-up at a time (advisory lock)', async () => {
+    fake.orders.set(4000012, ecoOrder(4000012));
+    fake.setDelay(150);
+    await past('TOU4000012');
+    const [a, b] = await Promise.all([sync().runOnce(), sync().runOnce()]);
+    expect([a.checked, b.checked].sort()).toEqual([0, 1]);
+    expect(fake.calls.filter((c) => c.endsWith('/4000012'))).toHaveLength(1);
+  });
+
+  it('only managers see the sync status', async () => {
+    fake.orders.set(4000010, ecoOrder(4000010, 'Livrée'));
+    await past('TOU4000010');
+    await past('DOS-1');
+    await past('TOU4000011');
+    expect((await deskGet(syncCtx, '?action=order-sync', lina)).status).toBe(403);
+    expect((await deskGet(syncCtx, '?action=order-sync', admin)).body).toEqual({ total: 3, known: 0, pending: 3, notFound: 0, unrecognized: 0 });
+    await sync().runOnce();
+    expect((await deskGet(syncCtx, '?action=order-sync', admin)).body).toEqual({ total: 3, known: 1, pending: 0, notFound: 1, unrecognized: 1 });
+    expect((await deskGet(off, '?action=order-sync', await loginCookie(off, 'direction', PASSWORD))).status).toBe(404);
   });
 });
