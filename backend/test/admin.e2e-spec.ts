@@ -175,7 +175,7 @@ describe('product', () => {
     const res = await post({ action: 'product', product: { ...fixture('antiacne'), name: 'X', source: 'http://touchelab.com/x' } });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe(
-      FORM + 'Nom du produit — 2 caractères minimum ; Fiche officielle — adresse non autorisée, utilisez une page https://www.touchelab.com/….',
+      FORM + 'Nom du produit — 2 caractères minimum ; Fiche officielle — adresse non autorisée, utilisez une page https://www.touchelab.com/… ou https://belnco.com/….',
     );
     const account = await post({ action: 'user', username: 'é', label: 'Nouvelle', password: 'x' });
     expect(account.status).toBe(400);

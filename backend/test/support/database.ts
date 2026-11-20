@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import type { Db } from '../../src/db/schema.js';
+import type { Product } from '@touche/domain';
+import { type Db, tcProducts } from '../../src/db/schema.js';
 
 const TABLES = [
   'tc_users',
@@ -34,4 +35,13 @@ export async function resetDatabase(db: Db): Promise<void> {
   for (const statement of seed.split('--> statement-breakpoint')) {
     if (statement.trim()) await db.execute(sql.raw(statement));
   }
+}
+
+/** The BEL.NCO rows of shared/test/fixtures/belnco.json, after the Touché seed; a row already there is kept. */
+export async function seedBelnco(db: Db): Promise<void> {
+  const bel = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../shared/test/fixtures/belnco.json'), 'utf8')) as Product[];
+  await db
+    .insert(tcProducts)
+    .values(bel.map((p) => ({ id: p.id, data: p })))
+    .onConflictDoNothing({ target: tcProducts.id });
 }

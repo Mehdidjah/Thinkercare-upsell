@@ -31,6 +31,9 @@ const background = (req: Request) => req.headers['x-desk-background'] === '1';
 /** The desk prices offers with the server's current rules (shared PRICING_RULE); a tab opened before does not. */
 const currentPricing = (req: Request) => req.headers['x-desk-pricing'] === PRICING_RULE;
 
+/** The desk keeps each call to one brand; a tab opened before BEL.NCO does not, so its bootstrap holds Touché only. */
+const brandsDesk = (req: Request) => req.headers['x-desk-brands'] === '1';
+
 @Controller('api/desk')
 @UseFilters(DeskExceptionFilter)
 export class DeskController {
@@ -87,7 +90,7 @@ export class DeskController {
         });
       return sendJson(res, { order: deskOrder(found.order), check: 'verified' });
     }
-    return sendJson(res, await this.bootstrap.get(user, params.get('compact') !== '1'));
+    return sendJson(res, await this.bootstrap.get(user, params.get('compact') !== '1', brandsDesk(req)));
   }
 
   @Post()
@@ -119,7 +122,7 @@ export class DeskController {
       if (body.bootstrap === true) {
         const user = await this.auth.resolveUser(cookie);
         if (!user) throw new DeskError(401, 'Votre session a expiré. Reconnectez-vous.');
-        return sendJson(res, { ok: true, bootstrap: await this.bootstrap.get(user, false) }, 200, { 'Set-Cookie': cookie });
+        return sendJson(res, { ok: true, bootstrap: await this.bootstrap.get(user, false, brandsDesk(req)) }, 200, { 'Set-Cookie': cookie });
       }
       return sendJson(res, { ok: true }, 200, { 'Set-Cookie': cookie });
     }
