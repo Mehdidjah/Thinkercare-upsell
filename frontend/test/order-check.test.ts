@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ORDER_REFERENCE_HINT } from '@touche/domain';
-import { advanceBlocker, checkFromError, checkFromResponse, orderCheckBlocksSave, startCheck, type OrderCheck } from '../src/ui/call/orderCheck';
+import { advanceBlocker, checkFromError, checkFromResponse, orderCheckBlocksSave, orderCheckEnabled, orderLookupQuery, referencePlaceholder, startCheck, type OrderCheck } from '../src/ui/call/orderCheck';
 
 const verified: OrderCheck = { reference: 'TOU1763816', status: 'verified', order: { id: 1763816, reference: 'TOU1763816', stateGroup: 'pending', stateLabel: 'Pas encore expédiée', stateName: 'En confirmation' } };
 
@@ -19,6 +19,33 @@ describe('order check (pure)', () => {
     expect(checkFromError('X', { status: 400, code: 'order-ref-format', message: ORDER_REFERENCE_HINT })).toEqual({ reference: 'X', status: 'invalid', message: ORDER_REFERENCE_HINT });
     expect(checkFromError('TOU1', { status: 0, code: 'network', message: 'Connexion perdue.' }).status).toBe('unavailable');
     expect(checkFromError('TOU1', { status: 429, message: 'Trop de vérifications.' })).toEqual({ reference: 'TOU1', status: 'unavailable', message: 'Trop de vérifications.' });
+  });
+
+  it('checks a dossier against the call’s store', () => {
+    expect(startCheck('bel 1763838', 'belnco')).toEqual({ reference: 'BEL1763838', status: 'checking' });
+    expect(startCheck('1763838', 'belnco')).toEqual({ reference: '1763838', status: 'checking' });
+    expect(startCheck('DOS-1', 'belnco')).toEqual({ reference: 'DOS-1', status: 'invalid', message: 'Une référence commence par BEL suivie du numéro de commande, par exemple BEL1763838.' });
+    expect(startCheck('BEL1763838')).toEqual({ reference: 'BEL1763838', status: 'invalid', message: 'Cette référence est une commande BEL.NCO : l’appel est un appel Touché. Changez la marque de l’appel ou corrigez la référence.' });
+    expect(startCheck('TOU1763816', 'belnco').status).toBe('invalid');
+  });
+  it('each store is checked only when the server lists it', () => {
+    expect(orderCheckEnabled(['order-check'], 'touche')).toBe(true);
+    expect(orderCheckEnabled(['order-check'], 'belnco')).toBe(false);
+    expect(orderCheckEnabled(['order-check', 'order-check-bel'], 'belnco')).toBe(true);
+    expect(orderCheckEnabled(undefined, 'touche')).toBe(false);
+  });
+  it('names the BEL store in the lookup; a Touché lookup stays as older servers know it', () => {
+    expect(orderLookupQuery('BEL1763838', 'belnco')).toBe('?action=order&ref=BEL1763838&brand=belnco');
+    expect(orderLookupQuery('TOU1763816', 'touche')).toBe('?action=order&ref=TOU1763816');
+  });
+  it('the dossier placeholder follows the brand', () => {
+    expect(referencePlaceholder('touche', true)).toBe('TOU1763816');
+    expect(referencePlaceholder('touche', false)).toBe('DOS-0142');
+    expect(referencePlaceholder('belnco', false)).toBe('BEL1763838');
+  });
+  it('a reference the server places in the other store blocks like a malformed one', () => {
+    const message = 'Cette référence est une commande BEL.NCO : l’appel est un appel Touché. Changez la marque de l’appel ou corrigez la référence.';
+    expect(checkFromError('BEL1', { status: 400, code: 'order-ref-brand', message })).toEqual({ reference: 'BEL1', status: 'invalid', message });
   });
 
   it('blocks a save until the order is verified or EcoManager is unreachable', () => {

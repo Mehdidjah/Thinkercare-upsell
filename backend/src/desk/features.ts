@@ -9,11 +9,14 @@ export const FEATURES: readonly string[] = [
   'expected-user',
   'sliding-session',
   'price-codes',
+  'brands',
 ];
 
-/** The features this server lists: `order-check` only once EcoManager is configured. */
-export function featuresFor(env: { ecomanager?: unknown }): string[] {
-  return env.ecomanager ? [...FEATURES, 'order-check'] : [...FEATURES];
+/** The features this server lists: `order-check` once EcoManager is configured (the TOU store), `order-check-bel` once
+ *  the BEL.NCO store is too. */
+export function featuresFor(env: { ecomanager?: { belToken?: string } }): string[] {
+  if (!env.ecomanager) return [...FEATURES];
+  return env.ecomanager.belToken ? [...FEATURES, 'order-check', 'order-check-bel'] : [...FEATURES, 'order-check'];
 }
 
 /** An adviser may void her own recorded outcome for this long; a manager at any time. */

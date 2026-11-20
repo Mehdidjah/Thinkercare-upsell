@@ -1,6 +1,10 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import type { Product } from '@touche/domain';
+import { ProductFacts } from '../src/ui/shared/ProductFacts';
 
 // Brand rule (DESIGN-SYSTEM.md §1.1): the platform is ThinkerCare. « Touché » only names the products.
 const root = new URL('../../', import.meta.url);
@@ -13,6 +17,7 @@ function files(dir: string): string[] {
 }
 const sources = [...files('frontend/src/'), 'frontend/index.html', ...files('backend/src/common/')];
 const read = (path: string) => readFileSync(new URL(path, root), 'utf8');
+const load = (file: string) => JSON.parse(read('shared/test/fixtures/' + file)) as Product[];
 
 test('the platform is never called Touché Conseil', () => {
   for (const path of sources) {
@@ -36,9 +41,14 @@ test('every export file name starts with ThinkerCare_', () => {
   for (const name of names) assert.equal(name, 'ThinkerCare');
 });
 
-test('Touché still names the products and their official sources', () => {
-  assert.ok(read('frontend/src/ui/shared/ProductFacts.tsx').includes('Source officielle Touché'));
-  assert.ok(read('frontend/src/ui/pages/Protocol.tsx').includes('Fiches officielles Touché'));
+test('each product names its own brand and official source', () => {
+  const touche = load('catalogue.json'), bel = load('belnco.json'), all = [...touche, ...bel];
+  const facts = (id: string) => renderToStaticMarkup(createElement(ProductFacts, { product: all.find(p => p.id === id)!, catalogue: all }));
+  assert.ok(facts('antiacne').includes('Source officielle Touché'));
+  assert.ok(facts('bel-retinol').includes('Source officielle BEL.NCO'));
+  const protocol = read('frontend/src/ui/pages/Protocol.tsx');
+  assert.ok(protocol.includes('Fiches officielles Touché'));
+  assert.ok(protocol.includes('Fiches officielles BEL.NCO'));
 });
 
 test('the wordmark is the shared component everywhere it appears', () => {

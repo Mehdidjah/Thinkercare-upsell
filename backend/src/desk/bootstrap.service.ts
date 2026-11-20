@@ -1,4 +1,4 @@
-import { canManageWorkspace } from '@touche/domain';
+import { brandOf, canManageWorkspace } from '@touche/domain';
 import { Inject, Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import { asc, desc, eq, isNull, sql } from 'drizzle-orm';
@@ -13,9 +13,13 @@ import { VOID_WINDOW_MINUTES, featuresFor } from './features.js';
 export class BootstrapService {
   constructor(@InjectDrizzle() private readonly db: Db, @Inject(ENV) private readonly env: Env) {}
 
-  async get(user: DeskUser, includeCalls = true) {
+  /**
+   * `allBrands`: the desk announced it keeps each call to one brand (X-Desk-Brands). A desk from before BEL.NCO would
+   * offer BEL.NCO products on Touché calls, so it gets the Touché rows only.
+   */
+  async get(user: DeskUser, includeCalls = true, allBrands = false) {
     const admin = canManageWorkspace(user);
-    const [products, calls, settings, users] = await Promise.all([
+    const [catalogue, calls, settings, users] = await Promise.all([
       loadProducts(this.db),
       admin && includeCalls
         ? this.db.select().from(tcCalls).orderBy(desc(tcCalls.created_at)).limit(1000)
@@ -43,6 +47,7 @@ export class BootstrapService {
             .orderBy(asc(tcUsers.created_at))
         : Promise.resolve([]),
     ]);
+    const products = allBrands ? catalogue : catalogue.filter((p) => brandOf(p) === 'touche');
     const data = settings[0]?.data as Record<string, unknown> | undefined;
     const clinical = data
       ? { ...data, validated: data.version === 3 && !!data.validated }

@@ -37,7 +37,7 @@ it('names the product image and source in French, without the technical path', (
     }),
   );
   expect(text).toBe(
-    'Vérifiez les champs du formulaire : Image du produit — adresse non autorisée, utilisez une image /assets/… ou une adresse https://cdn.shopify.com/… ; Fiche officielle — adresse non autorisée, utilisez une page https://www.touchelab.com/….',
+    'Vérifiez les champs du formulaire : Image du produit — adresse non autorisée, utilisez une image /assets/… ou une adresse https://cdn.shopify.com/… ; Fiche officielle — adresse non autorisée, utilisez une page https://www.touchelab.com/… ou https://belnco.com/….',
   );
   expect(text).not.toMatch(/product\.|Invalid|expected/);
 });

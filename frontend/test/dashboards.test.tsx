@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { bonusEstimate, money, type BonusRule } from '@touche/domain';
 import { ReminderTable, isDue, type Reminder } from '../src/ui/pages/Reminders';
 import { ProgressCard } from '../src/ui/Commission';
-import Analytics, { CallDetail, DeliveryCard, analyticsQuery, auditDetail, auditLabel, orderStateMatch, orderTag } from '../src/ui/Analytics';
+import Analytics, { CallDetail, DeliveryCard, analyticsQuery, auditDetail, auditLabel, brandMatch, orderStateMatch, orderTag } from '../src/ui/Analytics';
 
 const ui = (path: string) => readFileSync(new URL('../src/ui/' + path, import.meta.url), 'utf8');
 const reminder = (over: Partial<Reminder> = {}): Reminder => ({ id: 'c1aaaaaaaa', user_id: 'u1', operator: 'Lina', base_id: 'antiacne', outcome: 'callback', created_at: '2026-11-01T10:00:00Z', callback_at: '2026-11-02T10:00:00Z', order_ref: 'DOS-1', meta: { originals: [{ id: 'antiacne', name: 'Gel anti-acné', price: 1000, quantity: 2 }] }, ...over });
@@ -217,3 +217,40 @@ test('Pilotage: the order state filter resets the journal page, is announced and
   expect(src).toMatch(/const activeFilters=\[[^\]]*\borderState\b/);
 });
 
+test('the « Marque » filter: every call without a brand is Touché', () => {
+  expect(brandMatch({}, '')).toBe(true);
+  expect(brandMatch({}, 'touche')).toBe(true);
+  expect(brandMatch({ brand: 'belnco' }, 'touche')).toBe(false);
+  expect(brandMatch({ brand: 'belnco' }, 'belnco')).toBe(true);
+});
+
+test('the brand filter shows its three options and is in the reset, the chips, the signature, the journal and the CSV', () => {
+  const html = renderToStaticMarkup(<Analytics user={admin} users={[]} products={[]} resume={() => {}} />);
+  expect(html).toMatch(/Marque<select><option value="" selected="">Toutes<\/option><option value="touche">Touché<\/option><option value="belnco">BEL\.NCO<\/option>/);
+  const src = ui('Analytics.tsx');
+  expect(src).toMatch(/const filterSig=\[[^\]]*\bbrand\b/);
+  expect(src).toMatch(/function clear\(\)\{[^}]*setBrand\(''\)/);
+  expect(src).toContain("chip('brand'");
+  expect(src).toContain("'Équipe au moment de l’appel','Marque',");
+  expect(src).toContain('<span className="tag tag--neutral">{BRAND_LABELS[brandOf(c)]}</span>');
+});
+
+test('the « Marque » filter narrows the calls and the product lists, resets the page and counts as an active filter', () => {
+  const src = ui('Analytics.tsx');
+  expect(src).toMatch(/const keep=[^\n]*&&brandMatch\(c,brand\);/);
+  expect(src).toMatch(/useEffect\(\(\)=>\{setPage\(0\)\},\[[^\]]*\bbrand\b/);
+  expect(src).toMatch(/const activeFilters=\[[^\]]*\bbrand\b/);
+  for (const memo of ['const filtered=useMemo', 'const calendar=useMemo', 'const objectionPool=useMemo']) expect(src).toMatch(new RegExp(memo + '[^\\n]*,\\[[^\\]]*\\bbrand\\b[^\\]]*\\]\\);'));
+  expect(src).toContain("c.meta.team||'',BRAND_LABELS[brandOf(c)],");
+  // Both lists only show the chosen brand's products; a product of the other brand leaves the filter.
+  expect(src).toContain('const brandProducts=products.filter(p=>brandMatch(p,brand));');
+  expect(src).toContain('{brandProducts.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}');
+  expect(src).toContain("{brandProducts.filter(p=>p.category!=='Pack').map(p=><option key={p.id} value={p.id}>{p.name}</option>)}");
+  expect(src).toContain('<label className="field">Marque<select value={brand} onChange={e=>pickBrand(e.target.value)}>');
+  expect(src).toContain("function pickBrand(next:string){setBrand(next);const other=(id:string)=>!!id&&!brandMatch(products.find(p=>p.id===id)??{},next);if(other(base))setBase('');if(other(addon))setAddon('');}");
+  // Every brand's products are listed under « Toutes ».
+  const products = [{ id: 'antiacne', name: 'Gel anti-acné' }, { id: 'bel-retinol', name: 'Retinol Complex Serum', brand: 'belnco' }].map(p => ({ price: 1000, category: 'Soin ciblé', enabled: true, ...p })) as never;
+  const html = renderToStaticMarkup(<Analytics user={admin} users={[]} products={products} resume={() => {}} />);
+  expect(html.match(/<option value="bel-retinol">Retinol Complex Serum<\/option>/g)).toHaveLength(2);
+  expect(html.match(/<option value="antiacne">Gel anti-acné<\/option>/g)).toHaveLength(2);
+});

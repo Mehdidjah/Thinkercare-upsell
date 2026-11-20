@@ -9,7 +9,7 @@ import type { DeskUser } from '../src/desk/desk.types.js';
 import { OrderSyncService } from '../src/ecomanager/sync.service.js';
 import { insertCall } from './support/calls.js';
 import { type TestContext, createTestApp } from './support/context.js';
-import { resetDatabase } from './support/database.js';
+import { launchBelnco, resetDatabase } from './support/database.js';
 import { deskGet, deskPost } from './support/desk.js';
 import { type FakeEcoManager, ecoOrder, startFakeEcoManager } from './support/ecomanager-fake.js';
 import { createUser, loginCookie } from './support/users.js';
@@ -178,6 +178,15 @@ describe('order check at save (save-call)', () => {
     const r = await saveInitial('DOS-0142').res;
     expect(r.status).toBe(400);
     expect(r.body.code).toBe('order-ref-format');
+  });
+
+  it('a BEL.NCO dossier on a Touché call is refused before EcoManager is asked', async () => {
+    const { id, res } = saveInitial('BEL2000006');
+    const r = await res;
+    expect(r.status).toBe(400);
+    expect(r.body).toEqual({ error: 'Cette référence est une commande BEL.NCO : l’appel est un appel Touché. Changez la marque de l’appel ou corrigez la référence.', code: 'order-ref-brand' });
+    expect(fake.calls).toEqual([]);
+    expect(await on.db.select().from(tcCalls).where(eq(tcCalls.id, id))).toEqual([]);
   });
 
   it('analytics returns the order state', async () => {
@@ -423,5 +432,102 @@ describe('one accepted add-on per order, whatever form the reference was typed i
     const res = await acceptedSale('5000002', { oldTab: true });
     expect(res.status).toBe(409);
     expect(res.body.error).toBe(DUPLICATE);
+  });
+});
+
+describe('BEL.NCO store', () => {
+  let bel: TestContext;
+  beforeAll(async () => { bel = await createTestApp(ecomanager(fake.url, { webhookSecret: SECRET, belToken: 'bel-token' })); });
+  afterAll(() => bel.close());
+  beforeEach(() => launchBelnco(bel.db));
+  const belOrder = (id: number, state = 'En confirmation') => ecoOrder(id, state, { reference: `BEL${id}` });
+  const meta = (orderRef: string, extra: Record<string, unknown> = {}) => ({ version: 3, source: 'manual', customerStage: 'new', orderRef, startedAt: new Date(Date.now() - 60_000).toISOString(), eligible: false, objections: [], ...extra });
+  const saveBel = (ctx: TestContext, orderRef: string, extra: Record<string, unknown> = {}) => deskPost(ctx, { action: 'save-call', id: randomUUID(), brand: 'belnco', baseId: 'bel-retinol', productIds: ['bel-retinol'], outcome: 'noanswer', tier: 'catalogue', delivery: null, consent: false, checked: false, refusal: '', expectedUserId: linaUser.id, meta: meta(orderRef), ...extra }, { cookie: lina });
+  const signedWebhook = (ctx: TestContext, order: Record<string, unknown>) => hook(order, { ctx });
+  /** Present bel-retinol + bel-moist and save it as accepted on `orderRef`, as acceptedSale does for Touché. */
+  async function acceptedBelSale(ctx: TestContext, orderRef: string) {
+    const callId = randomUUID(), id = randomUUID();
+    const offer = { brand: 'belnco', baseId: 'bel-retinol', productIds: ['bel-retinol', 'bel-moist'], tier: 'duo', delivery: null, agreedTotal: 3300, expectedUserId: linaUser.id };
+    expect((await deskPost(ctx, { action: 'present-offer', id, callId, ...offer }, { cookie: lina })).status).toBe(200);
+    return deskPost(ctx, { action: 'save-call', id: callId, ...offer, outcome: 'duo', consent: true, checked: true, refusal: '', meta: meta(orderRef, { eligible: true, acceptedProposalId: id }) }, { cookie: lina });
+  }
+
+  it('lists order-check-bel only with the BEL token', async () => {
+    expect((await deskGet(bel, '?compact=1', admin)).body.features).toEqual(expect.arrayContaining(['order-check', 'order-check-bel']));
+    expect((await deskGet(on, '?compact=1', admin)).body.features).not.toContain('order-check-bel');
+  });
+  it('looks a BEL.NCO dossier up with the BEL token; a number alone reads as BEL', async () => {
+    fake.orders.set(6000001, belOrder(6000001));
+    const res = await deskGet(bel, '?action=order&brand=belnco&ref=6000001', lina);
+    expect(res.status).toBe(200);
+    expect(res.body.order.reference).toBe('BEL6000001');
+    expect(fake.lastAuthorization()).toBe('Bearer bel-token');
+  });
+  it('a BEL reference on a Touché lookup is refused without asking EcoManager', async () => {
+    const res = await deskGet(bel, '?action=order&ref=BEL6000002', lina);
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Cette référence est une commande BEL.NCO : l’appel est un appel Touché. Changez la marque de l’appel ou corrigez la référence.', code: 'order-ref-brand' });
+    expect(fake.calls).toEqual([]);
+  });
+  it('the TOU client never reads a BEL order with the same number', async () => {
+    fake.orders.set(6000003, belOrder(6000003));
+    expect((await lookup('TOU6000003', lina, bel)).status).toBe(404);
+  });
+  it('without the BEL token a BEL.NCO call is saved unchecked under its full reference', async () => {
+    const res = await saveBel(on, '6000004');
+    expect(res.status).toBe(200);
+    const [meta] = await on.db.select().from(tcCallMeta).innerJoin(tcCalls, eq(tcCalls.id, tcCallMeta.call_id)).where(eq(tcCalls.brand, 'belnco'));
+    expect(meta!.tc_call_meta).toMatchObject({ order_ref: 'BEL6000004', order_check: '', ecomanager_order_id: null });
+    expect(fake.calls).toEqual([]);
+  });
+  it('one accepted upsell per order is counted per store', async () => {
+    await insertCall(bel.db, { user_id: linaUser.id, created_at: new Date(Date.now() - 86_400_000), outcome: 'duo', order_ref: 'TOU6000005' });
+    // A Touché sale typed as the bare number and matched to TOU order 6000005: still another store's order.
+    const bare = await insertCall(bel.db, { user_id: linaUser.id, created_at: new Date(Date.now() - 86_400_000), outcome: 'duo', order_ref: '6000005' });
+    await bel.db.update(tcCallMeta).set({ ecomanager_order_id: '6000005', order_check: 'verified' }).where(eq(tcCallMeta.call_id, bare));
+    fake.orders.set(6000005, belOrder(6000005));
+    expect((await acceptedBelSale(bel, '6000005')).status).toBe(200);
+    expect((await acceptedBelSale(bel, 'BEL6000005')).status).toBe(409);
+  });
+  it('a BEL webhook updates BEL.NCO calls only, even when a Touché call has the same order number', async () => {
+    const t = await insertCall(bel.db, { user_id: linaUser.id, created_at: new Date(), order_ref: 'TOU6000006' });
+    const b = await insertCall(bel.db, { user_id: linaUser.id, created_at: new Date(), order_ref: 'BEL6000006', brand: 'belnco' });
+    await bel.db.update(tcCallMeta).set({ ecomanager_order_id: '6000006', order_check: 'verified' }).where(inArray(tcCallMeta.call_id, [t, b]));
+    expect((await signedWebhook(bel, belOrder(6000006, 'Livrée'))).status).toBe(200);
+    const rows = await bel.db.select({ id: tcCallMeta.call_id, group: tcCallMeta.order_state_group }).from(tcCallMeta).where(inArray(tcCallMeta.call_id, [t, b]));
+    expect(Object.fromEntries(rows.map((r) => [r.id, r.group]))).toEqual({ [t]: null, [b]: 'delivered' });
+  });
+  it('the catch-up checks BEL references with the BEL token and leaves them waiting without it', async () => {
+    const id = await insertCall(on.db, { user_id: linaUser.id, created_at: new Date(), order_ref: 'BEL6000007', brand: 'belnco' });
+    fake.orders.set(6000007, belOrder(6000007, 'En livraison'));
+    expect(await on.app.get(OrderSyncService).runOnce()).toEqual({ checked: 0, updated: 0, remaining: 0 });
+    expect(fake.calls).toEqual([]);
+    expect((await bel.app.get(OrderSyncService).runOnce()).checked).toBe(1);
+    const [m] = await bel.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, id));
+    expect(m).toMatchObject({ order_check: 'verified', order_state_group: 'shipping' });
+  });
+  it('the catch-up reads each call in its own brand’s store: a Touché call typed BEL… is never matched to the BEL order', async () => {
+    const touche = await insertCall(bel.db, { user_id: linaUser.id, created_at: new Date(), order_ref: 'BEL6000008' });
+    const belnco = await insertCall(bel.db, { user_id: linaUser.id, created_at: new Date(), order_ref: 'BEL6000008', brand: 'belnco' });
+    fake.orders.set(6000008, belOrder(6000008, 'Livrée'));
+    const sync = bel.app.get(OrderSyncService);
+    expect(await sync.runOnce()).toEqual({ checked: 2, updated: 2, remaining: 0 });
+    const [t] = await bel.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, touche));
+    const [b] = await bel.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, belnco));
+    expect(t).toMatchObject({ order_check: 'unrecognized', ecomanager_order_id: null, order_state_group: null });
+    expect(b).toMatchObject({ order_check: 'verified', ecomanager_order_id: '6000008', order_state_group: 'delivered' });
+    expect(await sync.runOnce()).toEqual({ checked: 0, updated: 0, remaining: 0 });
+  });
+  it('a store out of quota waits for the next run; the other store’s references go on', async () => {
+    const limited = await insertCall(bel.db, { user_id: linaUser.id, created_at: new Date(), order_ref: 'BEL6000011', brand: 'belnco' });
+    const waiting = await insertCall(bel.db, { user_id: linaUser.id, created_at: new Date(), order_ref: 'BEL6000012', brand: 'belnco' });
+    const touche = await insertCall(bel.db, { user_id: linaUser.id, created_at: new Date(), order_ref: 'TOU6000013' });
+    fake.orders.set(6000011, { __status: 429 });
+    fake.orders.set(6000012, belOrder(6000012));
+    fake.orders.set(6000013, ecoOrder(6000013, 'Livrée'));
+    expect(await bel.app.get(OrderSyncService).runOnce()).toEqual({ checked: 1, updated: 1, remaining: 2 });
+    expect(fake.calls).not.toContain('/api/shop/v2/orders/6000012');
+    const rows = await bel.db.select({ id: tcCallMeta.call_id, check: tcCallMeta.order_check }).from(tcCallMeta).where(inArray(tcCallMeta.call_id, [limited, waiting, touche]));
+    expect(Object.fromEntries(rows.map((r) => [r.id, r.check]))).toEqual({ [limited]: '', [waiting]: '', [touche]: 'verified' });
   });
 });

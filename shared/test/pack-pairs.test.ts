@@ -1,6 +1,6 @@
 import {readFileSync} from 'node:fs';
 import {describe,it,expect} from 'vitest';
-import {basketOffer,orderOffer,offerProblem,raiseProblem,pricedTotal,hairPackSets,summaryText,salesPitch,objections,money,EMPTY_PROFILE,type Product,type OrderItem,type Tier} from '../src/index.js';
+import {basketOffer,orderOffer,offerProblem,raiseProblem,pricedTotal,hairPackSets,summaryText,salesPitch,objections,money,EMPTY_PROFILE,PRICING_RULE,type Product,type OrderItem,type Tier} from '../src/index.js';
 // Hair-pack pair pricing (docs/superpowers/specs/2026-11-19-hair-pack-pair-pricing-design.md), real catalogue prices.
 const catalogue=JSON.parse(readFileSync(new URL('./fixtures/catalogue.json',import.meta.url),'utf8')) as Product[];
 const get=(id:string)=>catalogue.find(p=>p.id===id)!;
@@ -163,4 +163,32 @@ describe('documented offers stay unchanged',()=>{
   expect(offers(basket)).toEqual([catalogueTotal,first,final]);
   expect(summaryText(basket[0],basket,'duo',null,catalogue,[basket[0]])).not.toContain('Tarif pack appliqué');
  });
+});
+
+describe('BEL.NCO ritual bought as separate products',()=>{
+ const bel=JSON.parse(readFileSync(new URL('./fixtures/belnco.json',import.meta.url),'utf8')) as Product[];
+ const all=[...catalogue,...bel],b=(id:string,quantity=1):OrderItem=>({...all.find(p=>p.id===id)!,quantity});
+ it('oil + gel cost the ritual price at every level',()=>{
+  const basket=[b('bel-oil'),b('bel-gel')];
+  expect(hairPackSets(basket,all)).toEqual({sets:[{pack:all.find(p=>p.id==='bel-ritual'),count:1}],rest:[]});
+  expect(pricedTotal(basket,all)).toBe(3100);
+  expect(offers(basket,all)).toEqual([3100,3100,3100]);
+ });
+ it('with the moisturizer only the cream is discounted: 4750 / 4600 / 4500',()=>{
+  expect(offers([b('bel-oil'),b('bel-gel'),b('bel-moist')],all)).toEqual([4750,4600,4500]);
+ });
+ it('adding the gel to an oil order raises it from 1700 to 3100',()=>{
+  expect(orderOffer([b('bel-oil')],[b('bel-oil'),b('bel-gel')],'duo',all)).toBe(3100);
+  expect(offerProblem([b('bel-oil')],[b('bel-oil'),b('bel-gel')],'final',all)).toBeNull();
+ });
+ it('Touché sets are unchanged with BEL.NCO rows in the catalogue',()=>{
+  const singles=catalogue.filter(p=>p.category!=='Pack').map(p=>item(p.id));
+  expect(hairPackSets(singles,all).sets.map(s=>s.pack.id)).toEqual(['packpousse','packanti','packpso']);
+ });
+ it('the recap header names the call’s brand',()=>{
+  expect(summaryText(all.find(p=>p.id==='bel-retinol')!,[b('bel-retinol'),b('bel-moist')],'duo',null,all).split('\n')[0]).toBe('BEL.NCO | Récapitulatif de l’offre');
+  expect(summaryText(get('antiacne'),[item('antiacne'),item('wcgel')],'duo',null,catalogue).split('\n')[0]).toBe('TOUCHÉ | Récapitulatif de l’offre');
+  expect(summaryText(all.find(p=>p.id==='bel-oil')!,[b('bel-oil'),b('bel-gel')],'duo',null,all)).toContain(`Tarif pack appliqué : Centella Cleansing Oil + Centella Cleansing Gel = ${money(3100)}.`);
+ });
+ it('the pricing rule announced by the desk changed',()=>expect(PRICING_RULE).toBe('pack-sets'));
 });

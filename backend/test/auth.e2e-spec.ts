@@ -356,7 +356,7 @@ describe('sliding session (H1)', () => {
   it('the workspace announces the sliding session', async () => {
     const cookie = await loginCookie(ctx, USER, PASSWORD);
     expect((await deskGet(ctx, '?compact=1', cookie)).body.features).toEqual([
-      'void-call', 'reopen-reminder', 'expected-user', 'sliding-session', 'price-codes',
+      'void-call', 'reopen-reminder', 'expected-user', 'sliding-session', 'price-codes', 'brands',
     ]);
   });
 });

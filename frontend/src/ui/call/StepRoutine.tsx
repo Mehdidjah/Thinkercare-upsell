@@ -1,5 +1,5 @@
 import {useId} from 'react';
-import {cataloguePath,CONCERNS,SKINS,HAIR_TYPES,type Product} from '@touche/domain';
+import {cataloguePath,SKINS,HAIR_TYPES,type Product,concernLabel} from '@touche/domain';
 import {Icon} from '../shared/Icon';
 import {useCall} from './callModel';
 import {AdviceStatus} from './AdviceStatus';
@@ -20,7 +20,7 @@ export function StepRoutine({base}:{base:Product}){const {toStep,saved,products,
  return <>
  <section className="card call-path" aria-labelledby="call-path-title"><h2 id="call-path-title">Le parcours de {base.short}</h2><p>{path.purpose}</p>{path.checks.map(c=><p className="call-path__check" key={c}><Icon name="info"/>{c}</p>)}{domain==='hair'&&profile.concerns.includes('flakes')&&<label className="check-row"><input type="checkbox" checked={!!profile.scalpProtocol} disabled={saved} onChange={e=>changeProfile({scalpProtocol:e.target.checked})}/>Une routine spécifique a déjà été vérifiée par le référent de l’équipe, pour cette situation et cet âge.</label>}</section>
 
- <div className="call-summary"><dl className="call-summary__facts"><div><dt>Priorité</dt><dd>{CONCERNS.find(c=>c[0]===profile.concerns[0])?.[1]}</dd></div><div><dt>{domain==='hair'?'Cheveux':'Peau'}</dt><dd>{(domain==='hair'?HAIR_TYPES:SKINS).find(s=>s[0]===profile.skin)?.[1]}</dd></div></dl><button type="button" className="link-btn" onClick={()=>toStep(1)}>{saved?'Voir les réponses':'Modifier les réponses'}</button></div>
+ <div className="call-summary"><dl className="call-summary__facts"><div><dt>Priorité</dt><dd>{profile.concerns[0]?concernLabel(profile.concerns[0],base):''}</dd></div><div><dt>{domain==='hair'?'Cheveux':'Peau'}</dt><dd>{(domain==='hair'?HAIR_TYPES:SKINS).find(s=>s[0]===profile.skin)?.[1]}</dd></div></dl><button type="button" className="link-btn" onClick={()=>toStep(1)}>{saved?'Voir les réponses':'Modifier les réponses'}</button></div>
  {blocked?<ReviewStopPanel/>:<>
   <AdviceStatus blocked={null} notes={notes}/>
   <PackUpgrades base={base}/>

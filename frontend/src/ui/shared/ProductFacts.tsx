@@ -1,4 +1,4 @@
-import {isPack,expand,type Product} from '@touche/domain';
+import {isPack,expand,brandOf,BRAND_LABELS,type Product} from '@touche/domain';
 import {Icon} from './Icon';
 
 export function ProductFacts({product,catalogue}:{product:Product;catalogue:Product[]}){
@@ -10,7 +10,7 @@ export function ProductFacts({product,catalogue}:{product:Product;catalogue:Prod
   {!!product.cautions?.length&&<details><summary>Précautions pertinentes</summary><ul className="cat-facts__list">{product.cautions.map(c=><li key={c}>{c}</li>)}</ul></details>}
   {product.inciText&&<details><summary>Liste INCI publiée</summary><p className="cat-facts__inci-text">{product.inciText}</p></details>}
   <p className="cat-facts__note">{product.formulaNote||'Consulter l’étiquette du lot.'}</p>
-  {product.source&&<a href={product.source} target="_blank" rel="noreferrer" className="cat-facts__link">Source officielle Touché<Icon name="external" size={16}/><span className="sr-only"> (nouvel onglet)</span></a>}
+  {product.source&&<a href={product.source} target="_blank" rel="noreferrer" className="cat-facts__link">{`Source officielle ${BRAND_LABELS[brandOf(product)]}`}<Icon name="external" size={16}/><span className="sr-only"> (nouvel onglet)</span></a>}
   {product.checkedAt&&<p className="footnote">Fiche consultée le {product.checkedAt}. {product.priceSource}</p>}
  </div>;
 }

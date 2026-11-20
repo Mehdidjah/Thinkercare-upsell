@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { EMPTY_PROFILE, MAX_ITEM_QUANTITY, money, manualAddCheck, offerProblem, reviewStop, searchIds, type Product, type Profile } from '@touche/domain';
+import { EMPTY_PROFILE, FACE_CONCERNS, HAIR_CONCERNS, MAX_ITEM_QUANTITY, money, manualAddCheck, missingAnswers, offerProblem, reviewStop, searchIds, type Product, type Profile } from '@touche/domain';
 import { CallModelContext, type CallModel, type CallRequest } from '../src/ui/call/callModel';
 import { SavedPanel } from '../src/ui/call/SavedPanel';
 import { CallNotices } from '../src/ui/call/CallNotices';
@@ -27,10 +27,11 @@ import * as cs from '../src/ui/call/callState';
 
 // Call screens rendered from a plain model (no DOM library), plus the source guards of the call flow.
 const catalogue: Product[] = JSON.parse(readFileSync(new URL('../../shared/test/fixtures/catalogue.json', import.meta.url), 'utf8'));
+const belnco: Product[] = JSON.parse(readFileSync(new URL('../../shared/test/fixtures/belnco.json', import.meta.url), 'utf8'));
 const noop = () => {};
 function model(extra: Partial<CallModel>): CallModel {
   const base = catalogue.find(p => p.id === 'antiacne')!;
-  return { step: 0, toStep: noop, demo: false, saved: false, busy: false, presenting: false, savedOutcome: '', savedAt: '', canVoid: false, voidCall: async () => '', newCall: noop, startExample: noop, exitExample: noop, hasParkedCall: false,
+  return { step: 0, toStep: noop, demo: false, saved: false, busy: false, presenting: false, savedOutcome: '', savedAt: '', canVoid: false, voidCall: async () => '', newCall: noop, startExample: noop, exitExample: noop, hasParkedCall: false, brand: 'touche', brands: ['touche'], changeBrand: noop,
     orderRef: '', setOrderRef: noop, orderRefAsked: false, orderCheck: null, checkOrder: noop, customerStage: 'unknown', setCustomerStage: noop, linkedCallId: '', products: catalogue, visible: catalogue.slice(0, 2), nearby: [], search: '', setSearch: noop, scope: 'Tous', setScope: noop, category: 'Tous', setCategory: noop,
     baseId: base.id, baseIds: [base.id], base, initial: [{ ...base, quantity: 1 }], baseTotal: base.price, orderLocked: false, changeInitial: noop, changeInitialQuantity: () => true, duplicate: null,
     domain: 'face', profile: face, changeProfile: noop, toggleConcern: noop, blocked: null, stop: null, notes: [], missing: [],
@@ -172,6 +173,10 @@ describe('step 3 offer (STEP3, C1, M5, RAIL)', () => {
   });
 
   it('step 3 shows price and recap before the presentation (narrow screens), then the bar after the close-out', () => {
+    // The step-3 summary names the priority in the call's brand (« Peau sèche ou déshydratée » for BEL.NCO).
+    const bel = JSON.parse(readFileSync(new URL('../../shared/test/fixtures/belnco.json', import.meta.url), 'utf8')) as Product[];
+    const belMoist = bel.find((x) => x.id === 'bel-moist')!;
+    expect(render(<StepRoutine base={belMoist}/>, { step: 2, base: belMoist, products: [...catalogue, ...bel], profile: { ...EMPTY_PROFILE, concerns: ['dehydration'], skin: 'mixed' } })).toContain('<dt>Priorité</dt><dd>Peau sèche ou déshydratée</dd>');
     const html = render(<StepRoutine base={p('antiacne')}/>, { step: 2 });
     const offer = html.indexOf('<section class="card call-offer"'), present = html.indexOf('call-present'), close = html.indexOf('call-close'), bar = html.indexOf('call-actions--offer');
     expect(offer).toBeGreaterThan(0);
@@ -228,6 +233,55 @@ describe('questions (F5, E6)', () => {
     expect((html.match(/>Plusieurs choix possibles</g) || []).length).toBe(2);
     expect(html).toContain('data-exclusive="true"><input class="option__input" type="checkbox" name="routine" checked="" value="none"');
     expect(html).toContain('<section class="call-question card" id="question-02" tabindex="-1">');
+  });
+
+  const questions = (html: string) => [...html.matchAll(/<section class="call-question card" id="question-(\d+)" tabindex="-1"><p class="call-question__number" aria-hidden="true">(\d+)<\/p><div class="call-question__content"><h2 id="question-\d+-title">([^<]+)<\/h2><p class="call-say">« ([^<]+) »<\/p>/g)].map(m => m.slice(1).join(' | '));
+  const concerns = (html: string) => [...html.matchAll(/class="option option--concern"[^>]*>[\s\S]*?<span class="option__title">([^<]+)<\/span><span class="option__desc">([^<]+)<\/span>/g)].map(m => m[1] + ' · ' + m[2]);
+  const radios = (html: string, name: string) => [...html.matchAll(new RegExp(`name="${name}"(?: checked="")? value="(\\w+)"[\\s\\S]*?<span class="option__title">([^<]+)<`, 'g'))].map(m => m[1] + ' ' + m[2]);
+  const PRECAUTIONS = '05 | 5 | Les précautions utiles | Y a-t-il une réaction actuelle, une allergie connue, un traitement ou une situation particulière à prendre en compte ?';
+  const bel = { brand: 'belnco', base: belnco.find(x => x.id === 'bel-moist')!, products: [...catalogue, ...belnco] } as Partial<CallModel>;
+
+  it('a BEL.NCO call asks its own priorities, the retinol after « Rides et fermeté », « Taches et marques » or « Teint terne », and makeup as question 03', () => {
+    const html = render(<StepNeeds/>, { ...bel, step: 1, profile: { ...face, concerns: ['aging'], severity: '', makeup: 'daily' } });
+    expect(concerns(html)).toEqual(['Boutons et imperfections · Peau à tendance acnéique, imperfections', 'Pores et points noirs · Pores visibles, points noirs', 'Brillance · Excès de sébum, zone T', 'Rides et fermeté · Ridules, perte de fermeté', 'Taches et marques · Taches, marques après les boutons', 'Rougeurs et sensibilité · Peau réactive, rougeurs légères', 'Peau sèche ou déshydratée · Tiraillements, manque de confort', 'Teint terne · Manque d’éclat, teint fatigué']);
+    expect(html).toContain('<legend class="choice-group__legend">Avez-vous déjà utilisé du rétinol ?</legend>');
+    expect(radios(html, 'retinol')).toEqual(['never Jamais', 'tolerated Oui, bien toléré', 'irritated Oui, mais ma peau a réagi']);
+    expect(questions(html)).toEqual([
+      '01 | 1 | La priorité de la cliente | Qu’aimeriez-vous améliorer en priorité sur votre peau ?',
+      '02 | 2 | La peau, au quotidien | Votre peau brille-t-elle, tiraille-t-elle, ou les deux selon les zones ?',
+      '03 | 3 | Maquillage et protection solaire | Vous maquillez-vous ou mettez-vous une crème solaire tous les jours ?',
+      '04 | 4 | Ce qu’elle utilise déjà | Quels soins utilisez-vous actuellement et tolérez-vous bien ?',
+      PRECAUTIONS,
+    ]);
+    expect(radios(html, 'makeup')).toEqual(['daily Maquillage tous les jours', 'spf Crème solaire seulement', 'none Ni l’un ni l’autre']);
+    expect(html).toContain('type="radio" name="makeup" checked="" value="daily"');
+    expect(html).toContain('<legend class="sr-only">Maquillage et protection solaire</legend>');
+    // The retinol question follows every priority that can bring the retinol serum, once; every « Répondez à » link points to a question on screen.
+    for (const concerns of [['dull'], ['marks'], ['acne', 'dull'], ['marks', 'aging']]) expect((render(<StepNeeds/>, { ...bel, step: 1, profile: { ...face, concerns } }).match(/<legend class="choice-group__legend">Avez-vous déjà utilisé du rétinol \?<\/legend>/g) || []).length, concerns.join('+')).toBe(1);
+    for (const concerns of [['acne'], ['blackheads'], ['oil'], ['red'], ['dehydration'], ['acne', 'red']]) expect(render(<StepNeeds/>, { ...bel, step: 1, profile: { ...face, concerns } }), concerns.join('+')).not.toContain('name="retinol"');
+    const empty = render(<StepNeeds/>, { ...bel, step: 1, profile: EMPTY_PROFILE });
+    for (const concerns of [['aging'], ['dull'], ['marks']]) for (const m of missingAnswers({ ...EMPTY_PROFILE, concerns, safety: ['allergy', 'minor'] }, bel.base)) expect(empty, m.label).toContain(`id="question-${m.question}"`);
+  });
+
+  it('a Touché call keeps its four questions and priorities, without makeup or retinol', () => {
+    const html = render(<StepNeeds/>, { step: 1, profile: { ...face, concerns: ['aging'], severity: '', makeup: 'daily', retinol: 'never' } });
+    expect(questions(html)).toEqual([
+      '01 | 1 | La priorité de la cliente | Qu’aimeriez-vous améliorer en priorité sur votre peau ?',
+      '02 | 2 | La peau, au quotidien | Votre peau brille-t-elle, tiraille-t-elle, ou les deux selon les zones ?',
+      '03 | 3 | Ce qu’elle utilise déjà | Quels soins utilisez-vous actuellement et tolérez-vous bien ?',
+      '04 | 4 | Les précautions utiles | Y a-t-il une réaction actuelle, une allergie connue, un traitement ou une situation particulière à prendre en compte ?',
+    ]);
+    expect(concerns(html)).toEqual(FACE_CONCERNS.map(([, label, desc]) => label + ' · ' + desc));
+    for (const text of ['name="makeup"', 'name="retinol"', 'Maquillage', 'rétinol', 'id="question-05"']) expect(html).not.toContain(text);
+  });
+
+  it('a priority BEL.NCO doesn’t offer, kept from a Touché call, stays on screen chosen so it can be removed', () => {
+    const html = render(<StepNeeds/>, { ...bel, step: 1, profile: { ...face, concerns: ['dry', 'scars'], severity: '' } });
+    expect(concerns(html).slice(8)).toEqual(['Tiraillements · Peau sèche, inconfort quotidien', 'Cicatrices en relief · Distinguer cicatrice et simple marque']);
+    expect((html.match(/class="option option--concern" data-kind="multi" aria-pressed="true"/g) || []).length).toBe(2);
+    expect(concerns(render(<StepNeeds/>, { ...bel, step: 1, profile: face }))).toHaveLength(8);
+    // Touché lists stay as they were: its own domain's priorities only.
+    expect(concerns(render(<StepNeeds/>, { step: 1, base: p('shpousse'), domain: 'hair', profile: { ...face, concerns: ['acne'] } }))).toEqual(HAIR_CONCERNS.map(([, label, desc]) => label + ' · ' + desc));
   });
 });
 
@@ -604,6 +658,11 @@ describe('EcoManager order check in the call context', () => {
     expect(render(<CallContextPanel/>, { step: 0, orderRef: 'TOU1', orderCheck: { reference: 'TOU1', status: 'unavailable' } })).toContain('EcoManager ne répond pas : la commande sera marquée « à vérifier ».');
     expect(render(<CallContextPanel/>, { step: 2, orderRef: 'TOU1763816', orderCheck: { reference: 'TOU1763816', status: 'verified', order } })).toContain('En cours de livraison');
   });
+  it('the dossier placeholder names the call’s store', () => {
+    expect(render(<CallContextPanel/>, { step: 0, orderCheck: { reference: '', status: 'idle' } })).toContain('placeholder="TOU1763816"');
+    expect(render(<CallContextPanel/>, { step: 0, orderCheck: null })).toContain('placeholder="DOS-0142"');
+    expect(render(<CallContextPanel/>, { step: 0, brand: 'belnco', orderCheck: null })).toContain('placeholder="BEL1763838"');
+  });
   it('without the feature the field is unchanged', () => {
     const html = render(<CallContextPanel/>, { step: 0, orderRef: 'TOU1', orderCheck: null });
     expect(html).toContain('Obligatoire pour continuer l’appel.');
@@ -622,3 +681,62 @@ describe('accepted sale locked by the EcoManager check', () => {
   });
 });
 
+describe('call brand on screen', () => {
+  it('step 1 shows « Marque » only when both brands have products; the heading names the brand', () => {
+    const both = { brands: ['touche', 'belnco'], brand: 'belnco' } as Partial<CallModel>;
+    const panel = render(<CallContextPanel/>, { step: 0, ...both });
+    expect(panel).toContain('Marque');
+    expect(panel).toMatch(/aria-pressed="true"[^>]*>BEL\.NCO</);
+    expect(render(<CallContextPanel/>, { step: 0 })).not.toContain('Marque');
+    expect(render(<CallHeading/>, both)).toContain('BEL.NCO');
+    expect(render(<CallHeading/>, both)).not.toContain('Exemple cheveux');
+    expect(render(<StepOrder/>, both)).not.toContain('>Cheveux<');
+  });
+  it('the BEL.NCO call offers its own example, and evening serums carry their tag', () => {
+    const belCall = { brands: ['touche', 'belnco'], brand: 'belnco' } as Partial<CallModel>;
+    const heading = render(<CallHeading/>, belCall);
+    expect(heading).toContain('Exemple BEL.NCO');
+    expect(heading).not.toContain('Exemple visage');
+    expect(render(<CallHeading/>, { ...belCall, brand: 'touche' })).not.toContain('Exemple BEL.NCO');
+    expect(render(<CallHeading/>, { ...belCall, demo: true, domain: 'face' })).toContain('parcours fictif BEL.NCO');
+    expect(render(<CallHeading/>, { demo: true, domain: 'face' })).toContain('parcours fictif visage');
+    const all = [...catalogue, ...belnco], retinol = belnco.find(p => p.id === 'bel-retinol')!, nightTag = '<span class="tag tag--warning">Soir uniquement / SPF le lendemain matin</span>';
+    expect(render(<RoutineRail/>, { products: all, base: retinol, baseIds: [retinol.id], initial: [{ ...retinol, quantity: 1 }], basket: [{ ...retinol, quantity: 1 }] })).toContain(nightTag);
+    const moist = belnco.find(p => p.id === 'bel-moist')!;
+    expect(render(<RoutineRail/>, { products: all, base: moist, baseIds: [moist.id], initial: [{ ...moist, quantity: 1 }], basket: [{ ...moist, quantity: 1 }] })).not.toContain('Soir uniquement');
+    const row = (product: Product) => ({ product, check: manualAddCheck(moist, [], product, face, all), suggestion: { product, score: 10, reason: 'Raison' }, added: false }) as CallRequest;
+    const picker = render(<ProductPicker/>, { step: 2, products: all, brand: 'belnco', requests: [row(retinol), row(belnco.find(p => p.id === 'bel-uv50')!)], candidates: [] });
+    expect(picker).toMatch(/<h3 class="call-product__name">RETINOL COMPLEX SERUM<\/h3><span class="tag tag--neutral">.*?Suggéré<\/span><span class="tag tag--warning">Soir uniquement \/ SPF le lendemain matin<\/span>/);
+    expect(picker.match(/Soir uniquement/g)).toHaveLength(1);
+  });
+  it('present-offer and save-call carry the brand only through brandField', () => {
+    expect(readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8').match(/\.\.\.callState\.brandField\(now,state\?\.features\)/g)).toHaveLength(2);
+  });
+  it('step 1 lists only the call’s brand; the checks and the folded context follow it; the switch waits while the order is fixed', () => {
+    const products = [...catalogue, ...belnco], both = { products, brands: ['touche', 'belnco'] } as Partial<CallModel>;
+    const bel = render(<StepOrder/>, { ...both, brand: 'belnco' });
+    expect(bel).toMatch(/class="counter">9(<!-- -->)? produits/);
+    for (const label of ['Tous', 'Visage', 'Packs', 'Nettoyant', 'Soin ciblé', 'Hydratant', 'Protection solaire', 'Pack']) expect(bel).toContain(`>${label}<`);
+    for (const label of ['Corps', 'Shampoing', 'Soin local', 'Sérum hydratant']) expect(bel).not.toContain(`>${label}<`);
+    const tou = render(<StepOrder/>, { ...both, brand: 'touche' });
+    expect(tou).toMatch(/class="counter">32(<!-- -->)? produits/);
+    for (const label of ['Cheveux', 'Corps', 'Shampoing', 'Soin local', 'Sérum hydratant']) expect(tou).toContain(`>${label}<`);
+    expect(render(<SpecificChecks/>, { ...both, brand: 'belnco' })).not.toContain('Niacinamide');
+    expect(render(<SpecificChecks/>, { ...both, brand: 'touche' })).toContain('Niacinamide');
+    expect(render(<CallContextPanel/>, { ...both, brand: 'belnco', step: 1, orderRef: 'BEL1763838' })).toMatch(/class="call-context__summary">BEL\.NCO/);
+    expect(render(<CallContextPanel/>, { step: 1, orderRef: 'TOU1763838' })).not.toContain('Touché');
+    for (const fixed of [{ orderLocked: true }, { saved: true }, { busy: true }]) expect(render(<CallContextPanel/>, { ...both, step: 0, ...fixed })).toMatch(/aria-pressed="true"[^>]*disabled=""[^>]*>Touché</);
+    expect(render(<CallContextPanel/>, { ...both, step: 0 })).not.toMatch(/disabled=""[^>]*>(Touché|BEL\.NCO)</);
+  });
+  it('the desk keeps step 0 to the call’s brand, asks before a switch clears the order, and proposes the brand a reference names', () => {
+    const app = readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8');
+    expect(app).toContain('products.filter(p=>p.enabled&&brandOf(p)===d.brand&&inScope(p)&&');
+    expect(app).toContain('closestProducts(products.filter(p=>p.enabled&&brandOf(p)===d.brand),search,6)');
+    expect(app).toContain("title:'Changer de marque ?',body:<p>La commande initiale et les produits ajoutés seront retirés : un appel ne mélange pas Touché et BEL.NCO. Les réponses aux questions sont conservées.</p>,cancelLabel:`Garder ${BRAND_LABELS[now.brand]}`,confirmLabel:`Passer à ${BRAND_LABELS[next]}`,tone:'danger'");
+    expect(app).toContain('applyRemoval(now,callState.changeBrand(now,next),false);');
+    expect(app).toContain('callState.brandFromReference(previous,value,current().brand,brands)');
+    expect(app).toContain('setOrderRef:changeOrderRef,');
+    expect(app).toContain('brand:d.brand,brands,changeBrand:next=>void switchBrand(next),');
+    expect(app).toContain('version:3,brand:now.brand};');
+  });
+});

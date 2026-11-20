@@ -101,10 +101,21 @@ test('Every catalogue image file exists', () => {
   for (const p of catalogue) assert.ok(existsSync(new URL('../public' + p.image, import.meta.url)), p.id);
 });
 
-test('the order lookup is only requested when the server lists order-check', () => {
+test('the order lookup is only requested when the server lists the store of the call’s brand', () => {
   const app = readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8');
-  assert.ok(app.includes("requestJson('?action=order&ref='"), 'App asks the API for the order');
-  assert.ok(/orderCheckOn=!!state\?\.features\?\.includes\('order-check'\)/.test(app), 'the lookup is behind the order-check feature');
+  assert.ok(app.includes('requestJson(orderLookupQuery(start.reference,brand))'), 'App asks the API for the order, in the call’s store');
+  assert.ok(app.includes('const orderCheckOn=orderCheckEnabled(state?.features,d.brand);'), 'the lookup is behind the store’s feature (order-check, order-check-bel)');
+  assert.ok(app.includes('const brand=current().brand,start=startCheck(raw,brand),prev=checkNow();'), 'a reference is read against the call’s brand');
+  assert.ok(app.includes('},[d.orderRef,d.brand,orderCheckOn]);'), 'a brand change checks the dossier again');
+});
+
+test('a check made for one brand never counts for the other', () => {
+  const app = readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8');
+  assert.ok(app.includes("const checkNow=():OrderCheck=>checkBrand.current===current().brand?orderCheckRef.current:{reference:'',status:'idle'};"), 'the check on screen counts only for the brand it was made for');
+  assert.ok(app.includes('if(current().brand!==brand||'), 'an answer arriving after a brand change is dropped');
+  assert.ok(/if\(start\.status!=='checking'\)\{if\(stale\|\|/.test(app) && app.includes("if(stale)setCheck({reference:start.reference,status:'idle'},d.brand);"), 'a brand change drops the other store’s check at once');
+  const ready = app.slice(app.indexOf('async function orderReady('), app.indexOf('async function orderReady(') + 300);
+  assert.ok(ready.includes('let check=checkNow();'), 'a save never relies on the other store’s check');
 });
 
 

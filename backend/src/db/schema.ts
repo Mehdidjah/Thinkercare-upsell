@@ -1,4 +1,4 @@
-import type { ItemSnapshot, Product, Proposal } from '@touche/domain';
+import type { Brand, ItemSnapshot, Product, Proposal } from '@touche/domain';
 import { sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import {
@@ -89,8 +89,13 @@ export const tcCalls = pgTable(
     voided_at: timestamptz('voided_at'),
     voided_by: text('voided_by'),
     void_reason: text('void_reason'),
+    // One brand per call (migration 0007): every call recorded before BEL.NCO is a Touché call.
+    brand: text('brand').$type<Brand>().notNull().default('touche'),
   },
-  (t) => [index('tc_calls_created').on(t.created_at)],
+  (t) => [
+    index('tc_calls_created').on(t.created_at),
+    check('tc_calls_brand_check', sql`${t.brand} IN ('touche','belnco')`),
+  ],
 );
 
 export const tcCallMeta = pgTable(

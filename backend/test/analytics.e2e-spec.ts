@@ -139,6 +139,7 @@ describe('pilotage analytics', () => {
         'order_state_name',
         'order_state_at',
         'ecomanager_order_id',
+        'brand',
       ].sort(),
     );
     expect(a).toMatchObject({ voided_at: null, voided_by: null, voided_by_label: null, void_reason: null });

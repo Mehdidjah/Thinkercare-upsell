@@ -9,8 +9,8 @@ import { Protocol } from '../src/ui/pages/Protocol';
 const products = JSON.parse(readFileSync(new URL('../../shared/test/fixtures/catalogue.json', import.meta.url), 'utf8')) as Product[];
 const app = readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8');
 const titles = Object.fromEntries([...app.match(/const TITLES[^=]*=\{([^}]+)\}/)![1].matchAll(/(\w+):'([^']+)'/g)].map(m => [m[1], m[2]]));
-const catalogue = (search: string, canManage?: boolean) => renderToStaticMarkup(<Catalogue search={search} setSearch={() => {}} scope="Tous" setScope={() => {}} products={products} inScope={() => true} setDetail={() => {}} canManage={canManage} />);
-const coverage = (search: string) => renderToStaticMarkup(<Coverage search={search} setSearch={() => {}} products={products} setDetail={() => {}} />);
+const catalogue = (search: string, canManage?: boolean) => renderToStaticMarkup(<Catalogue search={search} setSearch={() => {}} scope="Tous" setScope={() => {}} products={products} inScope={() => true} setDetail={() => {}} brand="touche" setBrand={() => {}} canManage={canManage} />);
+const coverage = (search: string) => renderToStaticMarkup(<Coverage search={search} setSearch={() => {}} products={products} setDetail={() => {}} brand="touche" setBrand={() => {}} />);
 const protocol = renderToStaticMarkup(<Protocol clinical={{ validated: false, by: '', at: '' }} />);
 const h1 = (html: string) => html.match(/<h1[^>]*>([^<]+)<\/h1>/)![1];
 
@@ -50,4 +50,16 @@ test('Protocole: version 3 and the priority situations from REVIEW_SITUATIONS (X
 
 test('dead code is gone (DEAD)', () => {
   expect(existsSync(new URL('../src/ui/shared/outcomes.ts', import.meta.url))).toBe(false);
+});
+
+test('Protocole: the BEL.NCO section and its official source; the catalogue names both brands', () => {
+  expect(protocol).toContain('<h2>08. BEL.NCO</h2>');
+  expect(protocol).toContain('jamais ensemble dans la même routine');
+  expect(protocol).toContain('orienter vers un professionnel de santé');
+  expect(protocol).toContain('href="https://belnco.com/collections/all"');
+  expect(protocol).toContain('Fiches officielles BEL.NCO');
+  // Owner correction: the sizes are read on the labels, so the protocol never says they are missing.
+  expect(protocol).not.toContain('Contenances non indiquées');
+  expect(protocol.indexOf('<h2>07. Données et validation</h2>')).toBeLessThan(protocol.indexOf('<h2>08. BEL.NCO</h2>'));
+  expect(catalogue('')).toContain('les références Touché et BEL.NCO, avec leurs photos officielles');
 });

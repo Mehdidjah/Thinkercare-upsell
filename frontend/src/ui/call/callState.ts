@@ -1,4 +1,4 @@
-import {EMPTY_PROFILE,MAX_ITEM_QUANTITY,OUTCOMES,basketProblem,domainOf,expand,isPack,itemsTotal,manualAddCheck,offerProblem,orderOffer,orderSignature,packUpgrades,pricedTotal,proposalOriginals,questionsReady,quantityOf,recommend,reviewReason,type ItemSnapshot,type OrderItem,type Product,type Profile,type Proposal,type Tier} from '@touche/domain';
+import {BRANDS,EMPTY_PROFILE,MAX_ITEM_QUANTITY,OUTCOMES,asksRetinol,basketProblem,brandOf,domainOf,expand,isPack,itemsTotal,manualAddCheck,offerProblem,orderOffer,orderSignature,packUpgrades,pricedTotal,proposalOriginals,questionsReady,quantityOf,recommend,referenceBrand,reviewReason,type Brand,type ItemSnapshot,type OrderItem,type Product,type Profile,type Proposal,type Tier} from '@touche/domain';
 
 /**
  * The guided call as plain data, and every change to it as a pure function (plain objects in, plain objects out).
@@ -6,6 +6,8 @@ import {EMPTY_PROFILE,MAX_ITEM_QUANTITY,OUTCOMES,basketProblem,domainOf,expand,i
  */
 export type CallDraft={
  callId:string;startedAt:string;step:number;
+ /** One brand per call: the step-0 grid, the picker and every suggestion list only its products. */
+ brand:Brand;
  baseIds:string[];baseQuantities:Record<string,number>;
  profile:Profile;
  /** Domain the answers were given for ('' before any answer): a guiding product of another domain asks before clearing them. */
@@ -23,25 +25,28 @@ export type CallDraft={
 /** What a tab keeps: the call on screen and, during an example, the live call set aside. */
 export type CallStore={draft:CallDraft;parked:CallDraft|null};
 export type Revalidated={draft:CallDraft;removed:string[]};
-export type ExampleKind='face'|'hair';
+export type ExampleKind='face'|'hair'|'belnco';
 
-const EXAMPLES:Record<ExampleKind,{baseId:string;profile:Profile}>={
- face:{baseId:'antiacne',profile:{...EMPTY_PROFILE,concerns:['acne'],skin:'mixed',sensitive:'no',routine:[],routineKnown:true,safety:['none'],severity:'mild'}},
- hair:{baseId:'shpousse',profile:{...EMPTY_PROFILE,concerns:['growth','breakage'],skin:'mixed',sensitive:'no',routine:[],routineKnown:true,safety:['none'],severity:''}},
+const EXAMPLES:Record<ExampleKind,{baseId:string;brand:Brand;domain:string;profile:Profile}>={
+ face:{baseId:'antiacne',brand:'touche',domain:'face',profile:{...EMPTY_PROFILE,concerns:['acne'],skin:'mixed',sensitive:'no',routine:[],routineKnown:true,safety:['none'],severity:'mild'}},
+ hair:{baseId:'shpousse',brand:'touche',domain:'hair',profile:{...EMPTY_PROFILE,concerns:['growth','breakage'],skin:'mixed',sensitive:'no',routine:[],routineKnown:true,safety:['none'],severity:''}},
+ belnco:{baseId:'bel-retinol',brand:'belnco',domain:'face',profile:{...EMPTY_PROFILE,concerns:['dehydration'],skin:'normal',sensitive:'no',routine:[],routineKnown:true,safety:['none'],makeup:'daily'}},
 };
+/** The worked examples of a brand: one brand per call, examples included. */
+export const examplesFor=(brand:Brand):ExampleKind[]=>brand==='belnco'?['belnco']:['face','hair'];
 const uuid=()=>crypto.randomUUID();
 
 export function newDraft({id=uuid(),now=new Date().toISOString(),example}:{id?:string;now?:string;example?:ExampleKind}={}):CallDraft{
  const sample=example?EXAMPLES[example]:null;
- return {callId:id,startedAt:now,step:sample?1:0,baseIds:sample?[sample.baseId]:[],baseQuantities:{},profile:sample?{...sample.profile}:{...EMPTY_PROFILE},profileDomain:sample?example!:'',
+ return {callId:id,startedAt:now,step:sample?1:0,brand:sample?sample.brand:'touche',baseIds:sample?[sample.baseId]:[],baseQuantities:{},profile:sample?{...sample.profile}:{...EMPTY_PROFILE},profileDomain:sample?sample.domain:'',
   adds:[],quantities:{},requestedIds:[],verifiedProducts:[],upgradeId:'',tier:'duo',delivery:'',orderRef:'',customerStage:'unknown',callbackAt:'',handledObjections:[],linkedCallId:'',
   presented:[],presentationKeys:{},consent:false,checked:false,refusal:'',saved:false,savedOutcome:'',savedAt:'',demo:!!sample};
 }
 
 /** A follow-up call prepared from a recorded call (reminder): same initial order and file, linked to it, at the questions. */
-export function resumeDraft(call:{id:string;base_id?:string;order_ref?:string;meta?:{originals?:ItemSnapshot[];original?:ItemSnapshot;orderRef?:string;customerStage?:string}},options:{id?:string;now?:string}={}):CallDraft{
+export function resumeDraft(call:{id:string;base_id?:string;order_ref?:string;brand?:string;meta?:{originals?:ItemSnapshot[];original?:ItemSnapshot;orderRef?:string;customerStage?:string}},options:{id?:string;now?:string}={}):CallDraft{
  const originals=call.meta?.originals?.length?call.meta.originals:call.meta?.original?[call.meta.original]:[];
- return {...newDraft(options),step:1,baseIds:originals.length?originals.map(p=>p.id):call.base_id?[call.base_id]:[],baseQuantities:Object.fromEntries(originals.map(p=>[p.id,quantityOf(p)])),
+ return {...newDraft(options),step:1,brand:brandOf(call),baseIds:originals.length?originals.map(p=>p.id):call.base_id?[call.base_id]:[],baseQuantities:Object.fromEntries(originals.map(p=>[p.id,quantityOf(p)])),
   orderRef:call.meta?.orderRef||call.order_ref||'',customerStage:call.meta?.customerStage||'unknown',linkedCallId:call.id};
 }
 
@@ -152,10 +157,10 @@ export function changeProfile(d:CallDraft,patch:Partial<Profile>,products:Produc
 
 /** The concern a new pick pushes out (F5): with two already chosen, a third replaces the second. */
 export function replacedConcern(p:Profile,id:string):string|null{return !p.concerns.includes(id)&&p.concerns.length>=2?p.concerns[1]:null;}
-/** One or two concerns: a third replaces the second; follow-up answers go with their concern. */
+/** One or two concerns: a third replaces the second; follow-up answers go with their concern (BEL.NCO's retinol with the last priority that asks it). */
 export function concernPatch(p:Profile,id:string):Partial<Profile>{
  const a=p.concerns.includes(id)?p.concerns.filter(x=>x!==id):p.concerns.length<2?[...p.concerns,id]:[p.concerns[0],id];
- return {concerns:a,severity:a.includes('acne')?p.severity:'',marks:a.includes('marks')?p.marks:'',hairPattern:a.includes('fall')?p.hairPattern:'',redState:a.includes('red')?p.redState:''};
+ return {concerns:a,severity:a.includes('acne')?p.severity:'',marks:a.includes('marks')?p.marks:'',hairPattern:a.includes('fall')?p.hairPattern:'',redState:a.includes('red')?p.redState:'',...(p.retinol&&!asksRetinol(a)?{retinol:''}:{})};
 }
 
 // ── Initial order ────────────────────────────────────────────────────────────────────────────────────────────
@@ -199,6 +204,25 @@ export function changeInitialQuantity(d:CallDraft,id:string,next:number,newId:()
  const draft={...d,...renewedId(d,newId),baseQuantities:{...d.baseQuantities,[id]:next},consent:false,checked:false};
  return {...draft,quantities:pruneQuantities(draft)};
 }
+
+/** Another brand once initial products are chosen: they and everything added for them would go, so ask first. */
+export const brandNeedsConfirm=(d:CallDraft,brand:Brand)=>brand!==d.brand&&d.baseIds.length>0;
+/** One brand per call: another brand clears the initial order and everything added for it, and goes back to step 0.
+ *  The answers, the dossier and the purchase stage stay. Null when it is the same brand or the order is fixed. */
+export function changeBrand(d:CallDraft,brand:Brand,newId:()=>string=uuid):Revalidated|null{
+ if(brand===d.brand||orderLocked(d))return null;
+ const removed=[...d.baseIds,...d.adds,...(d.upgradeId?[d.upgradeId]:[])];
+ return {draft:{...d,...renewedId(d,newId),brand,step:0,baseIds:[],baseQuantities:{},adds:[],requestedIds:[],quantities:{},upgradeId:'',verifiedProducts:[],consent:false,checked:false},removed};
+}
+/** A dossier reference whose prefix now names another brand (`BEL…`, `TOU…`) proposes it, once, when it has products. */
+export function brandFromReference(previous:string,next:string,current:Brand,available:Brand[]):Brand|null{
+ const brand=referenceBrand(next);
+ return brand&&brand!==referenceBrand(previous)&&brand!==current&&available.includes(brand)?brand:null;
+}
+/** The call's brand goes to a server that lists `brands`; an older one refuses unknown fields. */
+export const brandField=(d:Pick<CallDraft,'brand'>,features:string[]|undefined):{brand?:Brand}=>features?.includes('brands')?{brand:d.brand}:{};
+/** The products the desk sells from: a server that doesn't list `brands` can't keep a call to one brand, so the desk stays Touché. */
+export const deskProducts=(products:Product[],features:string[]|undefined):Product[]=>features?.includes('brands')?products:products.filter(p=>brandOf(p)==='touche');
 
 // ── Routine ──────────────────────────────────────────────────────────────────────────────────────────────────
 export function addComplement(d:CallDraft,id:string,verify:string[],requested:boolean):CallDraft|null{
@@ -298,11 +322,11 @@ export function undoRemoval(current:CallDraft,previous:CallDraft):CallDraft|null
 /**
  * The products the step-3 picker may list (B5, UNIT): every line of the basket (initial order, chosen pack, additions), for
  * « + Une unité », and every other enabled product that may be added, except an initial product the pack replaced and the
- * packs offered as the upgrade (PACK).
+ * packs offered as the upgrade (PACK). Only the call's brand: one brand per call.
  */
 export function pickerPool(d:CallDraft,products:Product[],offeredPacks:Set<string>):Product[]{
  const lines=new Set(basketOf(d,products).basket.map(p=>p.id));
- return products.filter(p=>p.enabled&&(lines.has(p.id)||!d.baseIds.includes(p.id)&&!offeredPacks.has(p.id)));
+ return products.filter(p=>p.enabled&&(lines.has(p.id)||brandOf(p)===d.brand&&!d.baseIds.includes(p.id)&&!offeredPacks.has(p.id)));
 }
 
 /**
@@ -440,7 +464,8 @@ function asDraft(x:unknown):CallDraft|null{
  for(const [k,v] of Object.entries(fresh))out[k]=typeof o[k]===typeof v&&Array.isArray(o[k])===Array.isArray(v)&&o[k]!==null?o[k]:v;
  const draft=out as CallDraft;
  if(!draft.baseIds.every(id=>typeof id==='string')||![0,1,2].includes(draft.step)||!['catalogue','duo','final'].includes(draft.tier))return null;
- return {...draft,profile:{...EMPTY_PROFILE,...draft.profile}};
+ // A tab from before BEL.NCO stored no brand: its call is Touché, as is any value this desk does not know.
+ return {...draft,brand:BRANDS.includes(draft.brand)?draft.brand:'touche',profile:{...EMPTY_PROFILE,...draft.profile}};
 }
 export function parseStore(text:string|null|undefined):CallStore|null{
  if(!text)return null;

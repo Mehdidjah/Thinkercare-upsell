@@ -1,12 +1,14 @@
-import {cataloguePath,searchIds,type Product} from '@touche/domain';
+import {cataloguePath,searchIds,type Product,type Brand} from '@touche/domain';
+import {BrandSwitch,ofBrand} from '../shared/BrandSwitch';
 import {Icon} from '../shared/Icon';
 
 /** Parcours produits (PN6: the h1 names the view; PN4: a result count and an empty state with a reset). */
-export function Coverage({search,setSearch,products,setDetail}:{search:string;setSearch:(search:string)=>void;products:Product[];setDetail:(product:Product|null)=>void}){
- const ids=searchIds(products,search),shown=products.filter(p=>ids.has(p.id));
+export function Coverage({search,setSearch,products:all,setDetail,brand,setBrand}:{search:string;setSearch:(search:string)=>void;products:Product[];setDetail:(product:Product|null)=>void;brand:Brand;setBrand:(brand:Brand)=>void}){
+ // One brand at a time: each path and its complements stay within the brand shown.
+ const products=ofBrand(all,brand),ids=searchIds(products,search),shown=products.filter(p=>ids.has(p.id));
  return <>
   <div className="page-head"><div><h1 tabIndex={-1}>Parcours produits</h1><p>Un parcours pour chaque référence. Les associations ci-dessous sont des pistes : le questionnaire vérifie les besoins, les composants, les précautions et les doublons avant de les classer.</p></div></div>
-  <div className="cat-toolbar"><div className="search-field search-field--wide"><Icon name="search"/><input type="search" aria-label="Rechercher un parcours" value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Rechercher dans les ${products.length} parcours`}/></div></div>
+  <div className="cat-toolbar"><div className="search-field search-field--wide"><Icon name="search"/><input type="search" aria-label="Rechercher un parcours" value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Rechercher dans les ${products.length} parcours`}/></div><BrandSwitch products={all} brand={brand} setBrand={setBrand}/></div>
   <p className="cat-count" role="status">{search.trim()?`${shown.length} parcours sur ${products.length}`:`${products.length} parcours`}</p>
   {shown.length?<ul className="cat-paths" role="list">{shown.map(p=>{const route=cataloguePath(p,products);return <li className="card cat-path" key={p.id}>
    <div className="cat-path__head"><h2>{p.name}</h2><span className="tag tag--neutral">{route.mode}</span></div>

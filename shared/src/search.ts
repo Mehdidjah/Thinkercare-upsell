@@ -1,3 +1,4 @@
+import { BRAND_LABELS, brandOf } from './brands.js';
 import type { Product } from './core.js';
 
 /** Lower case, no accents, hyphens and punctuation become spaces, letters and digits split (« spf50 » → « spf 50 »). */
@@ -20,6 +21,7 @@ const PHRASES: [RegExp, string][] = [
   [/\banti (chute|acne|imperfections?|taches?)\b/g, '$1'],
   [/\bvitamine c\b/g, 'vitamine'],
   [/\bgel douche\b/g, 'douche'],
+  [/\bfigue de barbarie\b/g, 'figue'],
 ];
 
 /** Each group lists words that mean the same thing in a product search. */
@@ -27,17 +29,23 @@ const SYNONYMS: string[][] = [
   ['solaire', 'spf', 'sunscreen', 'soleil', 'uv', 'ecran', 'protection'],
   ['shampooing', 'shampoing'],
   ['apres', 'conditioner', 'demelant', 'masque'],
-  ['creme', 'cream', 'rich', 'hydratant', 'hydratante'],
+  ['creme', 'cream', 'rich', 'hydratant', 'hydratante', 'moisturizer', 'moisturiser'],
   ['bouton', 'acne', 'imperfection', 'imperfections', 'pimple', 'patch'],
   ['chute', 'pousse', 'croissance', 'densite'],
   ['tache', 'marque', 'eclat', 'vitamine'],
-  ['nettoyant', 'cleanser', 'lavant', 'purifiant'],
+  ['nettoyant', 'cleanser', 'cleansing', 'lavant', 'purifiant'],
   ['cheveux', 'capillaire', 'cuir', 'chevelu'],
   ['corps', 'douche', 'body'],
   ['psoriasis', 'pso'],
   ['niacinamide', 'nia', 'zinc'],
   ['salicylique', 'bha'],
   ['hyaluronique', 'hyaluronic'],
+  ['huile', 'oil', 'demaquillant', 'demaquillante'],
+  ['retinol', 'retinoide'],
+  ['centella', 'cica'],
+  ['figue', 'barbarie', 'prickly', 'pear', 'opuntia'],
+  ['clarifiant', 'clarifying'],
+  ['teinte', 'tinted'],
 ];
 
 function stem(word: string): string {
@@ -57,7 +65,8 @@ function queryWords(query: string): string[] {
 }
 
 function haystack(p: Product, description: boolean): string {
-  return ' ' + normalizeSearch([p.name, p.short, p.category, description ? p.description : ''].join(' ')) + ' ';
+  const brand = brandOf(p);
+  return ' ' + normalizeSearch([p.name, p.short, p.category, brand, BRAND_LABELS[brand], description ? p.description : ''].join(' ')) + ' ';
 }
 
 function wordHits(words: string[], text: string): number {

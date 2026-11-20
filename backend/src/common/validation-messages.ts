@@ -24,6 +24,7 @@ const LABELS: Record<string, string> = {
   confirmed: 'Confirmation',
   reason: 'Motif de l’annulation',
   callId: 'Appel',
+  brand: 'Marque de l’appel',
   baseId: 'Commande initiale',
   baseIds: 'Commande initiale',
   baseQuantities: 'Quantités de la commande initiale',
@@ -80,6 +81,9 @@ const LABELS: Record<string, string> = {
   'product.gentle': 'Formule douce',
   'product.exfoliant': 'Exfoliant',
   'product.verificationRequired': 'Vérification requise',
+  'product.brand': 'Marque',
+  'product.excludes': 'Jamais avec',
+  'product.photosensitizing': 'Photosensibilisant',
 };
 
 /** What to enter instead, for fields whose format the generic message cannot explain. */
@@ -90,7 +94,8 @@ const HINTS: Record<string, string> = {
     'références de 2 à 60 caractères : lettres minuscules, chiffres, tiret ou tiret bas',
   'product.image':
     'adresse non autorisée, utilisez une image /assets/… ou une adresse https://cdn.shopify.com/…',
-  'product.source': 'adresse non autorisée, utilisez une page https://www.touchelab.com/…',
+  'product.source':
+    'adresse non autorisée, utilisez une page https://www.touchelab.com/… ou https://belnco.com/…',
   'meta.orderRef': 'lettres, chiffres et les signes . _ # - uniquement',
   month: 'choisissez un mois valide',
 };

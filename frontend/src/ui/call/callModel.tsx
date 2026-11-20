@@ -1,6 +1,6 @@
 import {createContext,useContext,type Dispatch,type SetStateAction} from 'react';
 import type {OrderCheck} from './orderCheck';
-import {type domainOf,type Candidate,type ManualAddCheck,type MissingAnswer,type OrderItem,type Product,type Profile,type Proposal,type ReviewStop,type Tier} from '@touche/domain';
+import {type domainOf,type Brand,type Candidate,type ManualAddCheck,type MissingAnswer,type OrderItem,type Product,type Profile,type Proposal,type ReviewStop,type Tier} from '@touche/domain';
 import {type BasketLine,type ExampleKind} from './callState';
 
 type Setter<T>=Dispatch<SetStateAction<T>>;
@@ -28,6 +28,9 @@ export type CallModel={
  /** Starting a new call or an example and leaving it all go through the leave guard (A1). An example sets aside an open
   *  call, or a saved one while it may still be voided (`parkedSaved`). */
  newCall:()=>void;startExample:(kind:ExampleKind)=>void;exitExample:()=>void;hasParkedCall:boolean;parkedSaved:boolean;
+ /** The call's brand, the brands that have enabled products (« Marque » shows when there are two), and the switch, which
+  *  asks before clearing chosen products. */
+ brand:Brand;brands:Brand[];changeBrand:(brand:Brand)=>void;
  orderRef:string;setOrderRef:(value:string)=>void;
  /** A save was refused because the dossier reference is empty: the field shows why. */
  orderRefAsked:boolean;

@@ -1,6 +1,6 @@
 import { Controller, Get, Inject, Logger, Post, Req, Res, UseFilters } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { and, eq, isNull, lte, or } from 'drizzle-orm';
+import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 import { DeskExceptionFilter } from '../common/desk-exception.filter.js';
 import { DeskError, sendJson } from '../common/http.js';
@@ -11,7 +11,8 @@ import { verifySignature } from './signature.js';
 
 /**
  * EcoManager order events (OrderStatusChanged): keep the state of every call on that order current. Signed with
- * ECOMANAGER_WEBHOOK_SECRET; answers fast (no EcoManager request here) because EcoManager waits only 5 s.
+ * ECOMANAGER_WEBHOOK_SECRET; answers fast (no EcoManager request here) because EcoManager waits only 5 s. One address
+ * and one secret for every store: the order's reference names its store (TOU…, BEL…).
  */
 @Controller('api/ecomanager')
 @UseFilters(DeskExceptionFilter)
@@ -44,9 +45,11 @@ export class EcoManagerWebhookController {
     } catch {
       order = null;
     }
-    // Only this store's orders: another store's order with the same number never touches our calls.
-    if (order && order.reference === this.orders.client.prefix + order.id) {
-      this.orders.client.remember(order);
+    // Only a configured store's orders, and only the calls of that store's brand: another store's order with the same
+    // number never touches them.
+    const brand = order ? this.orders.storeFor(order) : null;
+    if (order && brand) {
+      this.orders.clientFor(brand)?.remember(order);
       const now = new Date();
       const updated = await this.db
         .update(tcCallMeta)
@@ -60,6 +63,7 @@ export class EcoManagerWebhookController {
         .where(
           and(
             eq(tcCallMeta.ecomanager_order_id, String(order.id)),
+            sql`${tcCallMeta.call_id} IN (SELECT id FROM tc_calls WHERE brand = ${brand})`,
             // A late retry of an older event never overwrites a newer state.
             order.updatedAt ? or(isNull(tcCallMeta.order_state_at), lte(tcCallMeta.order_state_at, new Date(order.updatedAt))) : undefined,
           ),

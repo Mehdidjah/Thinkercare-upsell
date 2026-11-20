@@ -1,15 +1,17 @@
-import {money,searchIds,closestProducts,type Product} from '@touche/domain';
+import {money,searchIds,closestProducts,type Brand,type Product} from '@touche/domain';
+import {BrandSwitch,ofBrand} from '../shared/BrandSwitch';
 import {Icon} from '../shared/Icon';
 import {Photo} from '../shared/Photo';
 
 /** Catalogue (PN6: the h1 names the view). `canManage` (optional, from canManageWorkspace) only changes the
  *  price note: advisers are not sent to Gestion, a page they cannot open (COPYBONUS). */
-export function Catalogue({search,setSearch,scope,setScope,products,inScope,setDetail,canManage=false}:{search:string;setSearch:(search:string)=>void;scope:string;setScope:(scope:string)=>void;products:Product[];inScope:(p:Product)=>boolean;setDetail:(product:Product|null)=>void;canManage?:boolean}){
- const scoped=products.filter(inScope),ids=searchIds(scoped,search),shown=scoped.filter(p=>ids.has(p.id)),near=shown.length?[]:closestProducts(scoped,search,4);
+export function Catalogue({search,setSearch,scope,setScope,products,inScope,setDetail,canManage=false,brand,setBrand}:{search:string;setSearch:(search:string)=>void;scope:string;setScope:(scope:string)=>void;products:Product[];inScope:(p:Product)=>boolean;setDetail:(product:Product|null)=>void;canManage?:boolean;brand:Brand;setBrand:(brand:Brand)=>void}){
+ const scoped=ofBrand(products,brand).filter(inScope),ids=searchIds(scoped,search),shown=scoped.filter(p=>ids.has(p.id)),near=shown.length?[]:closestProducts(scoped,search,4);
  return <>
-  <div className="page-head"><div><h1 tabIndex={-1}>Catalogue</h1><p>Le catalogue de conseil : les références Touché, avec leurs photos officielles. {canManage?'Prix existants conservés ; ajouts aux tarifs du site, modifiables dans Gestion.':'Prix tenus à jour par la direction et les managers.'} Disponibilité réelle à confirmer auprès de votre équipe.</p></div></div>
+  <div className="page-head"><div><h1 tabIndex={-1}>Catalogue</h1><p>Le catalogue de conseil : les références Touché et BEL.NCO, avec leurs photos officielles. {canManage?'Prix existants conservés ; ajouts aux tarifs du site, modifiables dans Gestion.':'Prix tenus à jour par la direction et les managers.'} Disponibilité réelle à confirmer auprès de votre équipe.</p></div></div>
   <div className="cat-toolbar">
    <div className="search-field search-field--wide"><Icon name="search"/><input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Ex. sérum, shampoing, solaire" aria-label="Rechercher dans le catalogue"/></div>
+   <BrandSwitch products={products} brand={brand} setBrand={setBrand}/>
    <div className="seg" role="group" aria-label="Univers">{['Tous','Visage','Cheveux','Corps','Packs'].map(d=><button type="button" key={d} className="seg__item" aria-pressed={scope===d} onClick={()=>setScope(d)}>{d}</button>)}</div>
   </div>
   <p className="cat-count" role="status">{shown.length} référence{shown.length>1?'s':''}</p>

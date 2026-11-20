@@ -36,7 +36,8 @@ export async function requestJson(query = '', body?: unknown, signal?: AbortSign
     response = await fetch('/api/desk' + query, {
       method: body ? 'POST' : 'GET', credentials: 'same-origin', signal,
       // X-Desk-Pricing: the pricing rules this desk computes offers with; an older open tab is told to reload the page.
-      headers: body ? { 'Content-Type': 'application/json', 'X-Desk-Pricing': PRICING_RULE } : options.background ? { 'X-Desk-Background': '1' } : undefined,
+      // X-Desk-Brands: this desk keeps each call to one brand, so the server may send it every brand's products.
+      headers: body ? { 'Content-Type': 'application/json', 'X-Desk-Pricing': PRICING_RULE, 'X-Desk-Brands': '1' } : options.background ? { 'X-Desk-Brands': '1', 'X-Desk-Background': '1' } : { 'X-Desk-Brands': '1' },
       body: body ? JSON.stringify(payload) : undefined,
     });
     text = await response.text();

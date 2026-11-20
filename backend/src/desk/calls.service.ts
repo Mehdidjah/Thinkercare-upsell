@@ -1,7 +1,7 @@
-import { parseOrderReference, canManageWorkspace } from '@touche/domain';
+import { parseBrandReference, canManageWorkspace, brandOf, brandProblem, referenceBrand, referenceBrandMismatch } from '@touche/domain';
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import type { ItemSnapshot, Product, Proposal, OrderItem } from '@touche/domain';
+import type { Brand, ItemSnapshot, Product, Proposal, OrderItem } from '@touche/domain';
 import {
   basketOffer,
   basketProblem,
@@ -96,6 +96,19 @@ function requireAvailable(added: OrderItem[], client: DeskClient): void {
   }
 }
 
+/** One brand per call: the initial order and the offer, pack components included, are all of the call's brand. A tab
+ *  opened before BEL.NCO never received another brand's products, so it is also told to reload the page. */
+function requireBrand(items: Product[], brand: Brand, all: Product[], client: DeskClient): void {
+  const problem = brandProblem(items, brand, all);
+  if (problem) {
+    throw new DeskError(
+      400,
+      problem + (client.reloadsCatalogue ? '' : ' Rechargez la page pour mettre le catalogue à jour.'),
+      'brand-mixed',
+    );
+  }
+}
+
 /** H2: 409 with the amount the offer is now worth. */
 function priceChanged(offer: number, client: DeskClient): DeskError {
   return new DeskError(
@@ -183,6 +196,9 @@ export class CallsService {
     }
     const b = withQuantities(basket as Product[], v.quantities);
     const initial = originalOrder(all, v.baseId, v.baseIds, v.baseQuantities);
+    // An older tab sends no brand: its call is the brand of its first product.
+    const brand = v.brand ?? brandOf(base);
+    requireBrand([...initial, ...b], brand, all, client);
     if (
       owner &&
       orderSignature(proposalOriginals(owner.snapshot)) !== orderSignature(initial)
@@ -238,6 +254,7 @@ export class CallsService {
       tier: v.tier,
       delivery: v.delivery,
       version: 3,
+      brand,
     };
     await this.db.transaction(async (tx) => {
       await tx.insert(tcProposals).values({
@@ -273,16 +290,29 @@ export class CallsService {
         'order-ref-required',
       );
     }
-    // EcoManager: today's desk may only record a real order of the store. The lookup was usually made while the
+    // One brand per call: the brand the desk sends, or for an older tab the brand of its first product. A dossier of the
+    // other brand's store is refused before EcoManager is asked.
+    const all = await loadProducts(this.db);
+    const brand = v.brand ?? brandOf(all.find((p) => p.id === v.baseId));
+    const refBrand = v.meta?.orderRef ? referenceBrand(v.meta.orderRef, this.orders.prefixes) : null;
+    if (refBrand && refBrand !== brand) {
+      throw new DeskError(400, referenceBrandMismatch(refBrand, brand), 'order-ref-brand');
+    }
+    // EcoManager: today's desk may only record a real order of the call's store. The lookup was usually made while the
     // adviser typed (cached); if EcoManager does not answer, the call is saved « à vérifier » and checked later.
     let order: { check: '' | 'verified' | 'unverified'; id: number | null; found: EcoOrder | null } = { check: '', id: null, found: null };
-    if (this.orders.enabled && client.reloadsCatalogue && v.meta?.orderRef?.trim()) {
-      const result = await this.orders.verify(v.meta.orderRef);
+    if (this.orders.enabledFor(brand) && client.reloadsCatalogue && v.meta?.orderRef?.trim()) {
+      const result = await this.orders.verify(v.meta.orderRef, brand);
       if (result.status === 'not-found') throw orderNotFound(result.reference);
       v.meta.orderRef = result.reference;
       order = result.status === 'found'
         ? { check: 'verified', id: result.order.id, found: result.order }
         : { check: 'unverified', id: result.id, found: null };
+    } else if (brand !== 'touche' && v.meta?.orderRef?.trim()) {
+      // A store without a token yet: never refused for the missing check, saved under its full reference (a number
+      // alone is that store's order, never the TOU order with the same number) and caught up once the token is set.
+      const parsed = parseBrandReference(v.meta.orderRef, brand, this.orders.prefixes);
+      if (parsed) v.meta.orderRef = parsed.reference;
     }
     if (
       new Set(v.productIds).size !== v.productIds.length ||
@@ -301,7 +331,6 @@ export class CallsService {
     if (accepted && !v.meta?.acceptedProposalId) {
       throw new DeskError(400, 'Marquez l’offre comme présentée avant de confirmer la vente.');
     }
-    const all = await loadProducts(this.db);
     const basket = v.productIds.map((id) => all.find((p) => p.id === id));
     if (basket.some((x) => !x)) {
       throw new DeskError(400, 'Un produit du panier est introuvable dans le catalogue.');
@@ -309,6 +338,7 @@ export class CallsService {
     const b = withQuantities(basket as Product[], v.quantities);
     const first = b[0]!;
     const initial = originalOrder(all, v.baseId, v.baseIds, v.baseQuantities);
+    requireBrand([...initial, ...b], brand, all, client);
     if (!preservesOriginals(initial, b, v.upgradeId)) {
       throw new DeskError(400, 'Tous les produits de la commande initiale doivent être conservés.');
     }
@@ -437,10 +467,11 @@ export class CallsService {
         if (lowOffer) throw new DeskError(400, lowOffer);
       }
       if (v.meta.orderRef && accepted) {
-        // One accepted add-on per order, whatever form the reference was typed in: TOU1763816, the number alone
-        // (allowed before the EcoManager check, and still sent by older tabs), or the order a call was matched to.
+        // One accepted add-on per order of the call's store, whatever form the reference was typed in: TOU1763816, the
+        // number alone (allowed before the EcoManager check, and still sent by older tabs), or the order a call was
+        // matched to. Another store's order with the same number is another order.
         const typed = v.meta.orderRef.toUpperCase();
-        const parsed = parseOrderReference(typed, this.orders.client?.prefix);
+        const parsed = parseBrandReference(typed, brand, this.orders.prefixes);
         const forms = [...new Set([typed, ...(parsed ? [parsed.reference, String(parsed.id)] : [])])];
         const [duplicate] = await this.db
           .select({ id: tcCalls.id })
@@ -453,6 +484,7 @@ export class CallsService {
                 : eq(tcCallMeta.order_ref, typed),
               inArray(tcCalls.outcome, ['duo', 'trio', 'routine']),
               isNull(tcCalls.voided_at),
+              eq(tcCalls.brand, brand),
             ),
           )
           .limit(1);
@@ -501,6 +533,7 @@ export class CallsService {
           extra: accepted ? offer - lockedBase : 0,
           refusal: v.refusal,
           pilot: pilot ? 1 : 0,
+          brand,
         });
         await tx
           .insert(tcAudit)
@@ -513,7 +546,7 @@ export class CallsService {
             team: user.team || '',
             original: locked?.base || snapshot(initial[0], all),
             originals,
-            ruleVersion: 'touche-v3',
+            ruleVersion: brand === 'belnco' ? 'belnco-v1' : 'touche-v3',
             completedAt: now.toISOString(),
           };
           await tx.insert(tcCallMeta).values({

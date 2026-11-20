@@ -174,6 +174,7 @@ export class ReportingService {
         created_at: tcCalls.created_at,
         callback_at: tcCallMeta.callback_at,
         order_ref: tcCallMeta.order_ref,
+        brand: tcCalls.brand,
         meta: tcCallMeta.data,
       })
       .from(tcCalls)

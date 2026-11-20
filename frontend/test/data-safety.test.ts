@@ -48,8 +48,8 @@ describe('requests (X5, B2, X1)', () => {
     const fetch = vi.fn(async (_url: string, _init: RequestInit) => reply({ ok: true }));
     vi.stubGlobal('fetch', fetch);
     await requestJson('', { action: 'present-offer' });
-    expect(fetch.mock.calls.at(-1)![1].headers).toStrictEqual({ 'Content-Type': 'application/json', 'X-Desk-Pricing': 'hair-pack-sets' });
-    expect(PRICING_RULE).toBe('hair-pack-sets');
+    expect(fetch.mock.calls.at(-1)![1].headers).toStrictEqual({ 'Content-Type': 'application/json', 'X-Desk-Pricing': 'pack-sets', 'X-Desk-Brands': '1' });
+    expect(PRICING_RULE).toBe('pack-sets');
   });
 
   it('« account-changed » tells the app, and a locked tab sends nothing more', async () => {
@@ -171,7 +171,8 @@ describe('background refresh marker', () => {
     await requestJson('?action=analytics', undefined, undefined, { background: true });
     await requestJson('?action=analytics');
     expect((fetch.mock.calls[0][1].headers as Record<string, string>)['X-Desk-Background']).toBe('1');
-    expect(fetch.mock.calls[1][1].headers).toBeUndefined();
+    expect(fetch.mock.calls[0][1].headers).toStrictEqual({ 'X-Desk-Brands': '1', 'X-Desk-Background': '1' });
+    expect(fetch.mock.calls[1][1].headers).toStrictEqual({ 'X-Desk-Brands': '1' });
     vi.unstubAllGlobals();
   });
 });

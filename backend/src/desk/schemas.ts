@@ -55,7 +55,7 @@ export const productSchema = z
     source: z
       .string()
       .max(300)
-      .refine((s) => !s || /^https:\/\/(www\.)?touchelab\.com\//.test(s)),
+      .refine((s) => !s || /^https:\/\/(www\.)?(touchelab\.com|belnco\.com)\//.test(s)),
     description: z.string().min(1).max(1200),
     concerns: z
       .array(
@@ -68,6 +68,7 @@ export const productSchema = z
           'dry',
           'dehydration',
           'dull',
+          'aging',
           'scars',
           'growth',
           'breakage',
@@ -116,6 +117,12 @@ export const productSchema = z
     gentle: z.boolean().optional(),
     exfoliant: z.boolean().optional(),
     verificationRequired: z.string().max(1200).optional(),
+    brand: z.enum(['touche', 'belnco']).optional(),
+    excludes: z
+      .array(z.string().regex(/^[a-z0-9_-]{2,60}$/))
+      .max(5)
+      .optional(),
+    photosensitizing: z.boolean().optional(),
   })
   .strict();
 
@@ -186,6 +193,7 @@ export const proposalSchema = z
     action: z.literal('present-offer'),
     id: z.string().uuid(),
     callId: z.string().uuid(),
+    brand: z.enum(['touche', 'belnco']).optional(),
     baseId: id,
     baseIds: z.array(id).min(1).max(32).optional(),
     baseQuantities: quantities.optional(),
@@ -235,6 +243,7 @@ export const saveCallSchema = z
   .object({
     action: z.literal('save-call'),
     id: z.string().uuid(),
+    brand: z.enum(['touche', 'belnco']).optional(),
     baseId: z.string().max(60),
     baseIds: z.array(id).min(1).max(32).optional(),
     baseQuantities: quantities.optional(),
