@@ -31,7 +31,7 @@ const noop = () => {};
 function model(extra: Partial<CallModel>): CallModel {
   const base = catalogue.find(p => p.id === 'antiacne')!;
   return { step: 0, toStep: noop, demo: false, saved: false, busy: false, presenting: false, savedOutcome: '', savedAt: '', canVoid: false, voidCall: async () => '', newCall: noop, startExample: noop, exitExample: noop, hasParkedCall: false,
-    orderRef: '', setOrderRef: noop, customerStage: 'unknown', setCustomerStage: noop, linkedCallId: '', products: catalogue, visible: catalogue.slice(0, 2), nearby: [], search: '', setSearch: noop, scope: 'Tous', setScope: noop, category: 'Tous', setCategory: noop,
+    orderRef: '', setOrderRef: noop, orderRefAsked: false, customerStage: 'unknown', setCustomerStage: noop, linkedCallId: '', products: catalogue, visible: catalogue.slice(0, 2), nearby: [], search: '', setSearch: noop, scope: 'Tous', setScope: noop, category: 'Tous', setCategory: noop,
     baseId: base.id, baseIds: [base.id], base, initial: [{ ...base, quantity: 1 }], baseTotal: base.price, orderLocked: false, changeInitial: noop, changeInitialQuantity: () => true, duplicate: null,
     domain: 'face', profile: face, changeProfile: noop, toggleConcern: noop, blocked: null, stop: null, notes: [], missing: [],
     upgrades: [], heldPacks: [], upgrade: undefined, upgradeId: '', chooseUpgrade: noop, clearUpgrade: noop, adds: [], requestedIds: [], verifiedProducts: [], toggleVerified: noop, setDetail: noop,
@@ -94,7 +94,8 @@ describe('closing the call (B3, M5, REFUSE, F4)', () => {
     expect(html).toMatch(/data-done="false"><svg[\s\S]*?<\/svg>Présentez cette offre/);
     expect(html).toMatch(/data-done="true"><svg[\s\S]*?<\/svg>Cochez la compatibilité<span class="sr-only"> : fait<\/span>/);
     expect(html).toMatch(/data-done="false"><svg[\s\S]*?<\/svg>Cochez l’accord de la cliente/);
-    const ready = render(<CallClose/>, { altered: true, count: 2, checked: true, consent: true, matchingOffer: { id: 'offer-1' } as CallModel['matchingOffer'] });
+    expect(html).toMatch(/data-done="false"><svg[\s\S]*?<\/svg>Renseignez la référence du dossier/);
+    const ready = render(<CallClose/>, { altered: true, count: 2, checked: true, consent: true, orderRef: 'DOS-1', matchingOffer: { id: 'offer-1' } as CallModel['matchingOffer'] });
     expect(ready).toMatch(/<button type="button" class="btn btn--primary btn--lg call-close__accept-btn">Enregistrer le duo accepté/);
     expect(ready).not.toContain('Pour enregistrer l’accord');
   });
@@ -563,3 +564,18 @@ describe('source guards', () => {
     expect(readFileSync(new URL('../src/ui/shell/AppShell.tsx', import.meta.url), 'utf8')).toContain('<ViewBoundary key={view}');
   });
 });
+
+describe('dossier reference is required', () => {
+  it('the field says it is required and explains a refused save', () => {
+    const empty = render(<CallContextPanel/>, { step: 0, orderRef: '', orderRefAsked: false });
+    expect(empty).toContain('(obligatoire)');
+    expect(empty).toContain('required=""');
+    expect(empty).toContain('aria-required="true"');
+    expect(empty).toContain('Obligatoire pour enregistrer le résultat de l’appel.');
+    const asked = render(<CallContextPanel/>, { step: 0, orderRef: '', orderRefAsked: true });
+    expect(asked).toContain('aria-invalid="true"');
+    expect(asked).toContain('Renseignez la référence du dossier pour enregistrer le résultat.');
+    expect(render(<CallContextPanel/>, { step: 2, orderRef: '' })).toContain('Référence du dossier à renseigner');
+  });
+});
+

@@ -259,6 +259,15 @@ export class CallsService {
     // A retry of a call already recorded answers as before, whatever the catalogue became since.
     const retry = await this.existingCall(user, v.id);
     if (retry) return retry;
+    // Every result recorded from today's desk names its dossier, so each accepted add-on is checked against its dossier
+    // once. A tab opened before this rule (it does not announce today's desk) keeps saving until it is reloaded.
+    if (client.reloadsCatalogue && !v.meta?.orderRef?.trim()) {
+      throw new DeskError(
+        400,
+        'Renseignez la référence du dossier avant d’enregistrer le résultat.',
+        'order-ref-required',
+      );
+    }
     if (
       new Set(v.productIds).size !== v.productIds.length ||
       v.productIds[0] !== (v.upgradeId || v.baseId)

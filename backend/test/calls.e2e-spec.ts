@@ -1379,3 +1379,17 @@ describe('quantities in original orders and accepted offers', () => {
     expect((await deskGet(ctx, '?action=my-progress', lina)).body.progress.count).toBe(0);
   });
 });
+
+describe('dossier reference', () => {
+  it('every outcome saved from today\'s desk needs a dossier reference; an older open tab still saves', async () => {
+    for (const orderRef of ['', '   ']) {
+      const res = await post(save({ outcome: 'initial', productIds: ['antiacne'], tier: 'catalogue', agreedTotal: 1800, consent: false, checked: false, expectedUserId: linaUser.id, meta: { orderRef } }));
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: 'Renseignez la référence du dossier avant d’enregistrer le résultat.', code: 'order-ref-required' });
+    }
+    const ok = await post(save({ outcome: 'initial', productIds: ['antiacne'], tier: 'catalogue', agreedTotal: 1800, consent: false, checked: false, expectedUserId: linaUser.id, meta: { orderRef: 'DOS-REQ-1' } }));
+    expect(ok.status).toBe(200);
+    const oldTab = await post(save({ outcome: 'initial', productIds: ['antiacne'], tier: 'catalogue', agreedTotal: 1800, consent: false, checked: false, meta: { orderRef: '' } }));
+    expect(oldTab.status).toBe(200);
+  });
+});

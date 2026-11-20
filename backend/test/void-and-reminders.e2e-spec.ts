@@ -54,10 +54,11 @@ async function sale(orderRef: string, cookie = lina): Promise<string> {
 
 function saveBody(overrides: Body & { meta?: Body } = {}): Body & { id: string } {
   const { meta, ...rest } = overrides;
+  const id = typeof rest.id === 'string' ? rest.id : randomUUID();
   return {
-    action: 'save-call', id: randomUUID(), baseId: 'antiacne', productIds: ['antiacne'], outcome: 'callback',
+    action: 'save-call', id, baseId: 'antiacne', productIds: ['antiacne'], outcome: 'callback',
     tier: 'catalogue', delivery: null, consent: false, checked: false, refusal: '', ...rest,
-    meta: { version: 3, source: 'manual', customerStage: 'new', orderRef: '', startedAt: at(-60_000), eligible: true, objections: [], ...meta },
+    meta: { version: 3, source: 'manual', customerStage: 'new', orderRef: 'R-' + id.slice(0, 8).toUpperCase(), startedAt: at(-60_000), eligible: true, objections: [], ...meta },
   } as Body & { id: string };
 }
 

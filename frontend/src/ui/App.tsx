@@ -35,7 +35,7 @@ const scopeFilter=(scope:string)=>(p:Product)=>scope==='Tous'||(scope==='Packs'?
 
 export default function Desk(){
  const [state,setState]=useState<State|null>(null),[loading,setLoading]=useState(true),[fatal,setFatal]=useState(''),[bootError,setBootError]=useState(''),[view,setView]=useState('call'),[signingOut,setSigningOut]=useState(false);
- const [loginNotice,setLoginNotice]=useState(''),[locked,setLocked]=useState(false),[offline,setOffline]=useState(()=>typeof navigator!=='undefined'&&navigator.onLine===false);
+ const [orderRefAsked,setOrderRefAsked]=useState(false),[loginNotice,setLoginNotice]=useState(''),[locked,setLocked]=useState(false),[offline,setOffline]=useState(()=>typeof navigator!=='undefined'&&navigator.onLine===false);
  const [progressEpoch,setProgressEpoch]=useState(0),[focusOperator,setFocusOperator]=useState(''),[pilotageTab,setPilotageTab]=useState('');
  // Catalogue and Parcours keep their own search, apart from the call's step-0 search (PN4).
  const [catalogueSearch,setCatalogueSearch]=useState(''),[catalogueScope,setCatalogueScope]=useState('Tous'),[coverageSearch,setCoverageSearch]=useState('');
@@ -345,6 +345,8 @@ export default function Desk(){
  async function record(outcome:string,{callback=false}:{callback?:boolean}={}){
   const now=current(),withCallback=outcome==='callback'||callback;
   if(!base)return;if(now.demo){notify('Exemple : aucun résultat n’est enregistré.','info');return;}if(now.saved||busy)return;
+  // Every recorded result names its dossier: open the call context if it is folded, then move to the field.
+  if(!now.orderRef.trim()){setOrderRefAsked(true);notify('Renseignez la référence du dossier avant d’enregistrer le résultat.','error');requestAnimationFrame(()=>{const field=document.getElementById('call-order-ref') as HTMLInputElement|null;const fold=field?.closest('details');if(fold)fold.open=true;field?.focus();});return;}
   const won=['duo','trio','routine'].includes(outcome);
   if(blocked&&won){notify('Vérification ciblée nécessaire.','error');return;}
   if(won&&offerIssue){notify(offerIssue,'error');return;}
@@ -395,7 +397,7 @@ export default function Desk(){
   step:d.step,toStep,demo:d.demo,saved:d.saved,busy,presenting,
   savedOutcome:d.savedOutcome,savedAt:d.savedAt,canVoid:deadline!==null&&clock<deadline,voidCall,
   newCall:()=>void newCall(),startExample:kind=>void startExample(kind),exitExample,hasParkedCall:!!store.parked,parkedSaved:!!store.parked?.saved,
-  orderRef:d.orderRef,setOrderRef:edit('orderRef'),customerStage:d.customerStage,setCustomerStage:edit('customerStage'),linkedCallId:d.linkedCallId,
+  orderRef:d.orderRef,setOrderRef:edit('orderRef'),orderRefAsked:orderRefAsked&&!d.orderRef.trim(),customerStage:d.customerStage,setCustomerStage:edit('customerStage'),linkedCallId:d.linkedCallId,
   products,visible,nearby,search,setSearch,scope,setScope,category,setCategory,
   baseId,baseIds:d.baseIds,base,initial,baseTotal,orderLocked:callState.orderLocked(d),changeInitial,changeInitialQuantity,duplicate,
   domain,profile,changeProfile,toggleConcern,blocked,stop,notes,missing,

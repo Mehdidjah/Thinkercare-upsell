@@ -27,7 +27,9 @@ export type CallModel={
  /** Starting a new call or an example and leaving it all go through the leave guard (A1). An example sets aside an open
   *  call, or a saved one while it may still be voided (`parkedSaved`). */
  newCall:()=>void;startExample:(kind:ExampleKind)=>void;exitExample:()=>void;hasParkedCall:boolean;parkedSaved:boolean;
- orderRef:string;setOrderRef:(value:string)=>void;customerStage:string;setCustomerStage:(value:string)=>void;linkedCallId:string;
+ orderRef:string;setOrderRef:(value:string)=>void;
+ /** A save was refused because the dossier reference is empty: the field shows why. */
+ orderRefAsked:boolean;customerStage:string;setCustomerStage:(value:string)=>void;linkedCallId:string;
  products:Product[];visible:Product[];
  /** Step 0 found nothing exact: the closest products (SEARCH). */
  nearby:Product[];search:string;setSearch:Setter<string>;scope:string;setScope:Setter<string>;category:string;setCategory:Setter<string>;
