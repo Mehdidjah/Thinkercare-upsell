@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_PROFILE, recommend, type Product, type Proposal } from '@touche/domain';
+import { EMPTY_PROFILE, questionsReady, recommend, type Product, type Proposal } from '@touche/domain';
 import * as cs from '../src/ui/call/callState';
 const load = (f: string) => JSON.parse(readFileSync(new URL('../../shared/test/fixtures/' + f, import.meta.url), 'utf8')) as Product[];
 const touche = load('catalogue.json'), bel = load('belnco.json'), all = [...touche, ...bel];
@@ -43,7 +43,11 @@ describe('call brand', () => {
     const d = cs.newDraft({ id: 'x', now: T, example: 'belnco' });
     expect(d).toMatchObject({ brand: 'belnco', baseIds: ['bel-retinol'], step: 1, demo: true, profileDomain: 'face' });
     expect(d.profile.concerns).toEqual(['dehydration']);
+    // The BEL.NCO questions are answered too (makeup; no retinol question without « Rides et fermeté »), so the example reaches its suggestions.
+    expect(d.profile).toMatchObject({ makeup: 'daily', retinol: '' });
+    expect(questionsReady(d.profile, all.find(p => p.id === 'bel-retinol'))).toBe(true);
     expect(recommend(all, all.find(p => p.id === 'bel-retinol')!, d.profile).slice(0, 2).map(c => c.product.id)).toEqual(['bel-uv50', 'bel-moist']);
+    expect(recommend(all, all.find(p => p.id === 'bel-retinol')!, d.profile).find(c => c.product.id === 'bel-ritual')?.reason).toBe('Elle se maquille tous les jours : le double nettoyage (huile puis gel) retire maquillage et SPF sans dessécher.');
     expect(cs.newDraft({ id: 'y', now: T, example: 'face' }).brand).toBe('touche');
     expect(cs.newDraft({ id: 'y', now: T, example: 'hair' })).toMatchObject({ brand: 'touche', profileDomain: 'hair', baseIds: ['shpousse'] });
     expect(cs.examplesFor('belnco')).toEqual(['belnco']);

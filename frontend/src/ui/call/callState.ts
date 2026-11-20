@@ -30,7 +30,7 @@ export type ExampleKind='face'|'hair'|'belnco';
 const EXAMPLES:Record<ExampleKind,{baseId:string;brand:Brand;domain:string;profile:Profile}>={
  face:{baseId:'antiacne',brand:'touche',domain:'face',profile:{...EMPTY_PROFILE,concerns:['acne'],skin:'mixed',sensitive:'no',routine:[],routineKnown:true,safety:['none'],severity:'mild'}},
  hair:{baseId:'shpousse',brand:'touche',domain:'hair',profile:{...EMPTY_PROFILE,concerns:['growth','breakage'],skin:'mixed',sensitive:'no',routine:[],routineKnown:true,safety:['none'],severity:''}},
- belnco:{baseId:'bel-retinol',brand:'belnco',domain:'face',profile:{...EMPTY_PROFILE,concerns:['dehydration'],skin:'normal',sensitive:'no',routine:[],routineKnown:true,safety:['none']}},
+ belnco:{baseId:'bel-retinol',brand:'belnco',domain:'face',profile:{...EMPTY_PROFILE,concerns:['dehydration'],skin:'normal',sensitive:'no',routine:[],routineKnown:true,safety:['none'],makeup:'daily'}},
 };
 /** The worked examples of a brand: one brand per call, examples included. */
 export const examplesFor=(brand:Brand):ExampleKind[]=>brand==='belnco'?['belnco']:['face','hair'];
@@ -157,10 +157,10 @@ export function changeProfile(d:CallDraft,patch:Partial<Profile>,products:Produc
 
 /** The concern a new pick pushes out (F5): with two already chosen, a third replaces the second. */
 export function replacedConcern(p:Profile,id:string):string|null{return !p.concerns.includes(id)&&p.concerns.length>=2?p.concerns[1]:null;}
-/** One or two concerns: a third replaces the second; follow-up answers go with their concern. */
+/** One or two concerns: a third replaces the second; follow-up answers go with their concern (BEL.NCO's retinol with « Rides et fermeté »). */
 export function concernPatch(p:Profile,id:string):Partial<Profile>{
  const a=p.concerns.includes(id)?p.concerns.filter(x=>x!==id):p.concerns.length<2?[...p.concerns,id]:[p.concerns[0],id];
- return {concerns:a,severity:a.includes('acne')?p.severity:'',marks:a.includes('marks')?p.marks:'',hairPattern:a.includes('fall')?p.hairPattern:'',redState:a.includes('red')?p.redState:''};
+ return {concerns:a,severity:a.includes('acne')?p.severity:'',marks:a.includes('marks')?p.marks:'',hairPattern:a.includes('fall')?p.hairPattern:'',redState:a.includes('red')?p.redState:'',...(p.retinol&&!a.includes('aging')?{retinol:''}:{})};
 }
 
 // ── Initial order ────────────────────────────────────────────────────────────────────────────────────────────

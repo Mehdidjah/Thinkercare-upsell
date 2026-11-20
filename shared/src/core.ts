@@ -1,9 +1,9 @@
 import {itemsTotal,lineTotal,quantityOf,quantityLabel,sameOrder,unitCount,type WithQuantity} from './quantity.js';
 import {BRAND_LABELS,brandOf,type Brand} from './brands.js';
-import {pairingBonus} from './belnco.js';
+import {BEL_CONCERNS,BEL_TARGETED,TARGETED_BONUS,makeupBonus,pairingBonus} from './belnco.js';
 export type Ingredient={name:string;inci:string;role:string};
 export type Product={id:string;name:string;short:string;category:string;price:number;image:string;source:string;description:string;concerns:string[];skins:string[];active:boolean;size:string;enabled:boolean;recommendable:boolean;review:string;priceSource?:string;domain?:'face'|'hair'|'body';components?:string[];ingredients?:Ingredient[];inciText?:string;formulaNote?:string;checkedAt?:string;pitch?:string;usage?:string;cautions?:string[];fragrance?:boolean;essentialOils?:boolean;gentle?:boolean;exfoliant?:boolean;verificationRequired?:string;brand?:Brand;excludes?:string[];photosensitizing?:boolean};
-export type Profile={concerns:string[];skin:string;sensitive:string;routine:string[];routineKnown:boolean;safety:string[];severity:string;marks:string;redState?:string;hairPattern?:string;allergens?:string[];age?:string;scalpProtocol?:boolean;verifiedProducts?:string[]};
+export type Profile={concerns:string[];skin:string;sensitive:string;routine:string[];routineKnown:boolean;safety:string[];severity:string;marks:string;redState?:string;hairPattern?:string;allergens?:string[];age?:string;scalpProtocol?:boolean;verifiedProducts?:string[];makeup?:string;retinol?:string};
 export type Candidate={product:Product;score:number;reason:string};
 export type Tier='catalogue'|'duo'|'final';
 export type OrderItem=Product&WithQuantity;
@@ -18,14 +18,14 @@ export const HAIR_ROUTINES=[['Shampoing','Shampoing adapté'],['Après-shampoing
 export const BODY_ROUTINES=[['Nettoyant corps','Nettoyant du corps'],['Soin ciblé','Soin ciblé sur cette zone'],['Hydratant','Hydratant corporel']];
 export const SIGNALS=[['none','Aucun point particulier'],['irritation','Irritation active / brûlure'],['urgent','Gonflement important / réaction sévère'],['allergy','Allergie connue'],['treatment','Traitement dermatologique en cours'],['pregnancy','Grossesse / allaitement'],['minor','Produit destiné à un mineur'],['unknown','Information à préciser']];
 export const ALLERGENS=[['fragrance','Parfum'],['essential','Huiles essentielles'],['mi','MI / MCI (conservateurs)'],['nuts','Noisette / amande / sésame'],['salicylates','Salicylates'],['unknown','Autre / non identifié']];
-export const EMPTY_PROFILE:Profile={concerns:[],skin:'',sensitive:'',routine:[],routineKnown:false,safety:[],severity:'',marks:'',redState:'',hairPattern:'',allergens:[],age:''};
+export const EMPTY_PROFILE:Profile={concerns:[],skin:'',sensitive:'',routine:[],routineKnown:false,safety:[],severity:'',marks:'',redState:'',hairPattern:'',allergens:[],age:'',makeup:'',retinol:''};
 // True only when the patch sets at least one answer to a different value (lists compare by content and order).
 export const profileChanges=(p:Profile,patch:Partial<Profile>):boolean=>Object.entries(patch).some(([k,v])=>JSON.stringify(p[k as keyof Profile])!==JSON.stringify(v));
 export const money=(n:number)=>new Intl.NumberFormat('fr-DZ',{maximumFractionDigits:0}).format(n)+' DA';
 export const domainOf=(p?:Product)=>p?.domain||'face';
-export const concernsFor=(p?:Product)=>domainOf(p)==='hair'?HAIR_CONCERNS:domainOf(p)==='body'?BODY_CONCERNS:FACE_CONCERNS;
+export const concernsFor=(p?:Product)=>brandOf(p)==='belnco'?BEL_CONCERNS:domainOf(p)==='hair'?HAIR_CONCERNS:domainOf(p)==='body'?BODY_CONCERNS:FACE_CONCERNS;
 export const routinesFor=(p?:Product)=>domainOf(p)==='hair'?HAIR_ROUTINES:domainOf(p)==='body'?BODY_ROUTINES:ROUTINES;
-export const labelConcern=(p:Profile)=>CONCERNS.find(c=>c[0]===p.concerns[0])?.[1]?.toLowerCase()||'votre besoin';
+export const labelConcern=(p:Profile,base?:Product)=>(brandOf(base)==='belnco'?BEL_CONCERNS:CONCERNS).find(c=>c[0]===p.concerns[0])?.[1]?.toLowerCase()||'votre besoin';
 export function priceOffer(total:number,tier:Tier,count=2):number{
  if(!Number.isSafeInteger(total)||total<0)throw new Error('Montant invalide');
  if(count<2||tier==='catalogue')return total;
@@ -129,23 +129,26 @@ export function packDuplicate(items:Product[],catalogue:Product[]):{pack:Product
  return null;
 }
 export function questionsReady(p:Profile,base?:Product):boolean{
- return p.concerns.length>0&&!!p.skin&&!!p.sensitive&&p.routineKnown&&p.safety.length>0&&(!p.concerns.includes('acne')||!!p.severity)&&(!p.concerns.includes('marks')||!!p.marks)&&(!p.concerns.includes('red')||!!p.redState)&&(!p.concerns.includes('fall')||!!p.hairPattern)&&(!p.safety.includes('allergy')||!!p.allergens?.length)&&(!p.safety.includes('minor')||!!p.age);
+ return p.concerns.length>0&&!!p.skin&&!!p.sensitive&&p.routineKnown&&p.safety.length>0&&(!p.concerns.includes('acne')||!!p.severity)&&(!p.concerns.includes('marks')||!!p.marks)&&(!p.concerns.includes('red')||!!p.redState)&&(!p.concerns.includes('fall')||!!p.hairPattern)&&(!p.safety.includes('allergy')||!!p.allergens?.length)&&(!p.safety.includes('minor')||!!p.age)&&(brandOf(base)!=='belnco'||(!!p.makeup&&(!p.concerns.includes('aging')||!!p.retinol)));
 }
-export type MissingAnswer={question:'01'|'02'|'03'|'04';label:string};
+export type MissingAnswer={question:'01'|'02'|'03'|'04'|'05';label:string};
 // The answers questionsReady still waits for, in screen order. Empty exactly when questionsReady is true.
+// BEL.NCO asks makeup as question 03, so its routine and safety questions are 04 and 05.
 export function missingAnswers(p:Profile,base?:Product):MissingAnswer[]{
- const hair=domainOf(base)==='hair',m:MissingAnswer[]=[];
+ const hair=domainOf(base)==='hair',bel=brandOf(base)==='belnco',[routine,safety]=bel?['04','05'] as const:['03','04'] as const,m:MissingAnswer[]=[];
  if(!p.concerns.length)m.push({question:'01',label:'la priorité de la cliente'});
  if(p.concerns.includes('acne')&&!p.severity)m.push({question:'01',label:'le type de boutons'});
  if(p.concerns.includes('marks')&&!p.marks)m.push({question:'01',label:'le type de marque'});
  if(p.concerns.includes('red')&&!p.redState)m.push({question:'01',label:'le type de rougeurs'});
+ if(bel&&p.concerns.includes('aging')&&!p.retinol)m.push({question:'01',label:'l’usage du rétinol'});
  if(p.concerns.includes('fall')&&!p.hairPattern)m.push({question:'01',label:'le type de chute'});
  if(!p.skin)m.push({question:'02',label:hair?'le profil capillaire':'le type de peau'});
  if(!p.sensitive)m.push({question:'02',label:hair?'la sensibilité du cuir chevelu':'la sensibilité habituelle'});
- if(!p.routineKnown)m.push({question:'03',label:'les soins déjà utilisés'});
- if(!p.safety.length)m.push({question:'04',label:'les précautions utiles'});
- if(p.safety.includes('allergy')&&!p.allergens?.length)m.push({question:'04',label:'l’allergène concerné'});
- if(p.safety.includes('minor')&&!p.age)m.push({question:'04',label:'l’âge d’utilisation'});
+ if(bel&&!p.makeup)m.push({question:'03',label:'le maquillage et la protection solaire'});
+ if(!p.routineKnown)m.push({question:routine,label:'les soins déjà utilisés'});
+ if(!p.safety.length)m.push({question:safety,label:'les précautions utiles'});
+ if(p.safety.includes('allergy')&&!p.allergens?.length)m.push({question:safety,label:'l’allergène concerné'});
+ if(p.safety.includes('minor')&&!p.age)m.push({question:safety,label:'l’âge d’utilisation'});
  return m;
 }
 export type ReviewStopCode='urgent'|'irritation'|'severe-acne'|'hair-loss'|'child'|'unknown-allergen';
@@ -192,6 +195,8 @@ function ingredientRisk(p:Product,profile:Profile):boolean{
  if(a.includes('salicylates')&&/salicylic|salicylate|geogard ect/.test(inci))return true;
  return false;
 }
+/** BEL.NCO: the customer said her skin already reacted to retinol. */
+const retinolReacted=(base:Product,profile:Profile)=>brandOf(base)==='belnco'&&profile.retinol==='irritated';
 // sharedStep: the one step a candidate may repeat from the basket (a pack upgrade passes the base's step, so a ritual's second cleanser stands beside the first).
 export function canCombine(base:Product,added:Product[],candidate:Product,profile:Profile,catalogue:Product[]=[base,...added,candidate],sharedStep?:string):boolean{
  if(!candidate.enabled||(!candidate.recommendable&&!profile.verifiedProducts?.includes(candidate.id))||candidate.id===base.id||added.some(x=>x.id===candidate.id)||domainOf(candidate)!==domainOf(base))return false;
@@ -202,6 +207,7 @@ export function canCombine(base:Product,added:Product[],candidate:Product,profil
  if(['shpso','serumpso','packpso'].includes(candidate.id)&&!profile.scalpProtocol)return false;
  if(candidate.id==='sal10'&&!profile.verifiedProducts?.includes('sal10'))return false;
  if(candidate.verificationRequired&&!profile.verifiedProducts?.includes(candidate.id))return false;
+ if(retinolReacted(base,profile)&&incoming.some(p=>p.id==='bel-retinol'))return false;
  for(const p of incoming){
   if(current.some(x=>group(x)===group(p))&&group(p)!==sharedStep)return false;
   if(profile.routine.includes(group(p)))return false;
@@ -231,6 +237,7 @@ export function manualAddCheck(base:Product,added:Product[],candidate:Product,pr
  if(incoming.some(p=>ingredientRisk(p,profile)))return stop('Allergie déclarée : ingrédient à risque ou liste INCI non publiée.');
  if(['shpso','serumpso','packpso'].includes(candidate.id)&&!profile.scalpProtocol)return stop('Routine spécifique : à valider d’abord par le référent de l’équipe.');
  const warnings:string[]=[],face=incoming.filter(p=>domainOf(p)==='face');
+ if(retinolReacted(base,profile)&&incoming.some(p=>p.id==='bel-retinol'))warnings.push('Sa peau a déjà réagi au rétinol : à éviter ou avec grande prudence.');
  if(domainOf(candidate)!==domainOf(base))warnings.push('Autre zone que la commande initiale : besoin non évalué par le questionnaire.');
  if(incoming.some(p=>current.some(x=>group(x)===group(p))||profile.routine.includes(group(p))))warnings.push('Étape déjà couverte (routine actuelle ou panier).');
  if(restricted(profile)&&incoming.some(p=>!p.gentle))warnings.push('Profil prudent : formule non signalée comme douce.');
@@ -241,6 +248,8 @@ export function manualAddCheck(base:Product,added:Product[],candidate:Product,pr
  return{blocked:null,warnings,verifyIds:[...new Set(unverified.map(p=>p.id))]};
 }
 function reasonFor(p:Product,base:Product,profile:Profile,sun=false):string{
+ const bel=brandOf(base)==='belnco';
+ if(bel&&makeupBonus(p,profile.makeup))return profile.makeup==='daily'?'Elle se maquille tous les jours : le double nettoyage (huile puis gel) retire maquillage et SPF sans dessécher.':'Elle met une crème solaire tous les jours : l’huile démaquillante la retire en douceur, sans dessécher.';
  if(isPack(p))return(p.pitch||p.description)+' Son contenu est compté dans la routine pour éviter tout doublon.';
  if(domainOf(base)==='hair'){
   if(p.category==='Après-shampoing')return'Le shampoing couvre le lavage. Pour les longueurs sèches ou cassantes, l’après-shampoing ajoute le démêlage et le conditionnement qui manquent.';
@@ -253,13 +262,15 @@ function reasonFor(p:Product,base:Product,profile:Profile,sun=false):string{
  if(p.category==='Nettoyant'&&brandOf(p)==='belnco')return'Une étape lavante adaptée manque. Le double nettoyage passe par le rituel (huile puis gel), jamais par deux nettoyants séparés.';
  if(p.category==='Nettoyant')return'Une étape lavante adaptée manque. Le Total Cleanser est privilégié quand un soin ciblé est déjà présent, pour éviter de superposer les exfoliants.';
  if(p.category==='Sérum hydratant')return'Complément d’hydratation quand une crème est déjà présente et que le besoin de confort persiste, sans dupliquer un autre sérum.';
- return'Répond à la priorité « '+labelConcern(profile)+' ». Un seul soin ciblé, avec les ingrédients de la fiche et une tolérance à vérifier.';
+ return'Répond à la priorité « '+labelConcern(profile,base)+' ». Un seul soin ciblé, avec les ingrédients de la fiche et une tolérance à vérifier.'+(bel&&p.id==='bel-retinol'&&profile.retinol==='never'?' Commencer 2 à 3 soirs par semaine.':'');
 }
 export function recommend(catalogue:Product[],base:Product,profile:Profile,added:Product[]=[]):Candidate[]{
  if(!questionsReady(profile,base)||reviewReason(profile))return[];
  const primary=profile.concerns[0]==='acne'&&profile.severity==='blackheads'?'blackheads':profile.concerns[0]==='fall'&&profile.hairPattern==='breakage'?'breakage':profile.concerns[0];
  const basket=[base,...added].flatMap(p=>expand(p,catalogue)),has=(g:string)=>basket.some(x=>group(x)===g)||profile.routine.includes(g);
  const brand=brandOf(base),sun=basket.some(x=>x.photosensitizing);
+ // BEL.NCO: the targeted care its priority puts first (the retinol gives way when the skin reacted to it).
+ const firsts=brand==='belnco'?(BEL_TARGETED[primary]??[]).filter(id=>!(id==='bel-retinol'&&retinolReacted(base,profile))):[];
  const results:Candidate[]=[];
  for(const p of catalogue){
   if(!canCombine(base,added,p,profile,catalogue))continue;
@@ -289,6 +300,7 @@ export function recommend(catalogue:Product[],base:Product,profile:Profile,added
    score=has('Hydratant')?85:45;if(['marks','dull'].includes(primary))score+=45;if(p.id==='wcspf')score+=12;if(sun)score+=200;
   }else if(step==='Nettoyant'){
    score=has('Hydratant')?60:40;if(p.id==='total')score+=8;if(p.id==='gelclean'&&['oil','blackheads'].includes(primary))score+=10;
+   if(brand==='belnco')score+=makeupBonus(p,profile.makeup);
   }else if(step==='Soin ciblé'){
    if(!p.concerns.includes(primary))continue;
    score=base.category==='Hydratant'?115:80;
@@ -299,7 +311,10 @@ export function recommend(catalogue:Product[],base:Product,profile:Profile,added
     if(primary==='blackheads'&&p.id==='sal2')score+=15;
     if(primary==='oil'&&!['nia10','nia12'].includes(p.id))continue;
     if(primary==='oil'&&p.id==='nia10')score+=10;
-   }else if(['acne','blackheads','oil'].includes(primary)&&p.id!=='bel-clarifying')continue;
+   }else{
+    if(['acne','blackheads','oil'].includes(primary)&&p.id!=='bel-clarifying')continue;
+    score+=TARGETED_BONUS[firsts.indexOf(p.id)]??0;
+   }
   }else if(step==='Soin local'){
    if(primary==='acne'&&profile.severity==='mild')score=65;
   }else if(step==='Sérum hydratant'){

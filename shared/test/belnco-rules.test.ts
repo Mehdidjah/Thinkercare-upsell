@@ -5,7 +5,8 @@ const load=(f:string)=>JSON.parse(readFileSync(new URL('./fixtures/'+f,import.me
 const touche=load('catalogue.json'),bel=load('belnco.json'),all=[...touche,...bel];
 const get=(id:string)=>all.find(p=>p.id===id)!;
 const ids=(r:Candidate[])=>r.map(c=>c.product.id);
-const ready={...EMPTY_PROFILE,sensitive:'no',routineKnown:true,routine:[],safety:['none']};
+// A BEL.NCO call also asks makeup (question 03) and, with « Rides et fermeté », the retinol: « Ni l’un ni l’autre » keeps the scores as before.
+const ready={...EMPTY_PROFILE,sensitive:'no',routineKnown:true,routine:[],safety:['none'],makeup:'none'};
 const dehydrated:Profile={...ready,concerns:['dehydration'],skin:'normal'};
 const acne:Profile={...ready,concerns:['acne'],severity:'mild',skin:'mixed'};
 const dull:Profile={...ready,concerns:['dull'],skin:'normal'};
@@ -54,7 +55,7 @@ describe('BEL.NCO selling rules',()=>{
  });
  it('pregnancy or a minor keep the retinol and the acid serum out of suggestions; a manual add warns',()=>{
   for(const safety of [['pregnancy'],['minor']]){
-   const p:Profile={...dehydrated,concerns:['aging'],safety,age:safety[0]==='minor'?'teen':''};
+   const p:Profile={...dehydrated,concerns:['aging'],retinol:'tolerated',safety,age:safety[0]==='minor'?'teen':''};
    expect(ids(recommend(all,get('bel-moist'),p))).not.toContain('bel-retinol');
    expect(ids(recommend(all,get('bel-moist'),p))).not.toContain('bel-clarifying');
    const m=manualAddCheck(get('bel-moist'),[],get('bel-retinol'),p,all);

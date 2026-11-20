@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { EMPTY_PROFILE, MAX_ITEM_QUANTITY, money, manualAddCheck, offerProblem, reviewStop, searchIds, type Product, type Profile } from '@touche/domain';
+import { EMPTY_PROFILE, FACE_CONCERNS, HAIR_CONCERNS, MAX_ITEM_QUANTITY, money, manualAddCheck, missingAnswers, offerProblem, reviewStop, searchIds, type Product, type Profile } from '@touche/domain';
 import { CallModelContext, type CallModel, type CallRequest } from '../src/ui/call/callModel';
 import { SavedPanel } from '../src/ui/call/SavedPanel';
 import { CallNotices } from '../src/ui/call/CallNotices';
@@ -229,6 +229,54 @@ describe('questions (F5, E6)', () => {
     expect((html.match(/>Plusieurs choix possibles</g) || []).length).toBe(2);
     expect(html).toContain('data-exclusive="true"><input class="option__input" type="checkbox" name="routine" checked="" value="none"');
     expect(html).toContain('<section class="call-question card" id="question-02" tabindex="-1">');
+  });
+
+  const questions = (html: string) => [...html.matchAll(/<section class="call-question card" id="question-(\d+)" tabindex="-1"><p class="call-question__number" aria-hidden="true">(\d+)<\/p><div class="call-question__content"><h2 id="question-\d+-title">([^<]+)<\/h2><p class="call-say">« ([^<]+) »<\/p>/g)].map(m => m.slice(1).join(' | '));
+  const concerns = (html: string) => [...html.matchAll(/class="option option--concern"[^>]*>[\s\S]*?<span class="option__title">([^<]+)<\/span><span class="option__desc">([^<]+)<\/span>/g)].map(m => m[1] + ' · ' + m[2]);
+  const radios = (html: string, name: string) => [...html.matchAll(new RegExp(`name="${name}"(?: checked="")? value="(\\w+)"[\\s\\S]*?<span class="option__title">([^<]+)<`, 'g'))].map(m => m[1] + ' ' + m[2]);
+  const PRECAUTIONS = '05 | 5 | Les précautions utiles | Y a-t-il une réaction actuelle, une allergie connue, un traitement ou une situation particulière à prendre en compte ?';
+  const bel = { brand: 'belnco', base: belnco.find(x => x.id === 'bel-moist')!, products: [...catalogue, ...belnco] } as Partial<CallModel>;
+
+  it('a BEL.NCO call asks its own priorities, the retinol after « Rides et fermeté », and makeup as question 03', () => {
+    const html = render(<StepNeeds/>, { ...bel, step: 1, profile: { ...face, concerns: ['aging'], severity: '', makeup: 'daily' } });
+    expect(concerns(html)).toEqual(['Boutons et imperfections · Peau à tendance acnéique, imperfections', 'Pores et points noirs · Pores visibles, points noirs', 'Brillance · Excès de sébum, zone T', 'Rides et fermeté · Ridules, perte de fermeté', 'Taches et marques · Taches, marques après les boutons', 'Rougeurs et sensibilité · Peau réactive, rougeurs légères', 'Peau sèche ou déshydratée · Tiraillements, manque de confort', 'Teint terne · Manque d’éclat, teint fatigué']);
+    expect(html).toContain('<legend class="choice-group__legend">Avez-vous déjà utilisé du rétinol ?</legend>');
+    expect(radios(html, 'retinol')).toEqual(['never Jamais', 'tolerated Oui, bien toléré', 'irritated Oui, mais ma peau a réagi']);
+    expect(questions(html)).toEqual([
+      '01 | 1 | La priorité de la cliente | Qu’aimeriez-vous améliorer en priorité sur votre peau ?',
+      '02 | 2 | La peau, au quotidien | Votre peau brille-t-elle, tiraille-t-elle, ou les deux selon les zones ?',
+      '03 | 3 | Maquillage et protection solaire | Vous maquillez-vous ou mettez-vous une crème solaire tous les jours ?',
+      '04 | 4 | Ce qu’elle utilise déjà | Quels soins utilisez-vous actuellement et tolérez-vous bien ?',
+      PRECAUTIONS,
+    ]);
+    expect(radios(html, 'makeup')).toEqual(['daily Maquillage tous les jours', 'spf Crème solaire seulement', 'none Ni l’un ni l’autre']);
+    expect(html).toContain('type="radio" name="makeup" checked="" value="daily"');
+    expect(html).toContain('<legend class="sr-only">Maquillage et protection solaire</legend>');
+    // The retinol question follows « Rides et fermeté »; every « Répondez à » link points to a question on screen.
+    expect(render(<StepNeeds/>, { ...bel, step: 1, profile: { ...face, concerns: ['dull'] } })).not.toContain('name="retinol"');
+    const empty = render(<StepNeeds/>, { ...bel, step: 1, profile: EMPTY_PROFILE });
+    for (const m of missingAnswers({ ...EMPTY_PROFILE, concerns: ['aging'], safety: ['allergy', 'minor'] }, bel.base)) expect(empty, m.label).toContain(`id="question-${m.question}"`);
+  });
+
+  it('a Touché call keeps its four questions and priorities, without makeup or retinol', () => {
+    const html = render(<StepNeeds/>, { step: 1, profile: { ...face, concerns: ['aging'], severity: '', makeup: 'daily', retinol: 'never' } });
+    expect(questions(html)).toEqual([
+      '01 | 1 | La priorité de la cliente | Qu’aimeriez-vous améliorer en priorité sur votre peau ?',
+      '02 | 2 | La peau, au quotidien | Votre peau brille-t-elle, tiraille-t-elle, ou les deux selon les zones ?',
+      '03 | 3 | Ce qu’elle utilise déjà | Quels soins utilisez-vous actuellement et tolérez-vous bien ?',
+      '04 | 4 | Les précautions utiles | Y a-t-il une réaction actuelle, une allergie connue, un traitement ou une situation particulière à prendre en compte ?',
+    ]);
+    expect(concerns(html)).toEqual(FACE_CONCERNS.map(([, label, desc]) => label + ' · ' + desc));
+    for (const text of ['name="makeup"', 'name="retinol"', 'Maquillage', 'rétinol', 'id="question-05"']) expect(html).not.toContain(text);
+  });
+
+  it('a priority BEL.NCO doesn’t offer, kept from a Touché call, stays on screen chosen so it can be removed', () => {
+    const html = render(<StepNeeds/>, { ...bel, step: 1, profile: { ...face, concerns: ['dry', 'scars'], severity: '' } });
+    expect(concerns(html).slice(8)).toEqual(['Tiraillements · Peau sèche, inconfort quotidien', 'Cicatrices en relief · Distinguer cicatrice et simple marque']);
+    expect((html.match(/class="option option--concern" data-kind="multi" aria-pressed="true"/g) || []).length).toBe(2);
+    expect(concerns(render(<StepNeeds/>, { ...bel, step: 1, profile: face }))).toHaveLength(8);
+    // Touché lists stay as they were: its own domain's priorities only.
+    expect(concerns(render(<StepNeeds/>, { step: 1, base: p('shpousse'), domain: 'hair', profile: { ...face, concerns: ['acne'] } }))).toEqual(HAIR_CONCERNS.map(([, label, desc]) => label + ' · ' + desc));
   });
 });
 

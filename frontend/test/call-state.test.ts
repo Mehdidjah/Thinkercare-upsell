@@ -98,6 +98,13 @@ describe('answers (A3)', () => {
     expect(cs.concernPatch({ ...face, concerns: ['acne', 'marks'], marks: 'flat' }, 'dull')).toEqual({ concerns: ['acne', 'dull'], severity: 'mild', marks: '', hairPattern: '', redState: '' });
   });
 
+  it('the BEL.NCO retinol answer goes with « Rides et fermeté », and stays while it is chosen', () => {
+    const aging: Profile = { ...face, concerns: ['aging', 'dull'], severity: '', retinol: 'irritated' };
+    expect(cs.concernPatch(aging, 'aging')).toEqual({ concerns: ['dull'], severity: '', marks: '', hairPattern: '', redState: '', retinol: '' });
+    expect(cs.concernPatch(aging, 'dull')).toEqual({ concerns: ['aging'], severity: '', marks: '', hairPattern: '', redState: '' });
+    expect(cs.concernPatch({ ...aging, concerns: ['aging', 'dull'] }, 'red')).toEqual({ concerns: ['aging', 'red'], severity: '', marks: '', hairPattern: '', redState: '' });
+  });
+
   it('a saved call is read-only', () => {
     const saved = cs.markSaved(liveCall(), 'duo', T0);
     expect(cs.changeProfile(saved, { skin: 'dry' }, catalogue)).toBeNull();

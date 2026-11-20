@@ -20,7 +20,7 @@ describe('BEL.NCO rows never change a Touché call',()=>{
   }
  });
  it('a BEL.NCO base is only offered BEL.NCO products',()=>{
-  const ids=recommend(all,get('bel-moist'),{...ready,concerns:['dehydration'],skin:'normal'}).map(c=>c.product.id);
+  const ids=recommend(all,get('bel-moist'),{...ready,concerns:['dehydration'],skin:'normal',makeup:'none'}).map(c=>c.product.id);
   expect(ids.length).toBeGreaterThan(0);
   expect(ids.every(id=>id.startsWith('bel-'))).toBe(true);
  });
