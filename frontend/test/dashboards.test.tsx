@@ -197,6 +197,14 @@ test('Pilotage: the delivery card counts the upsells by order state', () => {
   expect(renderToStaticMarkup(<DeliveryCard calls={[]} sync={{ total: 3, known: 3, pending: 0, notFound: 0, unrecognized: 0 }}/>)).not.toContain('synchronisation en cours');
 });
 
+test('Pilotage: « Non vérifiables » says why each accepted upsell has no order state yet', () => {
+  const call = (order_check: string, orderRef: string) => ({ outcome: 'duo', order_state_group: null, order_check, extra: 1000, offered_total: 3000, voided_at: null, meta: { orderRef } }) as never;
+  const html = renderToStaticMarkup(<DeliveryCard calls={[call('', 'TOU1'), call('unverified', 'TOU2'), call('not-found', 'TOU3'), call('unrecognized', 'DOS-1'), call('', '')]}/>);
+  expect(html).toContain('2 en attente de synchronisation, 1 introuvable dans EcoManager, 1 référence non reconnue, 1 sans référence.');
+  expect(renderToStaticMarkup(<DeliveryCard calls={[call('not-found', 'TOU3'), call('not-found', 'TOU4')]}/>)).toContain('2 introuvables dans EcoManager.');
+  expect(html).toContain('Période choisie dans les filtres');
+});
+
 test('Pilotage: the calls CSV says how each order was checked and its state', () => {
   const src = ui('Analytics.tsx');
   expect(src).toContain("'Vérification commande','État commande'");

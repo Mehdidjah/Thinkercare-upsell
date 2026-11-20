@@ -12,7 +12,7 @@ test('digits only become a TOU reference', () => {
 });
 
 test('rejects other stores and malformed input', () => {
-  for (const raw of ['SHT1761073', 'TOU12', 'TOU1763816X', '', '12', 'TOU-1763816'])
+  for (const raw of ['SHT1761073', 'TOU12', 'TOU1763816X', '', '12', 'DOS-0142', 'SHT-1761073', '1763816-2', 'TOU1763816-2', 'TOU-', '#', 'TOU--'])
     assert.equal(c.parseOrderReference(raw), null, raw);
   assert.deepEqual(c.parseOrderReference('SHT1761073', 'SHT'), { reference: 'SHT1761073', id: 1761073 });
 });
@@ -74,4 +74,9 @@ test('leading zeros are the same order', () => {
   assert.deepEqual(c.parseOrderReference('TOU01763816'), { reference: 'TOU1763816', id: 1763816 });
   assert.deepEqual(c.parseOrderReference('001763816'), { reference: 'TOU1763816', id: 1763816 });
   assert.equal(c.parseOrderReference('TOU0000'), null);
+});
+
+test('older forms typed before the check: a separator after TOU, a leading #, a trailing dot', () => {
+  for (const raw of ['TOU-1763816', 'tou_1763816', 'TOU.1763816', 'TOU#1763816', '#1763816', '#TOU1763816', 'TOU1763816.', 'TOU - 1763816'])
+    assert.deepEqual(c.parseOrderReference(raw), { reference: 'TOU1763816', id: 1763816 }, raw);
 });

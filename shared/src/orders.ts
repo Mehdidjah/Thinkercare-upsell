@@ -73,10 +73,12 @@ export const isFinalOrderState = (name: string | null | undefined): boolean => !
 export const normalizeOrderReference = (raw: string): string => raw.replace(/\s+/g, '').toUpperCase();
 
 /** `TOU1763816`, `tou 1763816` or just `1763816` (read as the store's order number); anything else is not a reference.
- *  `prefix` comes from configuration, validated as 2–6 capital letters. */
+ *  Forms typed before the check are read too: a separator after the store letters (`TOU-1763816`), a leading `#`, a
+ *  trailing dot. Digits are never joined across a separator (`1763816-2` is not an order). `prefix` comes from
+ *  configuration, validated as 2–6 capital letters. */
 export function parseOrderReference(raw: string, prefix = 'TOU'): { reference: string; id: number } | null {
-  const value = normalizeOrderReference(raw);
-  const digits = value.startsWith(prefix) ? value.slice(prefix.length) : value;
+  const value = normalizeOrderReference(raw).replace(/^#+/, '').replace(/\.+$/, '');
+  const digits = value.startsWith(prefix) ? value.slice(prefix.length).replace(/^[-_.#]+/, '') : value;
   if (!/^\d{4,12}$/.test(digits)) return null;
   const id = Number(digits);
   // One order, one reference: leading zeros typed by mistake (TOU01763816) are the same order as TOU1763816.
@@ -92,12 +94,21 @@ const byGroup = () => ({ delivered: 0, shipping: 0, pending: 0, failed: 0, unkno
  *  orders; valueRate the same in supplement. */
 export function upsellDelivery(calls: ActivityCall[]) {
   const count = byGroup(), extra = byGroup(), total = byGroup();
+  // Why an order has no state: no reference typed, not yet synchronised, unknown to EcoManager, not a reference, or a
+  // state EcoManager named in a way the groups do not know.
+  const unknownWhy = { noRef: 0, syncing: 0, notFound: 0, unrecognized: 0, other: 0 };
   for (const c of calls) {
     if (!ACCEPTED.has(c.outcome) || c.voided_at) continue;
     const group = GROUPS.includes(c.order_state_group as OrderStateGroup) ? (c.order_state_group as OrderStateGroup) : 'unknown';
     count[group]++;
     extra[group] += c.extra || 0;
     total[group] += c.offered_total || 0;
+    if (group !== 'unknown') continue;
+    if (!c.meta?.orderRef?.trim()) unknownWhy.noRef++;
+    else if (c.order_check === 'not-found') unknownWhy.notFound++;
+    else if (c.order_check === 'unrecognized') unknownWhy.unrecognized++;
+    else if (c.order_check === 'verified') unknownWhy.other++;
+    else unknownWhy.syncing++;
   }
   const settled = count.delivered + count.failed, settledExtra = extra.delivered + extra.failed;
   return {
@@ -107,5 +118,6 @@ export function upsellDelivery(calls: ActivityCall[]) {
     extra,
     total,
     valueRate: settledExtra > 0 ? extra.delivered / settledExtra : null,
+    unknownWhy,
   };
 }

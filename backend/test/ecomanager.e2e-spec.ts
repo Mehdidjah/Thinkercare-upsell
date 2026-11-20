@@ -291,6 +291,21 @@ describe('catch-up of recorded calls (order sync)', () => {
     expect(fake.calls).not.toContain('/api/shop/v2/orders/142');
   });
 
+  it('older reference forms are looked up, also on calls already marked « non reconnue »', async () => {
+    fake.orders.set(4000020, ecoOrder(4000020, 'Livrée'));
+    fake.orders.set(4000021, ecoOrder(4000021, 'En livraison'));
+    const dashed = await past('TOU-4000020');
+    const marked = await past('#4000021');
+    await setMeta(marked, { order_check: 'unrecognized', order_synced_at: new Date() });
+    const still = await past('DOS-0143');
+    await setMeta(still, { order_check: 'unrecognized', order_synced_at: new Date() });
+    await sync().runOnce();
+    expect(await metaOf(dashed)).toMatchObject({ order_check: 'verified', ecomanager_order_id: '4000020', order_state_group: 'delivered' });
+    expect(await metaOf(marked)).toMatchObject({ order_check: 'verified', ecomanager_order_id: '4000021', order_state_group: 'shipping' });
+    expect(await metaOf(still)).toMatchObject({ order_check: 'unrecognized', ecomanager_order_id: null });
+    expect(await sync().runOnce()).toEqual({ checked: 0, updated: 0, remaining: 0 });
+  });
+
   it('two calls on one order cost one request', async () => {
     fake.orders.set(4000003, ecoOrder(4000003, 'En confirmation'));
     const a = await past('TOU4000003');

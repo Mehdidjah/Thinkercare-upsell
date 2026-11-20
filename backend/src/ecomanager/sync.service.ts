@@ -14,8 +14,8 @@ const active = sql`${tcCallMeta.call_id} IN (SELECT id FROM tc_calls WHERE voide
 
 /**
  * Gives every recorded call the state of its EcoManager order, so Pilotage can count delivered upsells: calls from
- * before the order check (or from older tabs), calls saved « à vérifier », and orders not in a final state whose state
- * is more than a day old. Runs every 2 minutes in the background lane of the EcoManager client (half its quota).
+ * before the order check (or from older tabs, whatever their date), calls saved « à vérifier », references that read
+ * as an order once older forms are understood, and orders not in a final state whose state is more than a day old. Runs every 2 minutes in the background lane of the EcoManager client (half its quota).
  */
 @Injectable()
 export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
@@ -77,6 +77,7 @@ export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
       const lock = connection ? await connection.query('SELECT pg_try_advisory_lock($1) AS ok', [LOCK_KEY]) : { rows: [{ ok: true }] };
       if (!lock.rows[0]?.ok) return { checked, updated, remaining: await this.remaining() };
       try {
+        await this.requeueReadable(client.prefix);
         const refs = await this.db
           .select({
             ref: tcCallMeta.order_ref,
@@ -130,6 +131,17 @@ export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
       connection?.release();
     }
     return { checked, updated, remaining: await this.remaining() };
+  }
+
+  /** Calls marked « non reconnue » whose reference now reads as an order (older forms such as TOU-1763816 or #1763816)
+   *  go back in the queue. Few references are ever unrecognized, so this stays a small query. */
+  private async requeueReadable(prefix: string): Promise<void> {
+    const rows = await this.db
+      .selectDistinct({ ref: tcCallMeta.order_ref })
+      .from(tcCallMeta)
+      .where(and(eq(tcCallMeta.order_check, 'unrecognized'), active));
+    const readable = rows.map((row) => row.ref).filter((ref) => parseOrderReference(ref, prefix));
+    if (readable.length) await this.mark(and(inArray(tcCallMeta.order_ref, readable), eq(tcCallMeta.order_check, 'unrecognized'), active), { order_check: '' });
   }
 
   private async mark(where: ReturnType<typeof and>, values: Partial<typeof tcCallMeta.$inferInsert>): Promise<number> {
