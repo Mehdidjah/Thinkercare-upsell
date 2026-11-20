@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ORDER_REFERENCE_HINT } from '@touche/domain';
-import { checkFromError, checkFromResponse, orderCheckBlocksSave, startCheck, type OrderCheck } from '../src/ui/call/orderCheck';
+import { advanceBlocker, checkFromError, checkFromResponse, orderCheckBlocksSave, startCheck, type OrderCheck } from '../src/ui/call/orderCheck';
 
 const verified: OrderCheck = { reference: 'TOU1763816', status: 'verified', order: { id: 1763816, reference: 'TOU1763816', stateGroup: 'pending', stateLabel: 'Pas encore expédiée', stateName: 'En confirmation' } };
 
@@ -29,5 +29,20 @@ describe('order check (pure)', () => {
     expect(orderCheckBlocksSave({ reference: 'TOU1', status: 'checking' }, 'TOU1')).toBe('Vérification de la commande en cours… Réessayez dans un instant.');
     expect(orderCheckBlocksSave({ reference: '', status: 'idle' }, 'TOU1')).toBe('Vérifiez la commande dans EcoManager avant d’enregistrer.');
     expect(orderCheckBlocksSave(verified, 'TOU1763817')).toBe('La référence a changé : vérifiez-la de nouveau dans EcoManager.');
+  });
+});
+
+describe('moving on needs the dossier reference', () => {
+  const call = { step: 0, demo: false, saved: false, orderRef: '' };
+  it('refuses a later step without a reference', () => {
+    expect(advanceBlocker(call, 1)).toBe('Renseignez la référence du dossier avant de passer à l’étape suivante.');
+    expect(advanceBlocker({ ...call, step: 1, orderRef: '   ' }, 2)).toBe('Renseignez la référence du dossier avant de passer à l’étape suivante.');
+  });
+  it('lets the call move on with a reference, go back, or run as an example or a saved call', () => {
+    expect(advanceBlocker({ ...call, orderRef: 'TOU1763816' }, 1)).toBeNull();
+    expect(advanceBlocker({ ...call, step: 2 }, 1)).toBeNull();
+    expect(advanceBlocker({ ...call, step: 1 }, 1)).toBeNull();
+    expect(advanceBlocker({ ...call, demo: true }, 1)).toBeNull();
+    expect(advanceBlocker({ ...call, saved: true }, 2)).toBeNull();
   });
 });

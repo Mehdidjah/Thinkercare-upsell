@@ -107,3 +107,18 @@ test('the order lookup is only requested when the server lists order-check', () 
   assert.ok(/orderCheckOn=!!state\?\.features\?\.includes\('order-check'\)/.test(app), 'the lookup is behind the order-check feature');
 });
 
+
+test('no call moves to a later step without its dossier reference (and, with EcoManager, a known order)', () => {
+  const app = readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8');
+  const go = app.slice(app.indexOf('async function goStep('), app.indexOf('async function goStep(') + 700);
+  assert.ok(app.includes('const toStep=(n:number)=>{void goStep(n);};'), 'every step change goes through goStep');
+  assert.ok(go.includes('advanceBlocker(now,n)'), 'a missing reference stops the move');
+  assert.ok(go.includes('focusOrderRef()'), 'and takes the adviser to the field');
+  assert.ok(/orderCheckOn&&[^;]*await orderReady\(\)/.test(go), 'with EcoManager on, an unknown order stops it too');
+});
+
+test('call context fields line up on shared rows', () => {
+  const css = readFileSync(new URL('../src/styles/call.css', import.meta.url), 'utf8');
+  assert.ok(/\.call-context__grid > label \{[^}]*grid-template-rows: subgrid/.test(css), 'label, control and help share rows');
+  assert.ok(/\.call-context__fields \{[^}]*container: call-fields \/ inline-size/.test(css), 'the layout follows the space the fields have');
+});

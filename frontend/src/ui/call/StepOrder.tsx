@@ -14,7 +14,7 @@ const AFTER_REMOVAL='#call-initial, .call-order .search-field input';
  *  and in an example (X10: an example never turns into a real call that would not be saved). A product already inside a
  *  selected pack is flagged with « Retirer » (DUPPACK); a removal hands focus to the selected order, since the button is
  *  gone with its line or notice. A search with no exact match shows the closest products (SEARCH). */
-export function StepOrder(){const {toStep,saved,demo,savedOutcome,orderLocked:locked,busy,presenting,products,visible,nearby,search,setSearch,scope,setScope,category,setCategory,baseId,baseIds,base,initial,baseTotal,changeInitial,changeInitialQuantity,duplicate}=useCall();
+export function StepOrder(){const {toStep,saved,demo,orderRef,savedOutcome,orderLocked:locked,busy,presenting,products,visible,nearby,search,setSearch,scope,setScope,category,setCategory,baseId,baseIds,base,initial,baseTotal,changeInitial,changeInitialQuantity,duplicate}=useCall();
  const lockText=demo?'Mode exemple : la commande initiale est fixée. Quittez l’exemple pour démarrer un vrai appel.':saved?(savedOutcome==='initial'?'Commande initiale conservée pour cet appel.':`${savedOutcome?`Appel enregistré (${outcomeLabel(savedOutcome)})`:'Appel déjà enregistré'} : la commande initiale ne change plus. Commencez le suivant pour une autre commande.`):'Commande initiale verrouillée : une offre a été présentée. Ouvrez un nouvel appel pour changer les produits de départ.';
  const toggle=(id:string)=>changeInitial(baseIds.includes(id)?baseIds.filter(x=>x!==id):[...baseIds,id]);
  const card=(p:Product)=><button type="button" key={p.id} className="option option--product" data-kind="multi" onClick={()=>toggle(p.id)} disabled={locked||busy||presenting} aria-pressed={baseIds.includes(p.id)}>
@@ -46,6 +46,6 @@ export function StepOrder(){const {toStep,saved,demo,savedOutcome,orderLocked:lo
    {!visible.length&&nearby.length>0&&<div className="call-nearby"><p className="call-nearby__title" role="status">Aucun résultat exact. Produits proches :</p><div className="call-order__grid">{nearby.map(card)}</div><div>{reset}</div></div>}
    {!visible.length&&!nearby.length&&<div className="empty"><Icon name="search"/><p className="empty__title">Aucun produit trouvé.</p><p>Essayez un autre nom ou une autre catégorie.</p>{reset}</div>}
   </section>
-  <div className="call-actions"><p className="call-actions__status">{base?`${initial.length} référence${initial.length>1?'s':''} dans la commande initiale`:'Choisissez au moins un produit pour poursuivre.'}</p><button type="button" className="btn btn--primary" disabled={!base} onClick={()=>toStep(1)}>Comprendre le besoin<Icon name="arrow"/></button></div>
+  <div className="call-actions"><p className="call-actions__status">{!base?'Choisissez au moins un produit pour poursuivre.':!orderRef.trim()&&!demo&&!saved?'Renseignez la référence du dossier pour poursuivre.':`${initial.length} référence${initial.length>1?'s':''} dans la commande initiale`}</p><button type="button" className="btn btn--primary" disabled={!base} onClick={()=>toStep(1)}>Comprendre le besoin<Icon name="arrow"/></button></div>
  </>;
 }

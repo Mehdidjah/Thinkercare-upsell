@@ -571,11 +571,23 @@ describe('dossier reference is required', () => {
     expect(empty).toContain('(obligatoire)');
     expect(empty).toContain('required=""');
     expect(empty).toContain('aria-required="true"');
-    expect(empty).toContain('Obligatoire pour enregistrer le résultat de l’appel.');
+    expect(empty).toContain('Obligatoire pour continuer l’appel.');
     const asked = render(<CallContextPanel/>, { step: 0, orderRef: '', orderRefAsked: true });
     expect(asked).toContain('aria-invalid="true"');
-    expect(asked).toContain('Renseignez la référence du dossier pour enregistrer le résultat.');
+    expect(asked).toContain('Renseignez la référence du dossier pour continuer.');
     expect(render(<CallContextPanel/>, { step: 2, orderRef: '' })).toContain('Référence du dossier à renseigner');
+  });
+  it('the first step says the reference is still missing before moving on', () => {
+    const initial = [{ ...catalogue[0], quantity: 1 }];
+    const missing = render(<StepOrder/>, { base: catalogue[0], initial, orderRef: '' });
+    expect(missing).toContain('Renseignez la référence du dossier pour poursuivre.');
+    expect(render(<StepOrder/>, { base: catalogue[0], initial, orderRef: 'TOU1763816' })).toContain('1 référence dans la commande initiale');
+    expect(render(<StepOrder/>, { base: catalogue[0], initial, orderRef: '', demo: true })).not.toContain('Renseignez la référence du dossier');
+  });
+  it('fields share label, control and help rows so the controls and the action line up', () => {
+    const full = render(<CallContextPanel/>, { step: 0, orderRef: 'DOS-1' });
+    expect(full).toMatch(/<div class="call-context__fields"><div class="call-context__grid"><label[\s\S]*<label[\s\S]*Cliente non jointe<\/button><\/div><\/div>/);
+    expect(render(<CallContextPanel/>, { step: 2, orderRef: 'DOS-1' })).toMatch(/<div class="call-context__fields"><div class="call-context__grid"><label/);
   });
 });
 
@@ -594,7 +606,7 @@ describe('EcoManager order check in the call context', () => {
   });
   it('without the feature the field is unchanged', () => {
     const html = render(<CallContextPanel/>, { step: 0, orderRef: 'TOU1', orderCheck: null });
-    expect(html).toContain('Obligatoire pour enregistrer le résultat de l’appel.');
+    expect(html).toContain('Obligatoire pour continuer l’appel.');
     expect(html).not.toContain('EcoManager');
   });
 });

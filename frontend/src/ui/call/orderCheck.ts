@@ -34,3 +34,9 @@ export function orderCheckBlocksSave(check:OrderCheck,ref:string):string|null{
  if(check.status==='checking')return 'Vérification de la commande en cours… Réessayez dans un instant.';
  return check.message||ORDER_REFERENCE_HINT;
 }
+
+/** Why the call cannot move on to step `to` yet: every later step needs the dossier reference (going back, examples
+ *  and saved calls aside). With EcoManager on, the order is checked as well before the move (App.goStep). */
+export function advanceBlocker(call:{step:number;demo:boolean;saved:boolean;orderRef:string},to:number):string|null{
+ return to>call.step&&!call.demo&&!call.saved&&!call.orderRef.trim()?'Renseignez la référence du dossier avant de passer à l’étape suivante.':null;
+}

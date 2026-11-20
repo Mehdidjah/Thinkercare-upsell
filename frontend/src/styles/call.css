@@ -65,8 +65,18 @@
   .call-context__intro { display: flex; flex-direction: column; gap: var(--space-1); }
   .call-context__title { font-size: var(--text-body); line-height: var(--leading-heading); letter-spacing: 0; }
   .call-context__intro p { font-size: var(--text-caption); color: var(--color-text-secondary); }
-  .call-context__fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3) var(--space-4); }
-  .call-context__fields > label { flex: 1 1 12rem; }
+  /* The fields share three rows (label, control, help), so the controls and « Cliente non jointe » stay on one line
+     whatever wraps above or below them; stacked when the fields have too little room side by side. */
+  .call-context__fields { container: call-fields / inline-size; }
+  .call-context__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-4); align-items: start; }
+  .call-context__grid > label { grid-row: span 3; display: grid; grid-template-rows: subgrid; gap: var(--space-2); }
+  .call-context__grid > label > span { align-self: end; }
+  .call-context__grid > .call-context__action { grid-row: 2; grid-column: 3; }
+  @container call-fields (max-width: 34rem) {
+    .call-context__grid { grid-template-columns: minmax(0, 1fr); }
+    .call-context__grid > label + label { margin-block-start: var(--space-2); }
+    .call-context__grid > .call-context__action { grid-row: auto; grid-column: auto; justify-self: start; }
+  }
   .call-context :where(input, select) { border-color: var(--color-border-control-strong); }
   .call-context__action { flex: none; }
   .call-context__linked { grid-column: 1 / -1; font-size: var(--text-caption); color: var(--color-text-secondary); }

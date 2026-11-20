@@ -2,7 +2,7 @@ import {useState,useEffect,useRef,type ReactNode} from 'react';
 import {normalizeOrderReference,profileChanges,money,quantityOf,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,packDuplicate,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,type Profile,type Product,type Tier} from '@touche/domain';
 import {reportCache} from '../data/report-cache';
 import {setExpectedUser,lockRequests,requestJson,type RequestError} from '../data/api';
-import {startCheck,checkFromResponse,checkFromError,orderCheckBlocksSave,type OrderCheck} from './call/orderCheck';
+import {startCheck,checkFromResponse,checkFromError,orderCheckBlocksSave,advanceBlocker,type OrderCheck} from './call/orderCheck';
 import {announceSession,onSessionMessage,sessionReaction} from '../data/session-channel';
 import {startCallClaims} from '../data/call-claims';
 import {allowedView,landingView,viewFromEntry,viewFromSearch,isGuardEntry,viewHref,backFromGuard} from '../data/view-history';
@@ -320,7 +320,16 @@ export default function Desk(){
  const toggleVerified=(product:Product,checked:boolean)=>applyRemoval(current(),callState.toggleVerification(current(),product,checked,products));
  /** Plain fields of the record: read-only once the outcome is saved. */
  const edit=<K extends keyof callState.CallDraft>(key:K)=>(value:callState.CallDraft[K])=>{const now=current();if(!now.saved&&now[key]!==value)commit({...now,[key]:value});};
- const toStep=(n:number)=>{commit({...current(),step:n});setTimeout(()=>document.getElementById('workflow-heading')?.focus(),0);};
+ const toStep=(n:number)=>{void goStep(n);};
+ /** A later step needs the dossier reference and, with EcoManager on, an order it knows (an unreachable EcoManager
+  *  lets the call go on « à vérifier »). Going back is always possible. */
+ async function goStep(n:number){
+  const now=current(),why=advanceBlocker(now,n);
+  if(why){setOrderRefAsked(true);notify(why,'error');focusOrderRef();return;}
+  if(n>now.step&&orderCheckOn&&!now.demo&&!now.saved&&!(await orderReady()))return;
+  if(current().callId!==now.callId)return;
+  commit({...current(),step:n});setTimeout(()=>document.getElementById('workflow-heading')?.focus(),0);
+ }
 
  /** A catalogue change during the call (H2): reload the catalogue in place, keep every call field, show the new amount inline. */
  async function refreshCatalogue(kind:'price'|'disabled'){
