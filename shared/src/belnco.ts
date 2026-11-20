@@ -33,3 +33,8 @@ export function makeupBonus(p:Product,makeup?:string):number{
  if(makeup==='daily'&&(p.id==='bel-oil'||p.id==='bel-ritual'))return 40;
  return makeup==='spf'&&p.id==='bel-oil'?20:0;
 }
+/** BEL.NCO double cleansing: the Cleansing Oil (on dry skin) then the Cleansing Gel (on wet skin), chosen separately. */
+export const DOUBLE_CLEANSE=['bel-oil','bel-gel'];
+export const DOUBLE_CLEANSE_LINE='Double nettoyage : l’huile démaquille d’abord, sur peau sèche, puis le gel nettoie, sur peau mouillée.';
+/** True when `p` is one of the two and the products already there hold the other: their shared step is no duplicate. */
+export const doubleCleanse=(current:{id:string}[],p:{id:string}):boolean=>DOUBLE_CLEANSE.includes(p.id)&&current.some(x=>x.id!==p.id&&DOUBLE_CLEANSE.includes(x.id));

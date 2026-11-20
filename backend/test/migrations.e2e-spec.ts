@@ -22,6 +22,12 @@ async function count(table: string): Promise<number> {
   return (result.rows[0] as { n: number }).n;
 }
 
+/** Applies one migration file's statements, as the migrator would, without the files that came after it. */
+async function applyFile(file: string): Promise<void> {
+  const text = readFileSync(resolve(import.meta.dirname, '../drizzle', file), 'utf8');
+  for (const statement of text.split('--> statement-breakpoint')) if (statement.trim()) await db.execute(sql.raw(statement));
+}
+
 describe('migrations', () => {
   beforeAll(async () => {
     await resetDatabase(db);
@@ -130,13 +136,13 @@ describe('migrations', () => {
     await db.execute(sql`ALTER TABLE tc_calls DROP CONSTRAINT tc_calls_brand_check`);
     await db.execute(sql`ALTER TABLE tc_calls DROP COLUMN brand`);
     await db.execute(sql`DELETE FROM tc_products WHERE id LIKE 'bel-%'`);
-    await db.execute(sql`DELETE FROM drizzle.__drizzle_migrations WHERE created_at = ${entry.when}`);
     await db.execute(sql`INSERT INTO tc_users (id, username, label, role, salt, password_hash) VALUES ('u1', 'lina', 'Lina', 'advisor', 's', 'h')`);
     await db.execute(sql`INSERT INTO tc_calls (id, user_id, operator, created_at, outcome, base_id, products, catalogue_total, base_total, offered_total, extra, tier)
       VALUES ('c1', 'u1', 'Lina', now(), 'duo', 'antiacne', '[]', 3300, 1800, 3000, 1200, 'duo')`);
     await db.execute(sql`INSERT INTO tc_call_meta (call_id, data, order_ref) VALUES ('c1', '{}', 'TOU1763816')`);
     await db.execute(sql`INSERT INTO tc_products (id, data) VALUES ('bel-oil', ${JSON.stringify({ ...belnco[0], name: 'Huile éditée en Gestion' })}::jsonb)`);
-    await runMigrations(testDatabaseUrl());
+    // 0007 alone: the migrator only applies files newer than the last one recorded (0008 since 2026-11-21).
+    await applyFile('0007_belnco_brand.sql');
     expect((await db.execute(sql`SELECT brand FROM tc_calls WHERE id = 'c1'`)).rows).toEqual([{ brand: 'touche' }]);
     expect((await db.execute(sql`SELECT data->>'name' AS name FROM tc_products WHERE id = 'bel-oil'`)).rows).toEqual([{ name: 'Huile éditée en Gestion' }]);
     expect((await db.execute(sql`SELECT COUNT(*)::int AS n FROM tc_products WHERE id LIKE 'bel-%'`)).rows).toEqual([{ n: 10 }]);
@@ -149,12 +155,33 @@ describe('migrations', () => {
     await db.execute(sql`ALTER TABLE tc_calls DROP CONSTRAINT tc_calls_brand_check`);
     await db.execute(sql`ALTER TABLE tc_calls DROP COLUMN brand`);
     await db.execute(sql`DELETE FROM tc_products WHERE id LIKE 'bel-%'`);
-    await db.execute(sql`DELETE FROM drizzle.__drizzle_migrations WHERE created_at = ${entry.when}`);
-    await runMigrations(testDatabaseUrl());
+    // 0007 alone: the migrator only applies files newer than the last one recorded (0008 since 2026-11-21).
+    await applyFile('0007_belnco_brand.sql');
     // The API and desk from before BEL.NCO read every row and offer the enabled ones: grid, suggestions, picker, server.
     const rows = (await db.execute(sql`SELECT id, data FROM tc_products ORDER BY position`)).rows as Array<{ id: string; data: { enabled: boolean } }>;
     expect(rows.filter((r) => r.data.enabled).map((r) => r.id)).toEqual(fixture.filter((p) => p.enabled).map((p) => p.id));
     expect(rows.filter((r) => r.id.startsWith('bel-')).map((r) => r.data)).toEqual(belnco.map((p) => ({ ...p, enabled: false })));
+  });
+
+  it('0008 removes the prickly pear oil and the ritual (hand-made copies too), keeps a row a call names switched off, and launches the 7 other BEL.NCO products', async () => {
+    const journal = JSON.parse(readFileSync(resolve(import.meta.dirname, '../drizzle/meta/_journal.json'), 'utf8'));
+    const entry = journal.entries.find((e: { tag: string }) => e.tag === '0008_belnco_launch');
+    expect(entry.when).toBeGreaterThan(1795209817154);
+    await db.execute(sql`DELETE FROM drizzle.__drizzle_migrations WHERE created_at = ${entry.when}`);
+    // Copies added by hand in Gestion, filed as Touché; the second one is named by a saved call.
+    await db.execute(sql`INSERT INTO tc_products (id, data) VALUES ('produit-aaaa1111', ${JSON.stringify({ ...fixture[0], id: 'produit-aaaa1111', name: '100% Pure Prickly Pear Oil' })}::jsonb), ('produit-bbbb2222', ${JSON.stringify({ ...fixture[0], id: 'produit-bbbb2222', name: 'DOUBLE cleansing ritual ' })}::jsonb)`);
+    await db.execute(sql`INSERT INTO tc_users (id, username, label, role, salt, password_hash) VALUES ('u1', 'lina', 'Lina', 'advisor', 's', 'h')`);
+    await db.execute(sql`INSERT INTO tc_calls (id, user_id, operator, created_at, outcome, base_id, products, catalogue_total, base_total, offered_total, extra, tier)
+      VALUES ('c1', 'u1', 'Lina', now(), 'duo', 'antiacne', ${JSON.stringify([{ id: 'antiacne', name: 'x', price: 1800 }, { id: 'produit-bbbb2222', name: 'y', price: 3100 }])}::jsonb, 4900, 1800, 4500, 2700, 'duo')`);
+    await runMigrations(testDatabaseUrl());
+    const rows = (await db.execute(sql`SELECT id, data FROM tc_products ORDER BY position`)).rows as Array<{ id: string; data: { enabled: boolean } }>;
+    const ids = rows.map((r) => r.id), on = rows.filter((r) => r.data.enabled).map((r) => r.id);
+    for (const gone of ['bel-pear', 'bel-ritual', 'produit-aaaa1111']) expect(ids, gone).not.toContain(gone);
+    expect(rows.find((r) => r.id === 'produit-bbbb2222')?.data.enabled).toBe(false);
+    expect(on.filter((id) => id.startsWith('bel-'))).toEqual(['bel-oil', 'bel-gel', 'bel-spf30', 'bel-clarifying', 'bel-retinol', 'bel-moist', 'bel-uv50']);
+    expect(rows.find((r) => r.id === 'bel-tinted')?.data.enabled).toBe(false);
+    // Touché is untouched.
+    expect(on.filter((id) => !id.startsWith('bel-'))).toEqual(fixture.filter((p) => p.enabled).map((p) => p.id));
   });
 
   it('jsonb keeps French typography', async () => {

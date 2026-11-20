@@ -1,6 +1,6 @@
 import {itemsTotal,lineTotal,quantityOf,quantityLabel,sameOrder,unitCount,type WithQuantity} from './quantity.js';
 import {BRAND_LABELS,brandOf,type Brand} from './brands.js';
-import {BEL_CONCERNS,BEL_TARGETED,TARGETED_BONUS,asksRetinol,makeupBonus,pairingBonus} from './belnco.js';
+import {BEL_CONCERNS,BEL_TARGETED,DOUBLE_CLEANSE_LINE,TARGETED_BONUS,asksRetinol,doubleCleanse,makeupBonus,pairingBonus} from './belnco.js';
 export type Ingredient={name:string;inci:string;role:string};
 export type Product={id:string;name:string;short:string;category:string;price:number;image:string;source:string;description:string;concerns:string[];skins:string[];active:boolean;size:string;enabled:boolean;recommendable:boolean;review:string;priceSource?:string;domain?:'face'|'hair'|'body';components?:string[];ingredients?:Ingredient[];inciText?:string;formulaNote?:string;checkedAt?:string;pitch?:string;usage?:string;cautions?:string[];fragrance?:boolean;essentialOils?:boolean;gentle?:boolean;exfoliant?:boolean;verificationRequired?:string;brand?:Brand;excludes?:string[];photosensitizing?:boolean};
 export type Profile={concerns:string[];skin:string;sensitive:string;routine:string[];routineKnown:boolean;safety:string[];severity:string;marks:string;redState?:string;hairPattern?:string;allergens?:string[];age?:string;scalpProtocol?:boolean;verifiedProducts?:string[];makeup?:string;retinol?:string};
@@ -212,7 +212,7 @@ export function canCombine(base:Product,added:Product[],candidate:Product,profil
  if(candidate.verificationRequired&&!profile.verifiedProducts?.includes(candidate.id))return false;
  if(retinolReacted(base,profile)&&incoming.some(p=>p.id==='bel-retinol'))return false;
  for(const p of incoming){
-  if(current.some(x=>group(x)===group(p))&&group(p)!==sharedStep)return false;
+  if(current.some(x=>group(x)===group(p))&&group(p)!==sharedStep&&!doubleCleanse(current,p))return false;
   if(profile.routine.includes(group(p)))return false;
   if(ingredientRisk(p,profile))return false;
   // After an evening serum that sensitizes to the sun, the brand's SPF stays offered to a cautious profile: no SPF is the bigger risk.
@@ -242,7 +242,7 @@ export function manualAddCheck(base:Product,added:Product[],candidate:Product,pr
  const warnings:string[]=[],face=incoming.filter(p=>domainOf(p)==='face');
  if(retinolReacted(base,profile)&&incoming.some(p=>p.id==='bel-retinol'))warnings.push('Sa peau a déjà réagi au rétinol : à éviter ou avec grande prudence.');
  if(domainOf(candidate)!==domainOf(base))warnings.push('Autre zone que la commande initiale : besoin non évalué par le questionnaire.');
- if(incoming.some(p=>current.some(x=>group(x)===group(p))||profile.routine.includes(group(p))))warnings.push('Étape déjà couverte (routine actuelle ou panier).');
+ if(incoming.some(p=>current.some(x=>group(x)===group(p))&&!doubleCleanse(current,p)||profile.routine.includes(group(p))))warnings.push('Étape déjà couverte (routine actuelle ou panier).');
  if(restricted(profile)&&incoming.some(p=>!p.gentle))warnings.push('Profil prudent : formule non signalée comme douce.');
  if(face.some(p=>p.active)&&(current.some(x=>x.active)||profile.routine.includes('Soin ciblé')))warnings.push('Un soin ciblé actif est déjà présent : éviter de superposer les actifs.');
  if(profile.skin&&profile.skin!=='unknown'&&face.some(p=>(p.category==='Hydratant'||p.active)&&!p.skins.includes(profile.skin)))warnings.push('Non indiqué pour le type de peau renseigné.');
@@ -262,7 +262,7 @@ function reasonFor(p:Product,base:Product,profile:Profile,sun=false):string{
  if(p.category==='Hydratant')return'Complète le soin déjà choisi par une étape de confort et d’hydratation. '+p.description;
  if(p.category==='Protection solaire'&&sun)return'Le soin du soir choisi rend la peau plus sensible au soleil : un SPF le lendemain matin est indispensable.';
  if(p.category==='Protection solaire')return'La protection solaire manque à la routine. Une étape complémentaire à l’hydratation ou au soin éclat, pas un deuxième sérum similaire.';
- if(p.category==='Nettoyant'&&brandOf(p)==='belnco')return'Une étape lavante adaptée manque. Le double nettoyage passe par le rituel (huile puis gel), jamais par deux nettoyants séparés.';
+ if(p.category==='Nettoyant'&&brandOf(p)==='belnco')return'Une étape lavante adaptée manque.'+(doubleCleanse([base],p)?' '+DOUBLE_CLEANSE_LINE:'');
  if(p.category==='Nettoyant')return'Une étape lavante adaptée manque. Le Total Cleanser est privilégié quand un soin ciblé est déjà présent, pour éviter de superposer les exfoliants.';
  if(p.category==='Sérum hydratant')return'Complément d’hydratation quand une crème est déjà présente et que le besoin de confort persiste, sans dupliquer un autre sérum.';
  return'Répond à la priorité « '+labelConcern(profile,base)+' ». Un seul soin ciblé, avec les ingrédients de la fiche et une tolérance à vérifier.'+(bel&&p.id==='bel-retinol'&&profile.retinol==='never'?' Commencer 2 à 3 soirs par semaine.':'');

@@ -47,11 +47,13 @@ describe('BEL.NCO selling rules',()=>{
   expect(ids(recommend(all,get('bel-gel'),acne))[0]).toBe('bel-clarifying');
   expect(ids(recommend(all,get('bel-uv50'),{...dehydrated,skin:'unknown'}))).toContain('bel-moist');
  });
- it('double cleansing goes through the ritual, never two cleansers',()=>{
+ // 2026-11-21 (0008): the ritual left the live catalogue; double cleansing is the oil then the gel, chosen separately.
+ // A ritual pack, when the catalogue has one, is still offered as the cleansers' upgrade.
+ it('double cleansing: the ritual when there is one, and the oil with the gel',()=>{
   for(const id of ['bel-oil','bel-gel'])expect(ids(packUpgrades(all,get(id),dull))).toEqual(['bel-ritual']);
   expect(ids(recommend(all,get('bel-retinol'),dehydrated))).toContain('bel-ritual');
-  expect(ids(recommend(all,get('bel-oil'),dull))).not.toContain('bel-gel');
-  expect(recommend(all,get('bel-retinol'),dehydrated).find(c=>c.product.id==='bel-oil')!.reason).toBe('Une étape lavante adaptée manque. Le double nettoyage passe par le rituel (huile puis gel), jamais par deux nettoyants séparés.');
+  expect(ids(recommend(all,get('bel-oil'),dull))).toContain('bel-gel');
+  expect(recommend(all,get('bel-retinol'),dehydrated).find(c=>c.product.id==='bel-oil')!.reason).toBe('Une étape lavante adaptée manque.');
  });
  it('pregnancy or a minor keep the retinol and the acid serum out of suggestions; a manual add warns',()=>{
   for(const safety of [['pregnancy'],['minor']]){
