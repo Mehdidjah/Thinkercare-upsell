@@ -1,4 +1,5 @@
 import type { ActivityCall } from './analytics.js';
+import { BRANDS, BRAND_LABELS, BRAND_PREFIXES, type Brand } from './brands.js';
 
 /** EcoManager order rules shared by the desk and the API: references, state groups, upsell delivery. */
 
@@ -84,6 +85,32 @@ export function parseOrderReference(raw: string, prefix = 'TOU'): { reference: s
   // One order, one reference: leading zeros typed by mistake (TOU01763816) are the same order as TOU1763816.
   return Number.isSafeInteger(id) && id > 0 ? { reference: prefix + String(id), id } : null;
 }
+
+/** The brand whose full store prefix starts the typed reference (`bel…` is BEL.NCO), or null while none does. */
+export function referenceBrand(raw: string, prefixes: Record<Brand, string> = BRAND_PREFIXES): Brand | null {
+  const value = normalizeOrderReference(raw).replace(/^#+/, '');
+  return BRANDS.find((b) => value.startsWith(prefixes[b])) ?? null;
+}
+
+/** A reference read against the call's brand: a typed prefix names its own store (`TOU…` stays Touché on a BEL.NCO
+ *  call), a number alone takes the call's store prefix. */
+export function parseBrandReference(
+  raw: string,
+  brand: Brand,
+  prefixes: Record<Brand, string> = BRAND_PREFIXES,
+): { reference: string; id: number; brand: Brand } | null {
+  const store = referenceBrand(raw, prefixes) ?? brand;
+  const parsed = parseOrderReference(raw, prefixes[store]);
+  return parsed ? { ...parsed, brand: store } : null;
+}
+
+export const orderReferenceHint = (brand: Brand): string =>
+  brand === 'touche'
+    ? ORDER_REFERENCE_HINT
+    : `Une référence commence par ${BRAND_PREFIXES[brand]} suivie du numéro de commande, par exemple ${BRAND_PREFIXES[brand]}1763838.`;
+
+export const referenceBrandMismatch = (reference: Brand, call: Brand): string =>
+  `Cette référence est une commande ${BRAND_LABELS[reference]} : l’appel est un appel ${BRAND_LABELS[call]}. Changez la marque de l’appel ou corrigez la référence.`;
 
 const ACCEPTED = new Set(['duo', 'trio', 'routine']);
 const GROUPS: OrderStateGroup[] = ['delivered', 'shipping', 'pending', 'failed', 'unknown'];

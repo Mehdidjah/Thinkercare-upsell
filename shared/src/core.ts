@@ -1,6 +1,7 @@
 import {itemsTotal,lineTotal,quantityOf,quantityLabel,sameOrder,unitCount,type WithQuantity} from './quantity.js';
+import type {Brand} from './brands.js';
 export type Ingredient={name:string;inci:string;role:string};
-export type Product={id:string;name:string;short:string;category:string;price:number;image:string;source:string;description:string;concerns:string[];skins:string[];active:boolean;size:string;enabled:boolean;recommendable:boolean;review:string;priceSource?:string;domain?:'face'|'hair'|'body';components?:string[];ingredients?:Ingredient[];inciText?:string;formulaNote?:string;checkedAt?:string;pitch?:string;usage?:string;cautions?:string[];fragrance?:boolean;essentialOils?:boolean;gentle?:boolean;exfoliant?:boolean;verificationRequired?:string};
+export type Product={id:string;name:string;short:string;category:string;price:number;image:string;source:string;description:string;concerns:string[];skins:string[];active:boolean;size:string;enabled:boolean;recommendable:boolean;review:string;priceSource?:string;domain?:'face'|'hair'|'body';components?:string[];ingredients?:Ingredient[];inciText?:string;formulaNote?:string;checkedAt?:string;pitch?:string;usage?:string;cautions?:string[];fragrance?:boolean;essentialOils?:boolean;gentle?:boolean;exfoliant?:boolean;verificationRequired?:string;brand?:Brand;excludes?:string[];photosensitizing?:boolean};
 export type Profile={concerns:string[];skin:string;sensitive:string;routine:string[];routineKnown:boolean;safety:string[];severity:string;marks:string;redState?:string;hairPattern?:string;allergens?:string[];age?:string;scalpProtocol?:boolean;verifiedProducts?:string[]};
 export type Candidate={product:Product;score:number;reason:string};
 export type Tier='catalogue'|'duo'|'final';

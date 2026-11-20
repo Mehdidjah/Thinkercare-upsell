@@ -6,3 +6,4 @@ export * from './cataloguePaths.js';
 export * from './quantity.js';
 export * from './search.js';
 export * from './orders.js';
+export * from './brands.js';
