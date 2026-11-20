@@ -5,11 +5,11 @@ const load=(f:string)=>JSON.parse(readFileSync(new URL('./fixtures/'+f,import.me
 const touche=load('catalogue.json'),bel=load('belnco.json'),all=[...touche,...bel];
 const get=(id:string)=>all.find(p=>p.id===id)!;
 const ids=(r:Candidate[])=>r.map(c=>c.product.id);
-// A BEL.NCO call also asks makeup (question 03) and, with « Rides et fermeté », the retinol: « Ni l’un ni l’autre » keeps the scores as before.
+// A BEL.NCO call also asks makeup (question 03) and, with « Rides et fermeté », « Taches et marques » or « Teint terne », the retinol: « Ni l’un ni l’autre » and « Oui, bien toléré » keep the scores as before.
 const ready={...EMPTY_PROFILE,sensitive:'no',routineKnown:true,routine:[],safety:['none'],makeup:'none'};
 const dehydrated:Profile={...ready,concerns:['dehydration'],skin:'normal'};
 const acne:Profile={...ready,concerns:['acne'],severity:'mild',skin:'mixed'};
-const dull:Profile={...ready,concerns:['dull'],skin:'normal'};
+const dull:Profile={...ready,concerns:['dull'],retinol:'tolerated',skin:'normal'};
 
 describe('BEL.NCO selling rules',()=>{
  it('adds « Rides et fermeté » for both brands; no Touché product claims it',()=>{

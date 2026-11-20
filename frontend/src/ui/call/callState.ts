@@ -1,4 +1,4 @@
-import {BRANDS,EMPTY_PROFILE,MAX_ITEM_QUANTITY,OUTCOMES,basketProblem,brandOf,domainOf,expand,isPack,itemsTotal,manualAddCheck,offerProblem,orderOffer,orderSignature,packUpgrades,pricedTotal,proposalOriginals,questionsReady,quantityOf,recommend,referenceBrand,reviewReason,type Brand,type ItemSnapshot,type OrderItem,type Product,type Profile,type Proposal,type Tier} from '@touche/domain';
+import {BRANDS,EMPTY_PROFILE,MAX_ITEM_QUANTITY,OUTCOMES,asksRetinol,basketProblem,brandOf,domainOf,expand,isPack,itemsTotal,manualAddCheck,offerProblem,orderOffer,orderSignature,packUpgrades,pricedTotal,proposalOriginals,questionsReady,quantityOf,recommend,referenceBrand,reviewReason,type Brand,type ItemSnapshot,type OrderItem,type Product,type Profile,type Proposal,type Tier} from '@touche/domain';
 
 /**
  * The guided call as plain data, and every change to it as a pure function (plain objects in, plain objects out).
@@ -157,10 +157,10 @@ export function changeProfile(d:CallDraft,patch:Partial<Profile>,products:Produc
 
 /** The concern a new pick pushes out (F5): with two already chosen, a third replaces the second. */
 export function replacedConcern(p:Profile,id:string):string|null{return !p.concerns.includes(id)&&p.concerns.length>=2?p.concerns[1]:null;}
-/** One or two concerns: a third replaces the second; follow-up answers go with their concern (BEL.NCO's retinol with « Rides et fermeté »). */
+/** One or two concerns: a third replaces the second; follow-up answers go with their concern (BEL.NCO's retinol with the last priority that asks it). */
 export function concernPatch(p:Profile,id:string):Partial<Profile>{
  const a=p.concerns.includes(id)?p.concerns.filter(x=>x!==id):p.concerns.length<2?[...p.concerns,id]:[p.concerns[0],id];
- return {concerns:a,severity:a.includes('acne')?p.severity:'',marks:a.includes('marks')?p.marks:'',hairPattern:a.includes('fall')?p.hairPattern:'',redState:a.includes('red')?p.redState:'',...(p.retinol&&!a.includes('aging')?{retinol:''}:{})};
+ return {concerns:a,severity:a.includes('acne')?p.severity:'',marks:a.includes('marks')?p.marks:'',hairPattern:a.includes('fall')?p.hairPattern:'',redState:a.includes('red')?p.redState:'',...(p.retinol&&!asksRetinol(a)?{retinol:''}:{})};
 }
 
 // ── Initial order ────────────────────────────────────────────────────────────────────────────────────────────

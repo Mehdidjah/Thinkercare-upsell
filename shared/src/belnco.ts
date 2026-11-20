@@ -23,6 +23,9 @@ export function pairingBonus(base:Product,p:Product):number{
 export const BEL_CONCERNS=[['acne','Boutons et imperfections','Peau à tendance acnéique, imperfections'],['blackheads','Pores et points noirs','Pores visibles, points noirs'],['oil','Brillance','Excès de sébum, zone T'],['aging','Rides et fermeté','Ridules, perte de fermeté'],['marks','Taches et marques','Taches, marques après les boutons'],['red','Rougeurs et sensibilité','Peau réactive, rougeurs légères'],['dehydration','Peau sèche ou déshydratée','Tiraillements, manque de confort'],['dull','Teint terne','Manque d’éclat, teint fatigué']];
 /** The targeted care (Soin ciblé) each BEL.NCO priority puts first, best first. */
 export const BEL_TARGETED:Record<string,string[]>={acne:['bel-clarifying'],blackheads:['bel-clarifying'],oil:['bel-clarifying'],aging:['bel-retinol','bel-pear'],marks:['bel-clarifying','bel-retinol'],red:['bel-spf30'],dull:['bel-pear','bel-retinol'],dehydration:['bel-pear']};
+/** « Avez-vous déjà utilisé du rétinol ? » goes with every priority whose targeted care lists the retinol serum (rides, taches, teint terne), first or second.
+ *  The answer is about the customer, so it holds while any of them stays chosen. */
+export const asksRetinol=(concerns:string[])=>concerns.some(c=>BEL_TARGETED[c]?.includes('bel-retinol'));
 /** The score the first and second targeted care gain: each step is larger than any pairing bonus, so the order holds whatever was ordered. */
 export const TARGETED_BONUS=[70,35];
 /** The cleanser bonus from the makeup answer: daily makeup asks for the double cleansing, a daily sunscreen for the oil. */

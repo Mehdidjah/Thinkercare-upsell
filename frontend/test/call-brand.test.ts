@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_PROFILE, questionsReady, recommend, type Product, type Proposal } from '@touche/domain';
+import { EMPTY_PROFILE, manualAddCheck, missingAnswers, questionsReady, recommend, type Product, type Profile, type Proposal } from '@touche/domain';
 import * as cs from '../src/ui/call/callState';
 const load = (f: string) => JSON.parse(readFileSync(new URL('../../shared/test/fixtures/' + f, import.meta.url), 'utf8')) as Product[];
 const touche = load('catalogue.json'), bel = load('belnco.json'), all = [...touche, ...bel];
@@ -33,6 +33,30 @@ describe('call brand', () => {
     expect(cs.brandFromReference('', 'tou1', 'belnco', ['touche', 'belnco'])).toBe('touche');
     expect(cs.brandFromReference('', 'BEL1', 'touche', ['touche'])).toBeNull();
   });
+  it('a retinol reaction declared with « Rides et fermeté » keeps the serum out once « Teint terne » or « Taches et marques » replaces it', () => {
+    const moist = all.find(p => p.id === 'bel-moist')!, retinol = all.find(p => p.id === 'bel-retinol')!;
+    const ids = (q: Profile) => recommend(all, moist, q).map(c => c.product.id);
+    const pick = (q: Profile, id: string, extra: Partial<Profile> = {}): Profile => ({ ...q, ...cs.concernPatch(q, id), ...extra });
+    const start: Profile = { ...EMPTY_PROFILE, skin: 'mixed', sensitive: 'no', routineKnown: true, routine: [], safety: ['none'], makeup: 'daily' };
+    const reacted = pick(start, 'aging', { retinol: 'irritated' });
+    expect(ids(reacted)).not.toContain('bel-retinol');
+    for (const [next, extra] of [['dull', {}], ['marks', { marks: 'flat' }]] as [string, Partial<Profile>][]) {
+      const q = pick(pick(reacted, next, extra), 'aging');
+      expect(q).toMatchObject({ concerns: [next], retinol: 'irritated' });
+      expect(questionsReady(q, moist), next).toBe(true);
+      expect(ids(q).length, next).toBeGreaterThan(0);
+      expect(ids(q), next).not.toContain('bel-retinol');
+      expect(manualAddCheck(moist, [], retinol, q, all).warnings, next).toContain('Sa peau a déjà réagi au rétinol : à éviter ou avec grande prudence.');
+      // With a first use instead, the same priority does offer the serum: the reaction is what keeps it out.
+      expect(ids({ ...q, retinol: 'never' }), next).toContain('bel-retinol');
+    }
+    // Once no chosen priority asks it, the answer goes; choosing one again asks the question again.
+    const acne = pick(pick(reacted, 'acne', { severity: 'mild' }), 'aging');
+    expect(acne).toMatchObject({ concerns: ['acne'], retinol: '' });
+    const dull = pick(acne, 'dull');
+    expect(questionsReady(dull, moist)).toBe(false);
+    expect(missingAnswers(dull, moist)).toEqual([{ question: '01', label: 'l’usage du rétinol' }]);
+  });
   it('the step-3 picker lists only the call’s brand', () => {
     const t = { ...cs.newDraft({ id: 'c1', now: T }), baseIds: ['antiacne'] };
     const b = { ...cs.newDraft({ id: 'c2', now: T }), brand: 'belnco' as const, baseIds: ['bel-retinol'] };
@@ -43,7 +67,7 @@ describe('call brand', () => {
     const d = cs.newDraft({ id: 'x', now: T, example: 'belnco' });
     expect(d).toMatchObject({ brand: 'belnco', baseIds: ['bel-retinol'], step: 1, demo: true, profileDomain: 'face' });
     expect(d.profile.concerns).toEqual(['dehydration']);
-    // The BEL.NCO questions are answered too (makeup; no retinol question without « Rides et fermeté »), so the example reaches its suggestions.
+    // The BEL.NCO questions are answered too (makeup; no retinol question with « Peau sèche ou déshydratée » alone), so the example reaches its suggestions.
     expect(d.profile).toMatchObject({ makeup: 'daily', retinol: '' });
     expect(questionsReady(d.profile, all.find(p => p.id === 'bel-retinol'))).toBe(true);
     expect(recommend(all, all.find(p => p.id === 'bel-retinol')!, d.profile).slice(0, 2).map(c => c.product.id)).toEqual(['bel-uv50', 'bel-moist']);

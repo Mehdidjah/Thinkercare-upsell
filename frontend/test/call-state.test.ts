@@ -98,11 +98,16 @@ describe('answers (A3)', () => {
     expect(cs.concernPatch({ ...face, concerns: ['acne', 'marks'], marks: 'flat' }, 'dull')).toEqual({ concerns: ['acne', 'dull'], severity: 'mild', marks: '', hairPattern: '', redState: '' });
   });
 
-  it('the BEL.NCO retinol answer goes with « Rides et fermeté », and stays while it is chosen', () => {
+  it('the BEL.NCO retinol answer stays while a priority that asks it is chosen (rides, taches, teint terne), and goes with the last one', () => {
     const aging: Profile = { ...face, concerns: ['aging', 'dull'], severity: '', retinol: 'irritated' };
-    expect(cs.concernPatch(aging, 'aging')).toEqual({ concerns: ['dull'], severity: '', marks: '', hairPattern: '', redState: '', retinol: '' });
+    expect(cs.concernPatch(aging, 'aging')).toEqual({ concerns: ['dull'], severity: '', marks: '', hairPattern: '', redState: '' });
     expect(cs.concernPatch(aging, 'dull')).toEqual({ concerns: ['aging'], severity: '', marks: '', hairPattern: '', redState: '' });
-    expect(cs.concernPatch({ ...aging, concerns: ['aging', 'dull'] }, 'red')).toEqual({ concerns: ['aging', 'red'], severity: '', marks: '', hairPattern: '', redState: '' });
+    expect(cs.concernPatch(aging, 'red')).toEqual({ concerns: ['aging', 'red'], severity: '', marks: '', hairPattern: '', redState: '' });
+    expect(cs.concernPatch({ ...aging, concerns: ['aging', 'red'] }, 'marks')).toEqual({ concerns: ['aging', 'marks'], severity: '', marks: '', hairPattern: '', redState: '' });
+    expect(cs.concernPatch({ ...aging, concerns: ['marks', 'aging'], marks: 'flat' }, 'aging')).toEqual({ concerns: ['marks'], severity: '', marks: 'flat', hairPattern: '', redState: '' });
+    expect(cs.concernPatch({ ...aging, concerns: ['aging', 'red'] }, 'aging')).toEqual({ concerns: ['red'], severity: '', marks: '', hairPattern: '', redState: '', retinol: '' });
+    expect(cs.concernPatch({ ...aging, concerns: ['dull', 'aging'] }, 'acne')).toEqual({ concerns: ['dull', 'acne'], severity: '', marks: '', hairPattern: '', redState: '' });
+    expect(cs.concernPatch({ ...aging, concerns: ['red', 'dull'] }, 'acne')).toEqual({ concerns: ['red', 'acne'], severity: '', marks: '', hairPattern: '', redState: '', retinol: '' });
   });
 
   it('a saved call is read-only', () => {

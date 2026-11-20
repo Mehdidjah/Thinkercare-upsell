@@ -1,6 +1,6 @@
 import {readFileSync} from 'node:fs';
 import {describe,expect,it} from 'vitest';
-import {BEL_CONCERNS,EMPTY_PROFILE,FACE_CONCERNS,concernsFor,manualAddCheck,missingAnswers,questionsReady,recommend,type Candidate,type Product,type Profile} from '../src/index.js';
+import {BEL_CONCERNS,BEL_TARGETED,EMPTY_PROFILE,FACE_CONCERNS,concernsFor,manualAddCheck,missingAnswers,questionsReady,recommend,type Candidate,type Product,type Profile} from '../src/index.js';
 const load=(f:string)=>JSON.parse(readFileSync(new URL('./fixtures/'+f,import.meta.url),'utf8')) as Product[];
 const touche=load('catalogue.json'),bel=load('belnco.json'),all=[...touche,...bel];
 const get=(id:string)=>all.find(p=>p.id===id)!;
@@ -37,7 +37,7 @@ describe('BEL.NCO questionnaire',()=>{
  });
 
  it('BEL.NCO asks makeup (03) and, with « Rides et fermeté », the retinol; routine and safety become 04 and 05',()=>{
-  const moist=get('bel-moist'),ready={...answered,concerns:['dull']};
+  const moist=get('bel-moist'),ready={...answered,concerns:['dehydration']};
   expect(labels(EMPTY_PROFILE,moist)).toEqual(['01 la priorité de la cliente','02 le type de peau','02 la sensibilité habituelle','03 le maquillage et la protection solaire','04 les soins déjà utilisés','05 les précautions utiles']);
   expect(questionsReady(ready,moist)).toBe(true);
   expect(missingAnswers(ready,moist)).toEqual([]);
@@ -54,10 +54,43 @@ describe('BEL.NCO questionnaire',()=>{
   expect(labels({...EMPTY_PROFILE,concerns:['aging','red','marks','acne'],safety:['minor','allergy']},moist)).toEqual(BEL_ORDER.filter(l=>l!=='01 la priorité de la cliente'&&l!=='05 les précautions utiles'));
  });
 
+ it('the retinol answer is asked and required with every priority that can bring the retinol serum: « Rides et fermeté », « Taches et marques », « Teint terne »',()=>{
+  const moist=get('bel-moist'),RETINOL={question:'01',label:'l’usage du rétinol'};
+  const followed=(concerns:string[]):Profile=>({...answered,concerns,severity:'mild',marks:'flat',redState:'mild'});
+  const asks=(id:string)=>missingAnswers(followed([id]),moist).some(m=>m.label===RETINOL.label);
+  const asked=BEL_CONCERNS.map(c=>c[0]).filter(asks);
+  expect(asked).toEqual(['aging','marks','dull']);
+  // The question covers every way the retinol serum is suggested: the targeted care of a priority, or the serum’s own concerns.
+  expect(BEL_CONCERNS.map(c=>c[0]).filter(c=>BEL_TARGETED[c]?.includes('bel-retinol'))).toEqual(asked);
+  for(const c of get('bel-retinol').concerns)expect(asked,c).toContain(c);
+  for(const [id] of BEL_CONCERNS)for(const concerns of [[id],['dehydration',id],[id,'dehydration']].filter(c=>new Set(c).size===c.length)){
+   const asking=asked.includes(id);
+   expect(questionsReady(followed(concerns),moist),concerns.join('+')).toBe(!asking);
+   expect(missingAnswers(followed(concerns),moist),concerns.join('+')).toEqual(asking?[RETINOL]:[]);
+   expect(questionsReady({...followed(concerns),retinol:'never'},moist),concerns.join('+')).toBe(true);
+  }
+ });
+
+ it('« Ma peau a réagi » keeps the retinol serum out whichever priority asked it, and a manual add warns',()=>{
+  const moist=get('bel-moist'),daily:Profile={...answered,makeup:'daily'};
+  for(const patch of [{concerns:['aging']},{concerns:['marks'],marks:'flat'},{concerns:['dull']},{concerns:['dehydration','dull']}] as Partial<Profile>[]){
+   const label=patch.concerns!.join('+');
+   // Not vacuous: with a first use the serum is offered for this priority, or at least the call reaches its suggestions.
+   expect(recommend(all,moist,{...daily,...patch,retinol:'never'}).length,label).toBeGreaterThan(0);
+   if(patch.concerns![0]!=='dehydration')expect(ids(recommend(all,moist,{...daily,...patch,retinol:'never'})),label).toContain('bel-retinol');
+   const irritated={...daily,...patch,retinol:'irritated'};
+   expect(recommend(all,moist,irritated).length,label).toBeGreaterThan(0);
+   expect(ids(recommend(all,moist,irritated)),label).not.toContain('bel-retinol');
+   expect(manualAddCheck(moist,[],get('bel-retinol'),irritated,all).warnings,label).toContain(IRRITATED);
+   // Without the answer the call doesn't reach its suggestions: the retinol serum is never offered unasked.
+   expect(recommend(all,moist,{...daily,...patch,retinol:''}),label).toEqual([]);
+  }
+ });
+
  it('invariant over a generated grid: questionsReady ⇔ nothing missing, in screen order (BEL.NCO base)',()=>{
   const subsets=<T,>(xs:T[]):T[][]=>xs.reduce<T[][]>((acc,x)=>acc.concat(acc.map(s=>[...s,x])),[[]]);
   let count=0,readyCount=0;
-  for(const concerns of subsets(['acne','aging','red']))for(const order of [concerns,[...concerns].reverse()])
+  for(const concerns of subsets(['acne','aging','red','dull']))for(const order of [concerns,[...concerns].reverse()])
   for(const skin of ['','mixed'])for(const sensitive of ['','no'])for(const routineKnown of [true,false])
   for(const safety of [[],['none'],['allergy','minor']])for(const severity of ['','mild'])for(const redState of ['','mild'])
   for(const makeup of [undefined,'','spf'])for(const retinol of [undefined,'','never'])for(const allergens of [[],['fragrance']])for(const age of ['','teen']){
@@ -91,7 +124,7 @@ describe('BEL.NCO questionnaire',()=>{
 
 describe('BEL.NCO suggestions from the answers',()=>{
  it('« Maquillage tous les jours »: the oil and the ritual gain 40 on the cleanser step and say why; « Crème solaire seulement »: the oil gains 20',()=>{
-  const at=(makeup:string)=>new Map(recommend(all,get('bel-moist'),{...answered,concerns:['dull'],makeup}).map(c=>[c.product.id,c]));
+  const at=(makeup:string)=>new Map(recommend(all,get('bel-moist'),{...answered,concerns:['dull'],retinol:'tolerated',makeup}).map(c=>[c.product.id,c]));
   const none=at('none'),daily=at('daily'),spf=at('spf');
   const gain=(m:Map<string,Candidate>,id:string)=>m.get(id)!.score-none.get(id)!.score;
   expect([gain(daily,'bel-oil'),gain(daily,'bel-ritual'),gain(daily,'bel-gel')]).toEqual([40,40,0]);
@@ -112,9 +145,9 @@ describe('BEL.NCO suggestions from the answers',()=>{
    ['aging, never',{concerns:['aging'],retinol:'never'},['bel-retinol','bel-pear']],
    ['aging, tolerated',{concerns:['aging'],retinol:'tolerated'},['bel-retinol','bel-pear']],
    ['aging, irritated',{concerns:['aging'],retinol:'irritated'},['bel-pear']],
-   ['marks',{concerns:['marks'],marks:'flat'},['bel-clarifying','bel-retinol']],
+   ['marks',{concerns:['marks'],marks:'flat',retinol:'tolerated'},['bel-clarifying','bel-retinol']],
    ['red',{concerns:['red'],redState:'mild'},['bel-spf30']],
-   ['dull',{concerns:['dull']},['bel-pear','bel-retinol']],
+   ['dull',{concerns:['dull'],retinol:'tolerated'},['bel-pear','bel-retinol']],
    ['dehydration',{concerns:['dehydration']},['bel-pear']],
   ];
   for(const base of ['bel-oil','bel-gel','bel-moist','bel-uv50','bel-ritual'])for(const [label,patch,first] of cases){
@@ -141,7 +174,7 @@ describe('BEL.NCO suggestions from the answers',()=>{
   expect(reason('tolerated')).toBe('Répond à la priorité « rides et fermeté ». Un seul soin ciblé, avec les ingrédients de la fiche et une tolérance à vérifier.');
   // The line names the BEL.NCO answer the customer gave.
   expect(recommend(all,get('bel-moist'),{...answered,concerns:['acne'],severity:'mild'}).find(c=>c.product.id==='bel-clarifying')!.reason).toBe('Répond à la priorité « boutons et imperfections ». Un seul soin ciblé, avec les ingrédients de la fiche et une tolérance à vérifier.');
-  expect(recommend(all,get('bel-gel'),{...answered,concerns:['marks'],marks:'flat'}).find(c=>c.product.id==='bel-clarifying')!.reason).toBe('Répond à la priorité « taches et marques ». Un seul soin ciblé, avec les ingrédients de la fiche et une tolérance à vérifier.');
+  expect(recommend(all,get('bel-gel'),{...answered,concerns:['marks'],marks:'flat',retinol:'tolerated'}).find(c=>c.product.id==='bel-clarifying')!.reason).toBe('Répond à la priorité « taches et marques ». Un seul soin ciblé, avec les ingrédients de la fiche et une tolérance à vérifier.');
  });
 
  it('a declared allergy covers the BEL.NCO rows: no BEL.NCO row publishes its INCI list, so every one stays out',()=>{
@@ -149,7 +182,7 @@ describe('BEL.NCO suggestions from the answers',()=>{
   expect(bel.filter(p=>p.fragrance).map(p=>p.id)).toEqual(['bel-oil','bel-gel','bel-retinol','bel-ritual']);
   expect(bel.filter(p=>p.essentialOils).map(p=>p.id)).toEqual(['bel-clarifying']);
   expect(bel.every(p=>!p.inciText)).toBe(true);
-  const allergy=(allergens:string[]):Profile=>({...answered,concerns:['dull'],safety:['allergy'],allergens});
+  const allergy=(allergens:string[]):Profile=>({...answered,concerns:['dull'],retinol:'tolerated',safety:['allergy'],allergens});
   for(const allergens of [['fragrance'],['essential'],['mi'],['nuts'],['salicylates']]){
    for(const base of ['bel-oil','bel-gel','bel-moist','bel-uv50','bel-ritual'])expect(recommend(all,get(base),allergy(allergens)),base+' '+allergens).toEqual([]);
    for(const p of bel.filter(p=>p.enabled&&p.id!=='bel-moist'))expect(manualAddCheck(get('bel-moist'),[],p,allergy(allergens),all).blocked,p.id+' '+allergens).toBe('Allergie déclarée : ingrédient à risque ou liste INCI non publiée.');

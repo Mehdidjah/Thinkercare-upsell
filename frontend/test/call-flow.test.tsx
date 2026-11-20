@@ -237,7 +237,7 @@ describe('questions (F5, E6)', () => {
   const PRECAUTIONS = '05 | 5 | Les précautions utiles | Y a-t-il une réaction actuelle, une allergie connue, un traitement ou une situation particulière à prendre en compte ?';
   const bel = { brand: 'belnco', base: belnco.find(x => x.id === 'bel-moist')!, products: [...catalogue, ...belnco] } as Partial<CallModel>;
 
-  it('a BEL.NCO call asks its own priorities, the retinol after « Rides et fermeté », and makeup as question 03', () => {
+  it('a BEL.NCO call asks its own priorities, the retinol after « Rides et fermeté », « Taches et marques » or « Teint terne », and makeup as question 03', () => {
     const html = render(<StepNeeds/>, { ...bel, step: 1, profile: { ...face, concerns: ['aging'], severity: '', makeup: 'daily' } });
     expect(concerns(html)).toEqual(['Boutons et imperfections · Peau à tendance acnéique, imperfections', 'Pores et points noirs · Pores visibles, points noirs', 'Brillance · Excès de sébum, zone T', 'Rides et fermeté · Ridules, perte de fermeté', 'Taches et marques · Taches, marques après les boutons', 'Rougeurs et sensibilité · Peau réactive, rougeurs légères', 'Peau sèche ou déshydratée · Tiraillements, manque de confort', 'Teint terne · Manque d’éclat, teint fatigué']);
     expect(html).toContain('<legend class="choice-group__legend">Avez-vous déjà utilisé du rétinol ?</legend>');
@@ -252,10 +252,11 @@ describe('questions (F5, E6)', () => {
     expect(radios(html, 'makeup')).toEqual(['daily Maquillage tous les jours', 'spf Crème solaire seulement', 'none Ni l’un ni l’autre']);
     expect(html).toContain('type="radio" name="makeup" checked="" value="daily"');
     expect(html).toContain('<legend class="sr-only">Maquillage et protection solaire</legend>');
-    // The retinol question follows « Rides et fermeté »; every « Répondez à » link points to a question on screen.
-    expect(render(<StepNeeds/>, { ...bel, step: 1, profile: { ...face, concerns: ['dull'] } })).not.toContain('name="retinol"');
+    // The retinol question follows every priority that can bring the retinol serum, once; every « Répondez à » link points to a question on screen.
+    for (const concerns of [['dull'], ['marks'], ['acne', 'dull'], ['marks', 'aging']]) expect((render(<StepNeeds/>, { ...bel, step: 1, profile: { ...face, concerns } }).match(/<legend class="choice-group__legend">Avez-vous déjà utilisé du rétinol \?<\/legend>/g) || []).length, concerns.join('+')).toBe(1);
+    for (const concerns of [['acne'], ['blackheads'], ['oil'], ['red'], ['dehydration'], ['acne', 'red']]) expect(render(<StepNeeds/>, { ...bel, step: 1, profile: { ...face, concerns } }), concerns.join('+')).not.toContain('name="retinol"');
     const empty = render(<StepNeeds/>, { ...bel, step: 1, profile: EMPTY_PROFILE });
-    for (const m of missingAnswers({ ...EMPTY_PROFILE, concerns: ['aging'], safety: ['allergy', 'minor'] }, bel.base)) expect(empty, m.label).toContain(`id="question-${m.question}"`);
+    for (const concerns of [['aging'], ['dull'], ['marks']]) for (const m of missingAnswers({ ...EMPTY_PROFILE, concerns, safety: ['allergy', 'minor'] }, bel.base)) expect(empty, m.label).toContain(`id="question-${m.question}"`);
   });
 
   it('a Touché call keeps its four questions and priorities, without makeup or retinol', () => {

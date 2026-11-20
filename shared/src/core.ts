@@ -1,6 +1,6 @@
 import {itemsTotal,lineTotal,quantityOf,quantityLabel,sameOrder,unitCount,type WithQuantity} from './quantity.js';
 import {BRAND_LABELS,brandOf,type Brand} from './brands.js';
-import {BEL_CONCERNS,BEL_TARGETED,TARGETED_BONUS,makeupBonus,pairingBonus} from './belnco.js';
+import {BEL_CONCERNS,BEL_TARGETED,TARGETED_BONUS,asksRetinol,makeupBonus,pairingBonus} from './belnco.js';
 export type Ingredient={name:string;inci:string;role:string};
 export type Product={id:string;name:string;short:string;category:string;price:number;image:string;source:string;description:string;concerns:string[];skins:string[];active:boolean;size:string;enabled:boolean;recommendable:boolean;review:string;priceSource?:string;domain?:'face'|'hair'|'body';components?:string[];ingredients?:Ingredient[];inciText?:string;formulaNote?:string;checkedAt?:string;pitch?:string;usage?:string;cautions?:string[];fragrance?:boolean;essentialOils?:boolean;gentle?:boolean;exfoliant?:boolean;verificationRequired?:string;brand?:Brand;excludes?:string[];photosensitizing?:boolean};
 export type Profile={concerns:string[];skin:string;sensitive:string;routine:string[];routineKnown:boolean;safety:string[];severity:string;marks:string;redState?:string;hairPattern?:string;allergens?:string[];age?:string;scalpProtocol?:boolean;verifiedProducts?:string[];makeup?:string;retinol?:string};
@@ -129,7 +129,7 @@ export function packDuplicate(items:Product[],catalogue:Product[]):{pack:Product
  return null;
 }
 export function questionsReady(p:Profile,base?:Product):boolean{
- return p.concerns.length>0&&!!p.skin&&!!p.sensitive&&p.routineKnown&&p.safety.length>0&&(!p.concerns.includes('acne')||!!p.severity)&&(!p.concerns.includes('marks')||!!p.marks)&&(!p.concerns.includes('red')||!!p.redState)&&(!p.concerns.includes('fall')||!!p.hairPattern)&&(!p.safety.includes('allergy')||!!p.allergens?.length)&&(!p.safety.includes('minor')||!!p.age)&&(brandOf(base)!=='belnco'||(!!p.makeup&&(!p.concerns.includes('aging')||!!p.retinol)));
+ return p.concerns.length>0&&!!p.skin&&!!p.sensitive&&p.routineKnown&&p.safety.length>0&&(!p.concerns.includes('acne')||!!p.severity)&&(!p.concerns.includes('marks')||!!p.marks)&&(!p.concerns.includes('red')||!!p.redState)&&(!p.concerns.includes('fall')||!!p.hairPattern)&&(!p.safety.includes('allergy')||!!p.allergens?.length)&&(!p.safety.includes('minor')||!!p.age)&&(brandOf(base)!=='belnco'||(!!p.makeup&&(!asksRetinol(p.concerns)||!!p.retinol)));
 }
 export type MissingAnswer={question:'01'|'02'|'03'|'04'|'05';label:string};
 // The answers questionsReady still waits for, in screen order. Empty exactly when questionsReady is true.
@@ -140,7 +140,7 @@ export function missingAnswers(p:Profile,base?:Product):MissingAnswer[]{
  if(p.concerns.includes('acne')&&!p.severity)m.push({question:'01',label:'le type de boutons'});
  if(p.concerns.includes('marks')&&!p.marks)m.push({question:'01',label:'le type de marque'});
  if(p.concerns.includes('red')&&!p.redState)m.push({question:'01',label:'le type de rougeurs'});
- if(bel&&p.concerns.includes('aging')&&!p.retinol)m.push({question:'01',label:'l’usage du rétinol'});
+ if(bel&&asksRetinol(p.concerns)&&!p.retinol)m.push({question:'01',label:'l’usage du rétinol'});
  if(p.concerns.includes('fall')&&!p.hairPattern)m.push({question:'01',label:'le type de chute'});
  if(!p.skin)m.push({question:'02',label:hair?'le profil capillaire':'le type de peau'});
  if(!p.sensitive)m.push({question:'02',label:hair?'la sensibilité du cuir chevelu':'la sensibilité habituelle'});

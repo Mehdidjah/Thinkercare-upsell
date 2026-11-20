@@ -1,5 +1,5 @@
 import {Fragment} from 'react';
-import {SKINS,HAIR_TYPES,SIGNALS,ALLERGENS,CONCERNS,questionsReady,concernsFor,routinesFor,brandOf} from '@touche/domain';
+import {SKINS,HAIR_TYPES,SIGNALS,ALLERGENS,CONCERNS,asksRetinol,questionsReady,concernsFor,routinesFor,brandOf} from '@touche/domain';
 import {Icon} from '../shared/Icon';
 import {ChoiceGroup} from '../shared/ChoiceGroup';
 import {useCall} from './callModel';
@@ -21,9 +21,9 @@ const NO_ROUTINE='none';
 /** Step 02 · Besoin de la cliente: the questionnaire. Single choices are radio groups, multiple choices checkboxes that say
  *  so; choosing an exclusive answer says what it cleared (F5). Re-tapping an answer changes nothing; a real change keeps the
  *  additions still allowed (A3). A targeted stop opens the check at once, whatever is left unanswered (MEDREADY).
- *  A BEL.NCO call has its own priorities, the retinol after « Rides et fermeté » and makeup as question 03 (routine 04,
- *  safety 05, as missingAnswers numbers them). A priority it doesn't offer, kept from a Touché call, stays shown so it can
- *  be removed. Read-only once the outcome is saved. */
+ *  A BEL.NCO call has its own priorities, the retinol after « Rides et fermeté », « Taches et marques » or « Teint terne »,
+ *  and makeup as question 03 (routine 04, safety 05, as missingAnswers numbers them). A priority it doesn't offer, kept from
+ *  a Touché call, stays shown so it can be removed. Read-only once the outcome is saved. */
 export function StepNeeds(){const {toStep,saved,base,domain,profile,changeProfile,toggleConcern,blocked,stop,notes,missing}=useCall();
  const hair=domain==='hair',bel=brandOf(base)==='belnco',ready=questionsReady(profile,base);
  const offered=concernsFor(base),concerns=bel?[...offered,...CONCERNS.filter(c=>profile.concerns.includes(c[0])&&!offered.some(o=>o[0]===c[0]))]:offered;
@@ -34,7 +34,7 @@ export function StepNeeds(){const {toStep,saved,base,domain,profile,changeProfil
    {profile.concerns.includes('acne')&&<div className="call-followup"><ChoiceGroup kind="single" name="severity" legend="Quels boutons ?" options={options(SEVERITY)} value={profile.severity} disabled={saved} onChange={v=>changeProfile({severity:v})}/></div>}
    {profile.concerns.includes('marks')&&<div className="call-followup"><ChoiceGroup kind="single" name="marks" legend="Quelle marque ?" options={options(MARKS)} value={profile.marks} disabled={saved} onChange={v=>changeProfile({marks:v})}/></div>}
    {profile.concerns.includes('red')&&<div className="call-followup"><ChoiceGroup kind="single" name="red-state" legend="Rougeurs légères ou réaction active ?" options={options(REDNESS)} value={profile.redState||''} disabled={saved} onChange={v=>changeProfile({redState:v})}/></div>}
-   {bel&&profile.concerns.includes('aging')&&<div className="call-followup"><ChoiceGroup kind="single" name="retinol" legend="Avez-vous déjà utilisé du rétinol ?" options={options(RETINOL)} value={profile.retinol||''} disabled={saved} onChange={v=>changeProfile({retinol:v})}/></div>}
+   {bel&&asksRetinol(profile.concerns)&&<div className="call-followup"><ChoiceGroup kind="single" name="retinol" legend="Avez-vous déjà utilisé du rétinol ?" options={options(RETINOL)} value={profile.retinol||''} disabled={saved} onChange={v=>changeProfile({retinol:v})}/></div>}
    {profile.concerns.includes('fall')&&<div className="call-followup"><p className="call-say">« Les cheveux cassent-ils sur les longueurs, ou tombent-ils à la racine ? Est-ce soudain ou par plaques ? »</p><ChoiceGroup kind="single" name="hair-pattern" legend="Préciser la chute" options={options(FALL)} value={profile.hairPattern||''} disabled={saved} onChange={v=>changeProfile({hairPattern:v})}/></div>}
   </Question>
   <Question n="02" title={hair?'Le profil capillaire':'La peau, au quotidien'} phrase={hair?"Vos racines sont-elles grasses ? Vos longueurs sont-elles sèches ou cassantes ?":"Votre peau brille-t-elle, tiraille-t-elle, ou les deux selon les zones ?"}>
