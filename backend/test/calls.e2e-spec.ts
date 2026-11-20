@@ -843,7 +843,7 @@ describe('hair-pack products chosen separately', () => {
 
   it('tells a tab opened before this rule to reload the page: reloading its catalogue would not change its amount', async () => {
     const body = present({ ...pair, tier: 'duo', agreedTotal: 3300, expectedUserId: linaUser.id });
-    for (const pricing of [null, 'list-price']) {
+    for (const pricing of [null, 'list-price', 'hair-pack-sets']) {
       const res = await deskPost(ctx, body, { cookie: lina, pricing });
       expect(res.status).toBe(409);
       expect(res.body).toEqual({

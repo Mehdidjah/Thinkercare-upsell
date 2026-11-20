@@ -48,8 +48,8 @@ describe('requests (X5, B2, X1)', () => {
     const fetch = vi.fn(async (_url: string, _init: RequestInit) => reply({ ok: true }));
     vi.stubGlobal('fetch', fetch);
     await requestJson('', { action: 'present-offer' });
-    expect(fetch.mock.calls.at(-1)![1].headers).toStrictEqual({ 'Content-Type': 'application/json', 'X-Desk-Pricing': 'hair-pack-sets' });
-    expect(PRICING_RULE).toBe('hair-pack-sets');
+    expect(fetch.mock.calls.at(-1)![1].headers).toStrictEqual({ 'Content-Type': 'application/json', 'X-Desk-Pricing': 'pack-sets' });
+    expect(PRICING_RULE).toBe('pack-sets');
   });
 
   it('« account-changed » tells the app, and a locked tab sends nothing more', async () => {

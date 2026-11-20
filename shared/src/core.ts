@@ -43,22 +43,22 @@ export function physicalCount(basket:OrderItem[],catalogue:Product[]):number{ret
  * rules change: a tab opened before cannot fix its amounts by reloading the catalogue, so the server tells it to reload
  * the page instead.
  */
-export const PRICING_RULE='hair-pack-sets';
+export const PRICING_RULE='pack-sets';
 /** An order line, live or frozen in a snapshot: enough to price it. */
 export type PricedLine=WithQuantity&{id:string;price:number;category?:string};
 export type HairPackSet={pack:Product;count:number};
 /**
- * A hair pack whose price applies to its components chosen one by one (body duo and Junior excluded): at least two of
- * them, and the pack cheaper than they are at list price, so the pack price is always a saving. An invalid pack price
- * stays eligible, for basketOffer to refuse it.
+ * A hair pack or a BEL.NCO pack (the double cleansing ritual) whose price applies to its components chosen one by one
+ * (Touché body duo and Junior excluded): at least two of them, and the pack cheaper than they are at list price, so the
+ * pack price is always a saving. An invalid pack price stays eligible, for basketOffer to refuse it.
  */
 const pairPack=(p:Product,catalogue:Product[])=>{
- if(!isPack(p)||p.domain!=='hair'||(p.components?.length??0)<2)return false;
+ if(!isPack(p)||!(p.domain==='hair'||brandOf(p)==='belnco')||(p.components?.length??0)<2)return false;
  const sum=p.components!.reduce((s,id)=>s+(catalogue.find(x=>x.id===id)?.price??Number.NaN),0);
  return !Number.isSafeInteger(p.price)||p.price<sum;
 };
 /**
- * Pricing only: separate lines covering every component of a hair pack cost that pack, at its current catalogue price.
+ * Pricing only: separate lines covering every component of a set-priced pack (pairPack) cost that pack, at its price.
  * Greedy in catalogue order; only non-pack lines count as components; sets = smallest component quantity. `rest` holds
  * the lines left once the units used by the sets are removed. The recorded products stay the separate products.
  */
@@ -321,7 +321,7 @@ export function summaryText(base:Product,basket:OrderItem[],tier:Tier,delivery:n
  const packRates=sets.map(({pack,count})=>`\nTarif pack appliqué : ${expand(pack,catalogue).map(p=>p.name).join(' + ')} = ${money(pack.price)}${count>1?` × ${count} = ${money(pack.price*count)}`:''}.`).join('');
  const fee=delivery===null?'Frais de livraison à confirmer.':`Livraison : ${money(delivery)}. Total avec livraison : ${money(offer+delivery)}.`;
  const replacement=`Commande initiale : ${initial.map(quantityLabel).join(' + ')} (${money(baseTotal)}).${basket[0]?.id!==base.id?' Remplacement par le pack ci-dessous, sans double facturation.':''}\n`;
- return `TOUCHÉ | Récapitulatif de l’offre\n${replacement}${basket.map(p=>`• ${quantityLabel(p)} : ${money(lineTotal(p))}${quantityOf(p)>1?` (${money(p.price)} / unité)`:""}`).join('\n')}${packRates}\n\nTotal catalogue : ${money(total)}\nOffre produits : ${money(offer)}\nÉconomie : ${money(total-offer)}\nÉcart avec la commande initiale : ${money(offer-baseTotal)}\n${fee}\n${pack?'Tarif pack conservé, réduction uniquement sur les compléments éligibles. ':''}Offre liée à la commande en cours, sans cumul de remises. À valider avec la cliente. Aucun système de commande externe modifié.`;
+ return `${BRAND_LABELS[brandOf(base)].toUpperCase()} | Récapitulatif de l’offre\n${replacement}${basket.map(p=>`• ${quantityLabel(p)} : ${money(lineTotal(p))}${quantityOf(p)>1?` (${money(p.price)} / unité)`:""}`).join('\n')}${packRates}\n\nTotal catalogue : ${money(total)}\nOffre produits : ${money(offer)}\nÉconomie : ${money(total-offer)}\nÉcart avec la commande initiale : ${money(offer-baseTotal)}\n${fee}\n${pack?'Tarif pack conservé, réduction uniquement sur les compléments éligibles. ':''}Offre liée à la commande en cours, sans cumul de remises. À valider avec la cliente. Aucun système de commande externe modifié.`;
 }
 export function goalPhrase(p:Profile):string{
  const goals:Record<string,string>={acne:'mieux prendre soin de vos petites imperfections',blackheads:'cibler les points noirs sans surcharger votre routine',oil:'limiter l’apparence de la brillance',marks:'améliorer l’apparence des marques brunes',red:'retrouver davantage de confort',dry:'réduire les sensations de tiraillement',dehydration:'mieux hydrater votre peau',dull:'retrouver un teint plus lumineux',aging:'prendre soin des ridules et de la fermeté de votre peau',scars:'améliorer l’aspect de votre peau sans promesse sur le relief des cicatrices',growth:'prendre soin de vos longueurs',breakage:'faciliter le démêlage et limiter la casse',fall:'mieux accompagner votre routine capillaire',hairdry:'retrouver des longueurs plus souples',scalpoil:'adapter le lavage à vos racines grasses',flakes:'adapter votre routine aux pellicules',scalpcomfort:'préserver le confort de votre cuir chevelu',bodyspots:'prendre soin des imperfections de votre corps',bodydry:'retrouver davantage de confort sur votre corps'};
