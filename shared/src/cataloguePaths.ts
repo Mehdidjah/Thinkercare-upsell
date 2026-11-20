@@ -1,4 +1,6 @@
-import {domainOf,isPack,type Product} from './core.js';
+import {domainOf,excludesEachOther,isPack,NIGHT_ONLY,type Product} from './core.js';
+import {BEL_PATHS} from './belnco.js';
+import {brandOf} from './brands.js';
 export type CataloguePath={purpose:string;questions:string[];complements:string[];checks:string[];mode:string};
 // Every reference has a documented entry route. A missing formula is never fabricated.
 export function cataloguePath(p:Product,all:Product[]):CataloguePath{
@@ -14,11 +16,15 @@ export function cataloguePath(p:Product,all:Product[]):CataloguePath{
   ids=p.category==='Après-shampoing'?['shpousse','shanti']:p.category==='Soin cuir chevelu'?['shanti','shpousse','conditioner']:['conditioner','serumhair'];
   if(isPack(p))ids=['conditioner','shpousse','shanti','serumhair'];
  }else {ids=['bodywash','nia10','bodypack'];questions.push('Une routine visage ne doit pas être transposée au corps sans indication adaptée.');}
+ const bel=brandOf(p)==='belnco';if(bel)ids=[...(BEL_PATHS[p.id]??[])];
  const components=new Set([p.id,...(p.components||[])]);ids=ids.filter(id=>!components.has(id)&&all.some(x=>x.id===id&&x.enabled));
  if(p.verificationRequired)checks.push(p.verificationRequired);
  if(p.id==='sal10')checks.push('Ne pas proposer du salicylique 10 % comme alternative automatique au 2 %. L’usage exact, la zone et le protocole doivent être vérifiés en interne.');
  if(isPack(p)&&!p.components?.length)checks.push('Le contenu exact et l’âge autorisé de ce pack doivent être renseignés avant d’ajouter une autre référence. Ne pas improviser les composants.');
  if(p.id==='spray')checks.push('Suivre l’étiquette. Ne pas pulvériser directement au visage ni inhaler.');
+ if(bel&&p.photosensitizing)checks.push(NIGHT_ONLY+'.');
+ const never=bel?all.filter(x=>x.id!==p.id&&excludesEachOther(p,x)).map(x=>x.short):[];
+ if(never.length)checks.push(`Jamais avec ${never.join(' ni ')} dans la même routine.`);
  if(p.id==='packjunior')ids=[];
  return{purpose:p.pitch||p.description,questions,complements:ids,checks,mode:checks.length?'Parcours avec vérification ciblée':'Parcours automatique contextuel'};
 }

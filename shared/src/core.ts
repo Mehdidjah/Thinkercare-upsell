@@ -1,12 +1,13 @@
 import {itemsTotal,lineTotal,quantityOf,quantityLabel,sameOrder,unitCount,type WithQuantity} from './quantity.js';
 import {BRAND_LABELS,brandOf,type Brand} from './brands.js';
+import {pairingBonus} from './belnco.js';
 export type Ingredient={name:string;inci:string;role:string};
 export type Product={id:string;name:string;short:string;category:string;price:number;image:string;source:string;description:string;concerns:string[];skins:string[];active:boolean;size:string;enabled:boolean;recommendable:boolean;review:string;priceSource?:string;domain?:'face'|'hair'|'body';components?:string[];ingredients?:Ingredient[];inciText?:string;formulaNote?:string;checkedAt?:string;pitch?:string;usage?:string;cautions?:string[];fragrance?:boolean;essentialOils?:boolean;gentle?:boolean;exfoliant?:boolean;verificationRequired?:string;brand?:Brand;excludes?:string[];photosensitizing?:boolean};
 export type Profile={concerns:string[];skin:string;sensitive:string;routine:string[];routineKnown:boolean;safety:string[];severity:string;marks:string;redState?:string;hairPattern?:string;allergens?:string[];age?:string;scalpProtocol?:boolean;verifiedProducts?:string[]};
 export type Candidate={product:Product;score:number;reason:string};
 export type Tier='catalogue'|'duo'|'final';
 export type OrderItem=Product&WithQuantity;
-export const FACE_CONCERNS=[['acne','Boutons','Imperfections légères ou occasionnelles'],['blackheads','Points noirs','Pores obstrués et comédons'],['oil','Brillance','Excès de sébum'],['marks','Marques brunes','Traces de couleur après les boutons'],['red','Rougeurs légères','Hors brûlure, gonflement ou douleur'],['dry','Tiraillements','Peau sèche, inconfort quotidien'],['dehydration','Déshydratation','Manque de confort hydrique'],['dull','Teint terne','Manque d’éclat'],['scars','Cicatrices en relief','Distinguer cicatrice et simple marque']];
+export const FACE_CONCERNS=[['acne','Boutons','Imperfections légères ou occasionnelles'],['blackheads','Points noirs','Pores obstrués et comédons'],['oil','Brillance','Excès de sébum'],['marks','Marques brunes','Traces de couleur après les boutons'],['red','Rougeurs légères','Hors brûlure, gonflement ou douleur'],['dry','Tiraillements','Peau sèche, inconfort quotidien'],['dehydration','Déshydratation','Manque de confort hydrique'],['dull','Teint terne','Manque d’éclat'],['aging','Rides et fermeté','Ridules, fermeté, éclat qui baisse'],['scars','Cicatrices en relief','Distinguer cicatrice et simple marque']];
 export const HAIR_CONCERNS=[['growth','Longueurs / pousse','Objectif de longueur et aspect des cheveux'],['breakage','Casse et démêlage','Cheveux cassants, pointes et nœuds'],['fall','Chute de cheveux','Distinguer perte à la racine et casse'],['hairdry','Longueurs sèches','Manque de souplesse, frisottis'],['scalpoil','Racines grasses','Besoin d’une étape lavante adaptée'],['flakes','Pellicules','Ne pas les assimiler au psoriasis'],['scalpcomfort','Confort du cuir chevelu','Sensibilité légère, hors lésion ou brûlure']];
 export const BODY_CONCERNS=[['bodyspots','Imperfections du corps','Dos, épaules ou torse : préciser la zone'],['bodydry','Sécheresse corporelle','Besoin de confort et d’hydratation']];
 export const CONCERNS=[...FACE_CONCERNS,...HAIR_CONCERNS,...BODY_CONCERNS];
@@ -176,6 +177,9 @@ export function safetyNotes(p:Profile):string[]{
  return n;
 }
 export function group(p:Product){return p.category==='Sérum hydratant'?'Soin ciblé':p.category;}
+/** Shown beside a product that makes the skin more sensitive to the sun (an evening serum). */
+export const NIGHT_ONLY='Soir uniquement / SPF le lendemain matin';
+export const productTags=(p:Product):string[]=>p.photosensitizing?[NIGHT_ONLY]:[];
 function restricted(p:Profile){return p.sensitive!=='no'||p.concerns.includes('red')||p.concerns.includes('scalpcomfort')||p.safety.some(s=>['treatment','pregnancy','minor','unknown'].includes(s))||p.concerns.includes('scars')||p.marks==='relief'||p.marks==='unknown';}
 function ingredientRisk(p:Product,profile:Profile):boolean{
  const a=profile.allergens||[];const inci=(p.inciText||'').toLowerCase();
@@ -188,7 +192,8 @@ function ingredientRisk(p:Product,profile:Profile):boolean{
  if(a.includes('salicylates')&&/salicylic|salicylate|geogard ect/.test(inci))return true;
  return false;
 }
-export function canCombine(base:Product,added:Product[],candidate:Product,profile:Profile,catalogue:Product[]=[base,...added,candidate]):boolean{
+// sharedStep: the one step a candidate may repeat from the basket (a pack upgrade passes the base's step, so a ritual's second cleanser stands beside the first).
+export function canCombine(base:Product,added:Product[],candidate:Product,profile:Profile,catalogue:Product[]=[base,...added,candidate],sharedStep?:string):boolean{
  if(!candidate.enabled||(!candidate.recommendable&&!profile.verifiedProducts?.includes(candidate.id))||candidate.id===base.id||added.some(x=>x.id===candidate.id)||domainOf(candidate)!==domainOf(base))return false;
  if([candidate,...expand(candidate,catalogue)].some(p=>brandOf(p)!==brandOf(base)))return false;
  const basket=[base,...added];if(basketProblem([...basket,candidate],catalogue))return false;
@@ -198,7 +203,7 @@ export function canCombine(base:Product,added:Product[],candidate:Product,profil
  if(candidate.id==='sal10'&&!profile.verifiedProducts?.includes('sal10'))return false;
  if(candidate.verificationRequired&&!profile.verifiedProducts?.includes(candidate.id))return false;
  for(const p of incoming){
-  if(current.some(x=>group(x)===group(p)))return false;
+  if(current.some(x=>group(x)===group(p))&&group(p)!==sharedStep)return false;
   if(profile.routine.includes(group(p)))return false;
   if(ingredientRisk(p,profile))return false;
   if(restricted(profile)&&!p.gentle)return false;
@@ -234,7 +239,7 @@ export function manualAddCheck(base:Product,added:Product[],candidate:Product,pr
  if(unverified.length)warnings.push('Vérification spécifique requise : '+(unverified.find(p=>p.verificationRequired)?.verificationRequired||'fiche à vérifier avant ajout.'));
  return{blocked:null,warnings,verifyIds:[...new Set(unverified.map(p=>p.id))]};
 }
-function reasonFor(p:Product,base:Product,profile:Profile):string{
+function reasonFor(p:Product,base:Product,profile:Profile,sun=false):string{
  if(isPack(p))return(p.pitch||p.description)+' Son contenu est compté dans la routine pour éviter tout doublon.';
  if(domainOf(base)==='hair'){
   if(p.category==='Après-shampoing')return'Le shampoing couvre le lavage. Pour les longueurs sèches ou cassantes, l’après-shampoing ajoute le démêlage et le conditionnement qui manquent.';
@@ -242,7 +247,9 @@ function reasonFor(p:Product,base:Product,profile:Profile):string{
   return'Un soin de cuir chevelu est une étape différente du shampoing. Pertinent pour la demande exprimée, sans garantie de repousse et après vérification de la tolérance.';
  }
  if(p.category==='Hydratant')return'Complète le soin déjà choisi par une étape de confort et d’hydratation. '+p.description;
+ if(p.category==='Protection solaire'&&sun)return'Le soin du soir choisi rend la peau plus sensible au soleil : un SPF le lendemain matin est indispensable.';
  if(p.category==='Protection solaire')return'La protection solaire manque à la routine. Une étape complémentaire à l’hydratation ou au soin éclat, pas un deuxième sérum similaire.';
+ if(p.category==='Nettoyant'&&brandOf(p)==='belnco')return'Une étape lavante adaptée manque. Le double nettoyage passe par le rituel (huile puis gel), jamais par deux nettoyants séparés.';
  if(p.category==='Nettoyant')return'Une étape lavante adaptée manque. Le Total Cleanser est privilégié quand un soin ciblé est déjà présent, pour éviter de superposer les exfoliants.';
  if(p.category==='Sérum hydratant')return'Complément d’hydratation quand une crème est déjà présente et que le besoin de confort persiste, sans dupliquer un autre sérum.';
  return'Répond à la priorité « '+labelConcern(profile)+' ». Un seul soin ciblé, avec les ingrédients de la fiche et une tolérance à vérifier.';
@@ -251,10 +258,13 @@ export function recommend(catalogue:Product[],base:Product,profile:Profile,added
  if(!questionsReady(profile,base)||reviewReason(profile))return[];
  const primary=profile.concerns[0]==='acne'&&profile.severity==='blackheads'?'blackheads':profile.concerns[0]==='fall'&&profile.hairPattern==='breakage'?'breakage':profile.concerns[0];
  const basket=[base,...added].flatMap(p=>expand(p,catalogue)),has=(g:string)=>basket.some(x=>group(x)===g)||profile.routine.includes(g);
+ const brand=brandOf(base),sun=basket.some(x=>x.photosensitizing);
  const results:Candidate[]=[];
  for(const p of catalogue){
   if(!canCombine(base,added,p,profile,catalogue))continue;
   let score=0;
+  // A face pack made only of cleansers (the BEL.NCO ritual) is offered as a cleanser.
+  const step=isPack(p)&&expand(p,catalogue).every(x=>x.category==='Nettoyant')?'Nettoyant':p.category;
   if(domainOf(base)==='hair'){
    if(p.category==='Après-shampoing'&&['growth','breakage','hairdry'].some(x=>profile.concerns.includes(x)||x===primary))score=110;
    if(p.category==='Shampoing'){
@@ -267,33 +277,35 @@ export function recommend(catalogue:Product[],base:Product,profile:Profile,added
   }else if(domainOf(base)==='body'){
    if(p.id==='bodywash'&&primary==='bodyspots')score=90;
    if(p.id==='bodypack'&&primary==='bodyspots')score=80;
-  }else if(p.category==='Hydratant'){
+  }else if(step==='Hydratant'){
    score=basket.some(x=>x.active)?110:60;if(['dry','dehydration','red'].includes(primary))score+=40;
-   if(profile.skin==='unknown'&&p.id!=='wccream')continue;
+   if(profile.skin==='unknown'&&p.id!==({touche:'wccream',belnco:'bel-moist'} as const)[brand])continue;
    if(p.id==='wcgel'&&['oily','mixed'].includes(profile.skin)&&profile.sensitive==='no')score+=20;
    if(p.id==='wccream'&&['normal','mixed'].includes(profile.skin))score+=15;
    if(p.id==='wcrich'&&profile.skin==='dry')score+=20;
    if(p.id==='hcream')score-=18;
-  }else if(p.category==='Protection solaire'){
-   score=has('Hydratant')?85:45;if(['marks','dull'].includes(primary))score+=45;if(p.id==='wcspf')score+=12;
-  }else if(p.category==='Nettoyant'){
+  }else if(step==='Protection solaire'){
+   score=has('Hydratant')?85:45;if(['marks','dull'].includes(primary))score+=45;if(p.id==='wcspf')score+=12;if(sun)score+=200;
+  }else if(step==='Nettoyant'){
    score=has('Hydratant')?60:40;if(p.id==='total')score+=8;if(p.id==='gelclean'&&['oil','blackheads'].includes(primary))score+=10;
-  }else if(p.category==='Soin ciblé'){
+  }else if(step==='Soin ciblé'){
    if(!p.concerns.includes(primary))continue;
    score=base.category==='Hydratant'?115:80;
-   if(primary==='acne'&&p.id!=='antiacne'&&p.id!=='nia10')continue;
-   if(primary==='acne'&&p.id==='antiacne')score+=8;
-   if(primary==='blackheads'&&!['sal2','lotion'].includes(p.id))continue;
-   if(primary==='blackheads'&&p.id==='sal2')score+=15;
-   if(primary==='oil'&&!['nia10','nia12'].includes(p.id))continue;
-   if(primary==='oil'&&p.id==='nia10')score+=10;
-  }else if(p.category==='Soin local'){
+   if(brand==='touche'){
+    if(primary==='acne'&&p.id!=='antiacne'&&p.id!=='nia10')continue;
+    if(primary==='acne'&&p.id==='antiacne')score+=8;
+    if(primary==='blackheads'&&!['sal2','lotion'].includes(p.id))continue;
+    if(primary==='blackheads'&&p.id==='sal2')score+=15;
+    if(primary==='oil'&&!['nia10','nia12'].includes(p.id))continue;
+    if(primary==='oil'&&p.id==='nia10')score+=10;
+   }else if(['acne','blackheads','oil'].includes(primary)&&p.id!=='bel-clarifying')continue;
+  }else if(step==='Soin local'){
    if(primary==='acne'&&profile.severity==='mild')score=65;
-  }else if(p.category==='Sérum hydratant'){
+  }else if(step==='Sérum hydratant'){
    if(!['dehydration','dry','red'].includes(primary)||!has('Hydratant'))continue;
    score=primary==='dehydration'?100:70;if(p.id==='sensitive'&&profile.sensitive==='yes')score+=12;
   }
-  if(score>0)results.push({product:p,score,reason:reasonFor(p,base,profile)});
+  if(score>0)results.push({product:p,score:score+pairingBonus(base,p),reason:reasonFor(p,base,profile,sun)});
  }
  return results.sort((a,b)=>b.score-a.score||a.product.price-b.product.price).slice(0,12);
 }
@@ -301,7 +313,7 @@ export function packUpgrades(catalogue:Product[],base:Product,profile:Profile):C
  if(isPack(base)||!questionsReady(profile,base)||reviewReason(profile))return[];
  return catalogue.filter(p=>p.enabled&&(p.recommendable||profile.verifiedProducts?.includes(p.id))&&isPack(p)&&p.components?.includes(base.id)&&domainOf(p)===domainOf(base)&&brandOf(p)===brandOf(base)).filter(p=>{
   const extra=expand(p,catalogue).filter(x=>x.id!==base.id);
-  return extra.length>0&&extra.every(x=>canCombine(p.id==='bodypack'&&x.id==='nia10'?{...base,domain:'face'}:base,[],x,profile,catalogue))&&p.concerns.some(c=>profile.concerns.includes(c));
+  return extra.length>0&&extra.every(x=>canCombine(p.id==='bodypack'&&x.id==='nia10'?{...base,domain:'face'}:base,[],x,profile,catalogue,group(base)))&&p.concerns.some(c=>profile.concerns.includes(c));
  }).map(p=>({product:p,score:100,reason:p.pitch||p.description}));
 }
 export function summaryText(base:Product,basket:OrderItem[],tier:Tier,delivery:number|null,catalogue:Product[],initial:OrderItem[]=[base]){
@@ -312,7 +324,7 @@ export function summaryText(base:Product,basket:OrderItem[],tier:Tier,delivery:n
  return `TOUCHÉ | Récapitulatif de l’offre\n${replacement}${basket.map(p=>`• ${quantityLabel(p)} : ${money(lineTotal(p))}${quantityOf(p)>1?` (${money(p.price)} / unité)`:""}`).join('\n')}${packRates}\n\nTotal catalogue : ${money(total)}\nOffre produits : ${money(offer)}\nÉconomie : ${money(total-offer)}\nÉcart avec la commande initiale : ${money(offer-baseTotal)}\n${fee}\n${pack?'Tarif pack conservé, réduction uniquement sur les compléments éligibles. ':''}Offre liée à la commande en cours, sans cumul de remises. À valider avec la cliente. Aucun système de commande externe modifié.`;
 }
 export function goalPhrase(p:Profile):string{
- const goals:Record<string,string>={acne:'mieux prendre soin de vos petites imperfections',blackheads:'cibler les points noirs sans surcharger votre routine',oil:'limiter l’apparence de la brillance',marks:'améliorer l’apparence des marques brunes',red:'retrouver davantage de confort',dry:'réduire les sensations de tiraillement',dehydration:'mieux hydrater votre peau',dull:'retrouver un teint plus lumineux',scars:'améliorer l’aspect de votre peau sans promesse sur le relief des cicatrices',growth:'prendre soin de vos longueurs',breakage:'faciliter le démêlage et limiter la casse',fall:'mieux accompagner votre routine capillaire',hairdry:'retrouver des longueurs plus souples',scalpoil:'adapter le lavage à vos racines grasses',flakes:'adapter votre routine aux pellicules',scalpcomfort:'préserver le confort de votre cuir chevelu',bodyspots:'prendre soin des imperfections de votre corps',bodydry:'retrouver davantage de confort sur votre corps'};
+ const goals:Record<string,string>={acne:'mieux prendre soin de vos petites imperfections',blackheads:'cibler les points noirs sans surcharger votre routine',oil:'limiter l’apparence de la brillance',marks:'améliorer l’apparence des marques brunes',red:'retrouver davantage de confort',dry:'réduire les sensations de tiraillement',dehydration:'mieux hydrater votre peau',dull:'retrouver un teint plus lumineux',aging:'prendre soin des ridules et de la fermeté de votre peau',scars:'améliorer l’aspect de votre peau sans promesse sur le relief des cicatrices',growth:'prendre soin de vos longueurs',breakage:'faciliter le démêlage et limiter la casse',fall:'mieux accompagner votre routine capillaire',hairdry:'retrouver des longueurs plus souples',scalpoil:'adapter le lavage à vos racines grasses',flakes:'adapter votre routine aux pellicules',scalpcomfort:'préserver le confort de votre cuir chevelu',bodyspots:'prendre soin des imperfections de votre corps',bodydry:'retrouver davantage de confort sur votre corps'};
  return goals[p.concerns[0]]||'compléter utilement votre routine';
 }
 export function customerBenefit(p:Product):string{
