@@ -10,6 +10,8 @@ export interface Env {
   trustProxy: number;
   staticDir: string;
   accountPasswordKey?: string;
+  /** Apply pending migrations before accepting requests (MIGRATE_ON_START=off to skip). */
+  migrateOnStart: boolean;
   /** EcoManager order checks; absent (feature off) without ECOMANAGER_API_TOKEN. */
   ecomanager?: EcoManagerEnv;
 }
@@ -92,6 +94,7 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     trustProxy: integer('TRUST_PROXY', source.TRUST_PROXY, 1, 0, Number.MAX_SAFE_INTEGER),
     staticDir: source.STATIC_DIR?.trim() || resolve(import.meta.dirname, '../../../frontend/dist'),
     accountPasswordKey,
+    migrateOnStart: source.MIGRATE_ON_START?.trim().toLowerCase() !== 'off',
     ecomanager: loadEcoManager(source, nodeEnv === 'production'),
   };
 }

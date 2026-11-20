@@ -51,3 +51,8 @@ describe('EcoManager', () => {
     expect(() => loadEnv({ DATABASE_URL: url, ECOMANAGER_API_TOKEN: 'tok', ECOMANAGER_REFERENCE_PREFIX: 'T0U' })).toThrow(/ECOMANAGER_REFERENCE_PREFIX/);
   });
 });
+
+it('migrates on start unless MIGRATE_ON_START=off', () => {
+  expect(loadEnv({ DATABASE_URL: url }).migrateOnStart).toBe(true);
+  expect(loadEnv({ DATABASE_URL: url, MIGRATE_ON_START: 'off' }).migrateOnStart).toBe(false);
+});
