@@ -1,8 +1,13 @@
+import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { localDay } from '@touche/domain';
 import type { Env } from '../src/config/env.js';
+import { tcCallMeta, tcCalls } from '../src/db/schema.js';
+import type { DeskUser } from '../src/desk/desk.types.js';
 import { type TestContext, createTestApp } from './support/context.js';
 import { resetDatabase } from './support/database.js';
-import { deskGet } from './support/desk.js';
+import { deskGet, deskPost } from './support/desk.js';
 import { type FakeEcoManager, ecoOrder, startFakeEcoManager } from './support/ecomanager-fake.js';
 import { createUser, loginCookie } from './support/users.js';
 
@@ -19,6 +24,7 @@ let on: TestContext;
 let off: TestContext;
 let admin: string;
 let lina: string;
+let linaUser: DeskUser;
 
 beforeAll(async () => {
   fake = await startFakeEcoManager();
@@ -34,7 +40,7 @@ beforeEach(async () => {
   fake.reset();
   await resetDatabase(on.db);
   await createUser(on.db, { username: 'direction', password: PASSWORD, role: 'admin', label: 'Direction' });
-  await createUser(on.db, { username: 'conseil.lina', password: PASSWORD, role: 'advisor', label: 'Lina B.' });
+  linaUser = await createUser(on.db, { username: 'conseil.lina', password: PASSWORD, role: 'advisor', label: 'Lina B.' });
   admin = await loginCookie(on, 'direction', PASSWORD);
   lina = await loginCookie(on, 'conseil.lina', PASSWORD);
 });
@@ -115,5 +121,69 @@ describe('order lookup (GET action=order)', () => {
     expect(res.status).toBe(429);
     expect(res.body.error).toBe('Trop de vérifications de commande. Patientez une minute.');
     expect((await lookup('DOS-x', admin)).status).toBe(400);
+  });
+});
+
+/** Today's desk saving « Conserver la commande initiale » on `orderRef` (pass oldTab for a tab without expectedUserId). */
+function saveInitial(orderRef: string, { oldTab = false } = {}) {
+  const id = randomUUID();
+  const body = {
+    action: 'save-call', id, baseId: 'antiacne', productIds: ['antiacne'], outcome: 'initial', tier: 'catalogue', delivery: null,
+    agreedTotal: 1800, consent: false, checked: false, refusal: '',
+    meta: { version: 3, source: 'manual', customerStage: 'new', orderRef, startedAt: new Date(Date.now() - 60_000).toISOString(), eligible: true, objections: [] },
+    ...(oldTab ? {} : { expectedUserId: linaUser.id }),
+  };
+  return { id, res: deskPost(on, body, { cookie: lina, ...(oldTab ? { pricing: null } : {}) }) };
+}
+const metaOf = async (id: string) => (await on.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, id)))[0];
+
+describe('order check at save (save-call)', () => {
+  it('a call on an unknown order is refused', async () => {
+    const { id, res } = saveInitial('TOU2000001');
+    const r = await res;
+    expect(r.status).toBe(404);
+    expect(r.body).toEqual({ error: 'Commande TOU2000001 introuvable dans EcoManager. Vérifiez la référence.', code: 'order-not-found' });
+    expect(await on.db.select().from(tcCalls).where(eq(tcCalls.id, id))).toEqual([]);
+  });
+
+  it('a verified call stores the order state under its full reference', async () => {
+    fake.orders.set(2000002, ecoOrder(2000002, 'Livrée'));
+    const { id, res } = saveInitial('2000002');
+    expect((await res).status).toBe(200);
+    expect(await metaOf(id)).toMatchObject({
+      order_ref: 'TOU2000002', order_check: 'verified', ecomanager_order_id: '2000002', order_state_group: 'delivered',
+      order_state_name: 'Livrée', order_state_at: new Date('2026-11-20T09:00:00.000Z'),
+    });
+  });
+
+  it('a timeout saves the call as unverified', async () => {
+    fake.setDelay(1_000);
+    const { id, res } = saveInitial('TOU2000003');
+    expect((await res).status).toBe(200);
+    expect(await metaOf(id)).toMatchObject({ order_ref: 'TOU2000003', order_check: 'unverified', ecomanager_order_id: '2000003', order_state_group: null });
+  });
+
+  it('an older tab saves without a check', async () => {
+    const { id, res } = saveInitial('TOU2000004', { oldTab: true });
+    expect((await res).status).toBe(200);
+    expect(await metaOf(id)).toMatchObject({ order_ref: 'TOU2000004', order_check: '', ecomanager_order_id: null });
+    expect(fake.calls).toEqual([]);
+  });
+
+  it('a malformed reference from today’s desk is refused', async () => {
+    const r = await saveInitial('DOS-0142').res;
+    expect(r.status).toBe(400);
+    expect(r.body.code).toBe('order-ref-format');
+  });
+
+  it('analytics returns the order state', async () => {
+    fake.orders.set(2000005, ecoOrder(2000005, 'En retour'));
+    const { id, res } = saveInitial('TOU2000005');
+    expect((await res).status).toBe(200);
+    const day = localDay(new Date());
+    const report = await deskGet(on, `?action=analytics&from=${day}&to=${day}`, admin);
+    expect(report.body.calls.find((c: { id: string }) => c.id === id)).toMatchObject({
+      order_check: 'verified', order_state_group: 'failed', order_state_name: 'En retour', ecomanager_order_id: '2000005',
+    });
   });
 });

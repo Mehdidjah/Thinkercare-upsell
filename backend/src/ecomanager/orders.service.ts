@@ -48,10 +48,10 @@ export class OrdersService {
   }
 
   /** The order behind a reference, without the per-account limit (save time, catch-up). */
-  async verify(raw: string): Promise<OrderLookup & { reference: string }> {
+  async verify(raw: string): Promise<OrderLookup & { reference: string; id: number }> {
     if (!this.client) throw new DeskError(404, 'Vérification de commande non configurée.', 'order-check-off');
     const parsed = parseOrderReference(raw, this.client.prefix);
     if (!parsed) throw new DeskError(400, ORDER_REFERENCE_HINT, 'order-ref-format');
-    return { ...(await this.client.lookup(parsed.reference)), reference: parsed.reference };
+    return { ...(await this.client.lookup(parsed.reference)), reference: parsed.reference, id: parsed.id };
   }
 }

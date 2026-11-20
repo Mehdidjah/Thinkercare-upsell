@@ -20,6 +20,8 @@ import {
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { isUniqueViolation } from '../common/db-errors.js';
 import { DeskError } from '../common/http.js';
+import type { EcoOrder } from '../ecomanager/client.js';
+import { OrdersService, orderNotFound } from '../ecomanager/orders.service.js';
 import type { Db, Tx } from '../db/schema.js';
 import {
   tcAcceptedDossiers,
@@ -133,7 +135,10 @@ const MAX_CALL_AGE_MS = 7 * 86_400_000;
 
 @Injectable()
 export class CallsService {
-  constructor(@InjectDrizzle() private readonly db: Db) {}
+  constructor(
+    @InjectDrizzle() private readonly db: Db,
+    private readonly orders: OrdersService,
+  ) {}
 
   /** Port of activity.server.ts lines 15-34. */
   async presentOffer(
@@ -267,6 +272,17 @@ export class CallsService {
         'Renseignez la référence du dossier avant d’enregistrer le résultat.',
         'order-ref-required',
       );
+    }
+    // EcoManager: today's desk may only record a real order of the store. The lookup was usually made while the
+    // adviser typed (cached); if EcoManager does not answer, the call is saved « à vérifier » and checked later.
+    let order: { check: '' | 'verified' | 'unverified'; id: number | null; found: EcoOrder | null } = { check: '', id: null, found: null };
+    if (this.orders.enabled && client.reloadsCatalogue && v.meta?.orderRef?.trim()) {
+      const result = await this.orders.verify(v.meta.orderRef);
+      if (result.status === 'not-found') throw orderNotFound(result.reference);
+      v.meta.orderRef = result.reference;
+      order = result.status === 'found'
+        ? { check: 'verified', id: result.order.id, found: result.order }
+        : { check: 'unverified', id: result.id, found: null };
     }
     if (
       new Set(v.productIds).size !== v.productIds.length ||
@@ -501,6 +517,12 @@ export class CallsService {
             customer_stage: meta?.customerStage || 'unknown',
             team: user.team || '',
             version: meta ? 3 : 1,
+            ecomanager_order_id: order.id === null ? null : String(order.id),
+            order_check: order.check,
+            order_state_group: order.found?.stateGroup ?? null,
+            order_state_name: order.found?.stateName ?? null,
+            order_state_at: order.found ? new Date(order.found.updatedAt ?? now) : null,
+            order_synced_at: order.found ? now : null,
           });
         }
         if (accepted && meta?.orderRef) {
