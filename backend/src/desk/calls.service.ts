@@ -1,4 +1,4 @@
-import { canManageWorkspace } from '@touche/domain';
+import { parseOrderReference, canManageWorkspace } from '@touche/domain';
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import type { ItemSnapshot, Product, Proposal, OrderItem } from '@touche/domain';
@@ -17,9 +17,11 @@ import {
   sameOrder,
   orderSignature,
 } from '@touche/domain';
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { or, and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { isUniqueViolation } from '../common/db-errors.js';
 import { DeskError } from '../common/http.js';
+import type { EcoOrder } from '../ecomanager/client.js';
+import { OrdersService, orderNotFound } from '../ecomanager/orders.service.js';
 import type { Db, Tx } from '../db/schema.js';
 import {
   tcAcceptedDossiers,
@@ -133,7 +135,10 @@ const MAX_CALL_AGE_MS = 7 * 86_400_000;
 
 @Injectable()
 export class CallsService {
-  constructor(@InjectDrizzle() private readonly db: Db) {}
+  constructor(
+    @InjectDrizzle() private readonly db: Db,
+    private readonly orders: OrdersService,
+  ) {}
 
   /** Port of activity.server.ts lines 15-34. */
   async presentOffer(
@@ -267,6 +272,17 @@ export class CallsService {
         'Renseignez la référence du dossier avant d’enregistrer le résultat.',
         'order-ref-required',
       );
+    }
+    // EcoManager: today's desk may only record a real order of the store. The lookup was usually made while the
+    // adviser typed (cached); if EcoManager does not answer, the call is saved « à vérifier » and checked later.
+    let order: { check: '' | 'verified' | 'unverified'; id: number | null; found: EcoOrder | null } = { check: '', id: null, found: null };
+    if (this.orders.enabled && client.reloadsCatalogue && v.meta?.orderRef?.trim()) {
+      const result = await this.orders.verify(v.meta.orderRef);
+      if (result.status === 'not-found') throw orderNotFound(result.reference);
+      v.meta.orderRef = result.reference;
+      order = result.status === 'found'
+        ? { check: 'verified', id: result.order.id, found: result.order }
+        : { check: 'unverified', id: result.id, found: null };
     }
     if (
       new Set(v.productIds).size !== v.productIds.length ||
@@ -421,13 +437,20 @@ export class CallsService {
         if (lowOffer) throw new DeskError(400, lowOffer);
       }
       if (v.meta.orderRef && accepted) {
+        // One accepted add-on per order, whatever form the reference was typed in: TOU1763816, the number alone
+        // (allowed before the EcoManager check, and still sent by older tabs), or the order a call was matched to.
+        const typed = v.meta.orderRef.toUpperCase();
+        const parsed = parseOrderReference(typed, this.orders.client?.prefix);
+        const forms = [...new Set([typed, ...(parsed ? [parsed.reference, String(parsed.id)] : [])])];
         const [duplicate] = await this.db
           .select({ id: tcCalls.id })
           .from(tcCalls)
           .innerJoin(tcCallMeta, eq(tcCallMeta.call_id, tcCalls.id))
           .where(
             and(
-              eq(tcCallMeta.order_ref, v.meta.orderRef.toUpperCase()),
+              parsed
+                ? or(inArray(tcCallMeta.order_ref, forms), eq(tcCallMeta.ecomanager_order_id, String(parsed.id)))
+                : eq(tcCallMeta.order_ref, typed),
               inArray(tcCalls.outcome, ['duo', 'trio', 'routine']),
               isNull(tcCalls.voided_at),
             ),
@@ -501,6 +524,12 @@ export class CallsService {
             customer_stage: meta?.customerStage || 'unknown',
             team: user.team || '',
             version: meta ? 3 : 1,
+            ecomanager_order_id: order.id === null ? null : String(order.id),
+            order_check: order.check,
+            order_state_group: order.found?.stateGroup ?? null,
+            order_state_name: order.found?.stateName ?? null,
+            order_state_at: order.found ? new Date(order.found.updatedAt ?? now) : null,
+            order_synced_at: order.found ? now : null,
           });
         }
         if (accepted && meta?.orderRef) {

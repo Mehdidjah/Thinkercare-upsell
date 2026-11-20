@@ -13,6 +13,8 @@ export function configureApp(app: NestExpressApplication, env: Env): void {
   app.use(securityHeaders);
   app.use(stripTrailingSlash);
   app.use('/api/desk', express.text({ type: () => true, limit: '1mb' }));
+  // EcoManager webhooks are signed over the raw body, so it is kept as text.
+  app.use('/api/ecomanager', express.text({ type: () => true, limit: '1mb' }));
   app.use('/api/desk', (err: unknown, _req: Request, res: Response, next: NextFunction) => {
     const type = (err as { type?: unknown } | null)?.type;
     if (typeof type !== 'string') return next(err);

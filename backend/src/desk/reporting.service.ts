@@ -111,6 +111,11 @@ export class ReportingService {
         voided_by_label: voider.label,
         callback_done: tcCallMeta.callback_done,
         meta_data: tcCallMeta.data,
+        order_check: tcCallMeta.order_check,
+        order_state_group: tcCallMeta.order_state_group,
+        order_state_name: tcCallMeta.order_state_name,
+        order_state_at: tcCallMeta.order_state_at,
+        ecomanager_order_id: tcCallMeta.ecomanager_order_id,
       })
       .from(tcCalls)
       .leftJoin(tcCallMeta, eq(tcCallMeta.call_id, tcCalls.id))

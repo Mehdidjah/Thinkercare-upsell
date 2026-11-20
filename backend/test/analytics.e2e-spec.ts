@@ -134,9 +134,16 @@ describe('pilotage analytics', () => {
         'voided_by',
         'voided_by_label',
         'void_reason',
+        'order_check',
+        'order_state_group',
+        'order_state_name',
+        'order_state_at',
+        'ecomanager_order_id',
       ].sort(),
     );
     expect(a).toMatchObject({ voided_at: null, voided_by: null, voided_by_label: null, void_reason: null });
+    // EcoManager order fields: a call recorded before the order check (or without it) is « not checked ».
+    expect(a).toMatchObject({ order_check: '', order_state_group: null, order_state_name: null, order_state_at: null, ecomanager_order_id: null });
     expect(a.created_at.endsWith('Z')).toBe(true);
     expect(a.callback_done).toBe(0);
     expect(a.meta).toEqual({

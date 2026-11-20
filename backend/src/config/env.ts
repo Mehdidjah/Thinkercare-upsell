@@ -10,6 +10,34 @@ export interface Env {
   trustProxy: number;
   staticDir: string;
   accountPasswordKey?: string;
+  /** Apply pending migrations before accepting requests (MIGRATE_ON_START=off to skip). */
+  migrateOnStart: boolean;
+  /** EcoManager order checks; absent (feature off) without ECOMANAGER_API_TOKEN. */
+  ecomanager?: EcoManagerEnv;
+}
+
+export interface EcoManagerEnv {
+  token: string;
+  baseUrl: string;
+  prefix: string;
+  webhookSecret?: string;
+  timeoutMs: number;
+  /** 0 = no background catch-up of recorded calls. */
+  syncIntervalMs: number;
+}
+
+function loadEcoManager(source: Record<string, string | undefined>, production: boolean): EcoManagerEnv | undefined {
+  const token = source.ECOMANAGER_API_TOKEN?.trim();
+  if (!token) return undefined;
+  const baseUrl = (source.ECOMANAGER_BASE_URL?.trim() || 'https://thinkercaregroup.ecomanager.dz').replace(/\/+$/, '');
+  if (!/^https?:\/\/[^/]+$/.test(baseUrl)) throw new Error('ECOMANAGER_BASE_URL doit être une adresse comme https://boutique.ecomanager.dz.');
+  if (production && !baseUrl.startsWith('https://')) throw new Error('ECOMANAGER_BASE_URL doit commencer par https:// en production.');
+  const prefix = (source.ECOMANAGER_REFERENCE_PREFIX?.trim() || 'TOU').toUpperCase();
+  if (!/^[A-Z]{2,6}$/.test(prefix)) throw new Error('ECOMANAGER_REFERENCE_PREFIX doit contenir 2 à 6 lettres.');
+  const webhookSecret = source.ECOMANAGER_WEBHOOK_SECRET?.trim() || undefined;
+  if (webhookSecret && webhookSecret.length < 16) throw new Error('ECOMANAGER_WEBHOOK_SECRET doit contenir au moins 16 caractères.');
+  const syncIntervalMs = source.ECOMANAGER_SYNC?.trim().toLowerCase() === 'off' ? 0 : 120_000;
+  return { token, baseUrl, prefix, webhookSecret, timeoutMs: 8000, syncIntervalMs };
 }
 
 const DEFAULT_ORIGINS = ['http://localhost:3000', 'http://localhost:5173'];
@@ -66,5 +94,7 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     trustProxy: integer('TRUST_PROXY', source.TRUST_PROXY, 1, 0, Number.MAX_SAFE_INTEGER),
     staticDir: source.STATIC_DIR?.trim() || resolve(import.meta.dirname, '../../../frontend/dist'),
     accountPasswordKey,
+    migrateOnStart: source.MIGRATE_ON_START?.trim().toLowerCase() !== 'off',
+    ecomanager: loadEcoManager(source, nodeEnv === 'production'),
   };
 }

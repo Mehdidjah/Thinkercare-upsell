@@ -4,21 +4,22 @@ import {Button} from '../shared/Button';
 import {DisabledReason} from '../shared/DisabledReason';
 import {Icon} from '../shared/Icon';
 import {useCall} from './callModel';
+import {orderCheckBlocksSave} from './orderCheck';
 
 /** Step 03 · closing the call: accepted routine, initial order kept, callback, refusal. « Conserver » and « Cliente non
  *  jointe » ask first (A2); the saved outcome shows in SavedPanel at every step. The accepted sale and the refusal stay
  *  focusable while they wait for something, and say what is missing (B3, M5, REFUSE). When the server keeps the presented
  *  price, the accepted sale says the amount it records: the presented one, even if the catalogue changed since. */
-export function CallClose(){const {demo,orderRef,saved,busy,toStep,count,altered,presented,matchingOffer,keepsPresentedPrice,offer,offerIssue,consent,setConsent,checked,setChecked,callbackAt,setCallbackAt,refusal,setRefusal,record}=useCall();
+export function CallClose(){const {demo,checkOrder,orderCheck,orderRef,saved,busy,toStep,count,altered,presented,matchingOffer,keepsPresentedPrice,offer,offerIssue,consent,setConsent,checked,setChecked,callbackAt,setCallbackAt,refusal,setRefusal,record}=useCall();
  const callbackId=useId(),refusalId=useId(),refusalHelpId=useId(),acceptReasonId=useId();
- const refMissing=!orderRef.trim(),acceptMissing=!matchingOffer||!checked||!consent||!!offerIssue||refMissing,acceptable=!saved&&!demo;
+ const refMissing=!orderRef.trim(),orderWhy=orderCheck&&!refMissing?orderCheckBlocksSave(orderCheck,orderRef):null,orderBlocked=!!orderWhy,acceptMissing=!matchingOffer||!checked||!consent||!!offerIssue||refMissing||orderBlocked,acceptable=!saved&&!demo;
  const offered=presented.length>0,refusalBlocked=!offered||!refusal;
  return <section className="card call-close" aria-labelledby="call-close-title">
   <div className="section-head"><div><h2 id="call-close-title" tabIndex={-1}>Clôturer l’appel</h2><p>Enregistrez le résultat annoncé, pas un chiffre d’affaires encaissé. La commande doit être mise à jour séparément dans votre système.</p>{!saved&&<button type="button" className="link-btn" disabled={busy} onClick={()=>toStep(1)}><Icon name="back" size={16}/>Besoin de la cliente</button>}</div></div>
   {altered&&<div className="call-close__accept"><div className="call-close__checks"><label className="check-row"><input type="checkbox" checked={checked} disabled={saved} onChange={e=>setChecked(e.target.checked)}/>Compatibilité vérifiée avec le protocole interne et l’encadrement si nécessaire.</label><label className="check-row"><input type="checkbox" checked={consent} disabled={saved} onChange={e=>setConsent(e.target.checked)}/>La cliente a donné son accord explicite pour les produits et le prix annoncés.</label></div>
    <div className="action-with-reason">
-    <Button variant="primary" size="lg" className="call-close__accept-btn" disabled={!acceptable||busy} blocked={acceptable&&acceptMissing} reasonId={acceptReasonId} onClick={()=>void record(count===2?'duo':count===3?'trio':'routine')}>{saved?'Résultat enregistré':`Enregistrer ${count===2?'le duo accepté':count===3?'le trio accepté':'la routine acceptée'}`}<Icon name="check"/></Button>
-    {acceptable&&acceptMissing&&<DisabledReason id={acceptReasonId} title="Pour enregistrer l’accord :" items={offerIssue?[{label:offerIssue,done:false}]:[{label:'Renseignez la référence du dossier',done:!refMissing},{label:'Présentez cette offre',done:!!matchingOffer},{label:'Cochez la compatibilité',done:checked},{label:'Cochez l’accord de la cliente',done:consent}]}/>}
+    <Button variant="primary" size="lg" className="call-close__accept-btn" disabled={!acceptable||busy} blocked={acceptable&&acceptMissing} reasonId={acceptReasonId} onBlocked={orderBlocked?()=>{checkOrder();const field=document.getElementById('call-order-ref') as HTMLInputElement|null;const fold=field?.closest('details');if(fold)fold.open=true;field?.focus();}:undefined} onClick={()=>void record(count===2?'duo':count===3?'trio':'routine')}>{saved?'Résultat enregistré':`Enregistrer ${count===2?'le duo accepté':count===3?'le trio accepté':'la routine acceptée'}`}<Icon name="check"/></Button>
+    {acceptable&&acceptMissing&&<DisabledReason id={acceptReasonId} title="Pour enregistrer l’accord :" items={offerIssue?[{label:offerIssue,done:false}]:[{label:'Renseignez la référence du dossier',done:!refMissing},...(orderCheck?[{label:orderWhy||'Commande vérifiée dans EcoManager',done:!refMissing&&!orderBlocked}]:[]),{label:'Présentez cette offre',done:!!matchingOffer},{label:'Cochez la compatibilité',done:checked},{label:'Cochez l’accord de la cliente',done:consent}]}/>}
    </div>
    {acceptable&&keepsPresentedPrice&&matchingOffer&&<p className="call-close__price">Accord enregistré au prix présenté : <b className="num">{money(matchingOffer.offerTotal)}</b>{matchingOffer.offerTotal!==offer&&<>. Le catalogue indique maintenant <span className="num">{money(offer)}</span> : le prix annoncé à la cliente reste celui de l’offre présentée</>}.</p>}
   </div>}

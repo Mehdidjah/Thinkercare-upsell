@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { bonusEstimate, type BonusRule } from '@touche/domain';
 import { ReminderTable, isDue, type Reminder } from '../src/ui/pages/Reminders';
 import { ProgressCard } from '../src/ui/Commission';
-import Analytics, { CallDetail, analyticsQuery, auditDetail, auditLabel } from '../src/ui/Analytics';
+import Analytics, { CallDetail, DeliveryCard, analyticsQuery, auditDetail, auditLabel, orderStateMatch, orderTag } from '../src/ui/Analytics';
 
 const ui = (path: string) => readFileSync(new URL('../src/ui/' + path, import.meta.url), 'utf8');
 const reminder = (over: Partial<Reminder> = {}): Reminder => ({ id: 'c1aaaaaaaa', user_id: 'u1', operator: 'Lina', base_id: 'antiacne', outcome: 'callback', created_at: '2026-11-01T10:00:00Z', callback_at: '2026-11-02T10:00:00Z', order_ref: 'DOS-1', meta: { originals: [{ id: 'antiacne', name: 'Gel anti-acné', price: 1000, quantity: 2 }] }, ...over });
@@ -152,3 +152,49 @@ test('voiding from the call detail confirms inside the dialog and gives the focu
   expect(detail).toContain('<button ref={voidRef} type="button" className="btn btn--secondary" onClick={()=>setVoiding(true)}>Annuler ce résultat…</button>');
   expect(detail).toContain('useEffect(()=>{if(!voiding&&backToVoid.current){backToVoid.current=false;voidRef.current?.focus();}},[voiding]);');
 });
+
+test('Pilotage: a tag gives each call its EcoManager order state or why it has none', () => {
+  const c = (extra: Record<string, unknown>) => ({ order_check: '', order_state_group: null, ...extra }) as never;
+  expect(orderTag(c({ order_check: 'verified', order_state_group: 'delivered' }))).toEqual({ label: 'Livrée', tone: 'success' });
+  expect(orderTag(c({ order_check: 'verified', order_state_group: 'failed' }))).toEqual({ label: 'Non livrée', tone: 'danger' });
+  expect(orderTag(c({ order_check: 'verified', order_state_group: 'shipping' }))).toEqual({ label: 'En cours de livraison', tone: 'neutral' });
+  expect(orderTag(c({ order_check: 'unverified' }))).toEqual({ label: 'À vérifier', tone: 'warning' });
+  expect(orderTag(c({ order_check: 'not-found' }))).toEqual({ label: 'Introuvable dans EcoManager', tone: 'danger' });
+  expect(orderTag(c({ order_check: 'unrecognized' }))).toEqual({ label: 'Référence non reconnue', tone: 'warning' });
+  expect(orderTag(c({}))).toBeNull();
+});
+
+test('Pilotage: the order state filter keeps only matching calls', () => {
+  const calls = [
+    { order_check: 'verified', order_state_group: 'delivered' }, { order_check: 'verified', order_state_group: 'failed' },
+    { order_check: 'unverified', order_state_group: null }, { order_check: 'not-found', order_state_group: null },
+    { order_check: 'unrecognized', order_state_group: null }, { order_check: '', order_state_group: null },
+  ] as never[];
+  const keep = (f: string) => calls.filter((c) => orderStateMatch(c, f)).length;
+  expect([keep(''), keep('delivered'), keep('failed'), keep('unverified'), keep('missing'), keep('unchecked')]).toEqual([6, 1, 1, 1, 2, 1]);
+});
+
+test('Pilotage: the delivery card counts the upsells by order state', () => {
+  const call = (outcome: string, group: string | null, extra: number) => ({ outcome, order_state_group: group, extra, voided_at: null }) as never;
+  const html = renderToStaticMarkup(<DeliveryCard calls={[call('duo', 'delivered', 1200), call('trio', 'delivered', 900), call('duo', 'failed', 700), call('duo', 'shipping', 500), call('duo', null, 300), call('refused', 'delivered', 0)]} sync={{ total: 10, known: 6, pending: 4, notFound: 0, unrecognized: 0 }}/>);
+  expect(html).toContain('Livraison des upsells');
+  expect(html).toMatch(/Livrées<\/span><strong[^>]*>2</);
+  expect(html).toMatch(/Non livrées<\/span><strong[^>]*>1</);
+  expect(html).toContain('Taux de livraison');
+  expect(html).toContain('67 %');
+  expect(html).toContain('États connus pour 6 appels sur 10');
+  expect(renderToStaticMarkup(<DeliveryCard calls={[]} sync={{ total: 3, known: 3, pending: 0, notFound: 0, unrecognized: 0 }}/>)).not.toContain('synchronisation en cours');
+});
+
+test('Pilotage: the calls CSV says how each order was checked and its state', () => {
+  const src = ui('Analytics.tsx');
+  expect(src).toContain("'Vérification commande','État commande'");
+});
+
+test('Pilotage: the order state filter resets the journal page, is announced and counts as an active filter', () => {
+  const src = ui('Analytics.tsx');
+  expect(src).toMatch(/useEffect\(\(\)=>\{setPage\(0\)\},\[[^\]]*\borderState\b/);
+  expect(src).toMatch(/const filterSig=\[[^\]]*\borderState\b/);
+  expect(src).toMatch(/const activeFilters=\[[^\]]*\borderState\b/);
+});
+

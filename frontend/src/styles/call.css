@@ -77,6 +77,7 @@
   .call-context__details > summary { flex-wrap: wrap; column-gap: var(--space-3); }
   .call-context__summary { font-size: var(--text-ui); font-weight: var(--font-weight-regular); color: var(--color-text-secondary); }
   .call-context__missing { color: var(--color-danger-text); font-weight: var(--font-weight-semibold); }
+  .call-context__verified { color: var(--color-success-text); }
   .call-context__body { display: flex; flex-direction: column; gap: var(--space-3); padding-block: var(--space-2); }
   .call-context__note { font-size: var(--text-caption); color: var(--color-text-secondary); }
 

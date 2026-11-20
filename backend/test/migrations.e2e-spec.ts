@@ -97,6 +97,22 @@ describe('migrations', () => {
     expect(await count('tc_accepted_dossiers')).toBe(2);
   });
 
+  it('0006 adds order state columns and keeps existing meta rows', async () => {
+    await db.execute(sql`INSERT INTO tc_users (id, username, label, role, salt, password_hash) VALUES ('u1', 'lina', 'Lina', 'advisor', 's', 'h')`);
+    await db.execute(
+      sql`INSERT INTO tc_calls (id, user_id, operator, created_at, outcome, base_id, products, catalogue_total, base_total, offered_total, extra, tier)
+          VALUES ('c1', 'u1', 'Lina', now(), 'duo', 'antiacne', '[]', 3300, 1800, 3000, 1200, 'duo')`,
+    );
+    await db.execute(sql`INSERT INTO tc_call_meta (call_id, data, order_ref) VALUES ('c1', '{}', 'TOU1763816')`);
+    const row = (await db.execute(sql`SELECT * FROM tc_call_meta WHERE call_id = 'c1'`)).rows[0] as Record<string, unknown>;
+    expect(row).toMatchObject({
+      order_ref: 'TOU1763816', order_check: '', ecomanager_order_id: null, order_state_group: null,
+      order_state_name: null, order_state_at: null, order_synced_at: null,
+    });
+    const indexes = (await db.execute(sql`SELECT indexname FROM pg_indexes WHERE tablename = 'tc_call_meta'`)).rows.map((r) => (r as { indexname: string }).indexname);
+    expect(indexes).toEqual(expect.arrayContaining(['tc_meta_ecomanager_order', 'tc_meta_order_sync']));
+  });
+
   it('migrations are idempotent', async () => {
     await expect(runMigrations(testDatabaseUrl())).resolves.toBeUndefined();
     expect(await count('tc_products')).toBe(32);

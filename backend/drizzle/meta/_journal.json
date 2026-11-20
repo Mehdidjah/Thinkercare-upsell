@@ -43,6 +43,13 @@
       "when": 1795096038782,
       "tag": "0005_void_calls_and_session_start",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795193493255,
+      "tag": "0006_order_check",
+      "breakpoints": true
     }
   ]
 }
