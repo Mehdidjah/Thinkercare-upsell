@@ -3,14 +3,15 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { tcProducts, tcProposals } from '../src/db/schema.js';
+import { localDay } from '@touche/domain';
+import { tcCallMeta, tcCalls, tcProducts, tcProposals } from '../src/db/schema.js';
 import { type TestContext, createTestApp } from './support/context.js';
-import { resetDatabase, seedBelnco } from './support/database.js';
+import { resetDatabase } from './support/database.js';
 import { deskGet, deskPost } from './support/desk.js';
 import { createUser, loginCookie } from './support/users.js';
 
 // BEL.NCO as a second brand (docs/superpowers/specs/2026-11-20-belnco-brand-design.md): the database holds both
-// catalogues, as it will once migration 0007 has run.
+// catalogues, the BEL.NCO rows seeded by migration 0007.
 const PASSWORD = 'mot-de-passe-solide-2026';
 const load = (file: string) =>
   JSON.parse(readFileSync(resolve(import.meta.dirname, '../../shared/test/fixtures', file), 'utf8')) as Array<
@@ -27,7 +28,6 @@ beforeAll(async () => {
 afterAll(() => ctx.close());
 beforeEach(async () => {
   await resetDatabase(ctx.db);
-  await seedBelnco(ctx.db);
   await createUser(ctx.db, { username: 'direction', password: PASSWORD, role: 'admin' });
   linaUser = await createUser(ctx.db, { username: 'conseil.lina', password: PASSWORD, role: 'advisor', team: 'Alger' });
   admin = await loginCookie(ctx, 'direction', PASSWORD);
@@ -105,5 +105,29 @@ describe('one brand per call on the server', () => {
     const res = await deskPost(ctx, { action: 'save-call', id: randomUUID(), brand: 'belnco', baseId: 'bel-retinol', productIds: ['bel-retinol'], outcome: 'noanswer', tier: 'catalogue', delivery: null, consent: false, checked: false, refusal: '', expectedUserId: linaUser.id, meta: meta({ orderRef: 'TOU1763816' }) }, { cookie: lina });
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: 'Cette référence est une commande Touché : l’appel est un appel BEL.NCO. Changez la marque de l’appel ou corrigez la référence.', code: 'order-ref-brand' });
+  });
+});
+
+describe('recorded brand', () => {
+  it('a saved call keeps its brand and rule version; an older tab’s call is Touché', async () => {
+    const shown = await deskPost(ctx, offer({ brand: 'belnco', baseId: 'bel-retinol', productIds: ['bel-retinol', 'bel-moist'], agreedTotal: 3300 }), { cookie: lina });
+    const callId = shown.body.proposal.call_id;
+    const saved = await deskPost(ctx, { action: 'save-call', id: callId, brand: 'belnco', baseId: 'bel-retinol', productIds: ['bel-retinol', 'bel-moist'], outcome: 'duo', tier: 'duo', delivery: null, agreedTotal: 3300, consent: true, checked: true, refusal: '', expectedUserId: linaUser.id, meta: meta({ eligible: true, acceptedProposalId: shown.body.proposal.id }) }, { cookie: lina });
+    expect(saved.status).toBe(200);
+    expect((await ctx.db.select({ brand: tcCalls.brand }).from(tcCalls).where(eq(tcCalls.id, callId)))[0]!.brand).toBe('belnco');
+    const [m] = await ctx.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, callId));
+    expect(m).toMatchObject({ order_ref: 'BEL1763838', data: expect.objectContaining({ ruleVersion: 'belnco-v1' }) });
+    const oldId = randomUUID();
+    await deskPost(ctx, { action: 'save-call', id: oldId, baseId: 'antiacne', productIds: ['antiacne'], outcome: 'noanswer', tier: 'catalogue', delivery: null, consent: false, checked: false, refusal: '', meta: meta({ orderRef: 'TOU1763816' }) }, { cookie: lina, pricing: null });
+    expect((await ctx.db.select({ brand: tcCalls.brand }).from(tcCalls).where(eq(tcCalls.id, oldId)))[0]!.brand).toBe('touche');
+    const day = localDay(new Date());
+    const report = await deskGet(ctx, `?action=analytics&from=${day}&to=${day}`, admin);
+    expect(report.body.calls.find((c: { id: string }) => c.id === callId).brand).toBe('belnco');
+  });
+  it('a reminder carries the brand of its call', async () => {
+    const id = randomUUID();
+    await deskPost(ctx, { action: 'save-call', id, brand: 'belnco', baseId: 'bel-retinol', productIds: ['bel-retinol'], outcome: 'callback', tier: 'catalogue', delivery: null, consent: false, checked: false, refusal: '', expectedUserId: linaUser.id, meta: meta({ callbackAt: new Date(Date.now() + 86_400_000).toISOString() }) }, { cookie: lina });
+    const res = await deskGet(ctx, '?action=reminders', lina);
+    expect(res.body.reminders[0]).toMatchObject({ id, brand: 'belnco' });
   });
 });

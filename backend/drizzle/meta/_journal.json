@@ -50,6 +50,13 @@
       "when": 1795193493255,
       "tag": "0006_order_check",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795209817154,
+      "tag": "0007_belnco_brand",
+      "breakpoints": true
     }
   ]
 }

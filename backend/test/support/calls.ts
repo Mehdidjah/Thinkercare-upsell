@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ItemSnapshot } from '@touche/domain';
+import type { Brand, ItemSnapshot } from '@touche/domain';
 import type { Db } from '../../src/db/schema.js';
 import { tcCallMeta, tcCalls } from '../../src/db/schema.js';
 
@@ -20,6 +20,8 @@ export async function insertCall(
     order_ref?: string | null;
     /** Item snapshots as saved by the desk (pack components included); defaults to []. */
     products?: ItemSnapshot[];
+    /** The call's brand; Touché by default, as for every call recorded before BEL.NCO. */
+    brand?: Brand;
   },
 ): Promise<string> {
   const id = c.id ?? randomUUID();
@@ -37,6 +39,7 @@ export async function insertCall(
     delivery: null,
     tier: c.tier ?? 'duo',
     extra: c.extra ?? 1200,
+    brand: c.brand ?? 'touche',
   });
   if (c.order_ref !== null) {
     const orderRef = c.order_ref ?? '';

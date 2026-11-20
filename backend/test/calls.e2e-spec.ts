@@ -994,6 +994,7 @@ describe('reminders', () => {
       'created_at',
       'callback_at',
       'order_ref',
+      'brand',
       'meta',
     ]);
     expect(row).toMatchObject({

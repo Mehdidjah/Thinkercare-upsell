@@ -526,6 +526,7 @@ export class CallsService {
           extra: accepted ? offer - lockedBase : 0,
           refusal: v.refusal,
           pilot: pilot ? 1 : 0,
+          brand,
         });
         await tx
           .insert(tcAudit)
@@ -538,7 +539,7 @@ export class CallsService {
             team: user.team || '',
             original: locked?.base || snapshot(initial[0], all),
             originals,
-            ruleVersion: 'touche-v3',
+            ruleVersion: brand === 'belnco' ? 'belnco-v1' : 'touche-v3',
             completedAt: now.toISOString(),
           };
           await tx.insert(tcCallMeta).values({
