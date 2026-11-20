@@ -1,5 +1,5 @@
 import {itemsTotal,lineTotal,quantityOf,quantityLabel,sameOrder,unitCount,type WithQuantity} from './quantity.js';
-import type {Brand} from './brands.js';
+import {BRAND_LABELS,brandOf,type Brand} from './brands.js';
 export type Ingredient={name:string;inci:string;role:string};
 export type Product={id:string;name:string;short:string;category:string;price:number;image:string;source:string;description:string;concerns:string[];skins:string[];active:boolean;size:string;enabled:boolean;recommendable:boolean;review:string;priceSource?:string;domain?:'face'|'hair'|'body';components?:string[];ingredients?:Ingredient[];inciText?:string;formulaNote?:string;checkedAt?:string;pitch?:string;usage?:string;cautions?:string[];fragrance?:boolean;essentialOils?:boolean;gentle?:boolean;exfoliant?:boolean;verificationRequired?:string;brand?:Brand;excludes?:string[];photosensitizing?:boolean};
 export type Profile={concerns:string[];skin:string;sensitive:string;routine:string[];routineKnown:boolean;safety:string[];severity:string;marks:string;redState?:string;hairPattern?:string;allergens?:string[];age?:string;scalpProtocol?:boolean;verifiedProducts?:string[]};
@@ -103,7 +103,15 @@ export function basketProblem(basket:OrderItem[],catalogue:Product[]):string|nul
  const flat=basket.flatMap(p=>expand(p,catalogue));
  if(basket.some(p=>isPack(p)&&(!p.components?.length||expand(p,catalogue).length!==p.components.length))&&unitCount(basket)>1)return'Le contenu exact de ce pack doit être confirmé avant tout ajout.';
  if(new Set(flat.map(p=>p.id)).size!==flat.length)return'Un produit est déjà inclus dans le pack ou la routine.';
+ for(let i=0;i<flat.length;i++)for(let j=i+1;j<flat.length;j++)if(excludesEachOther(flat[i],flat[j]))return`${flat[i].short} et ${flat[j].short} ne s’utilisent jamais dans la même routine : gardez l’un ou l’autre.`;
  return null;
+}
+/** Two products that never go in the same routine: the rule counts when either one lists the other in `excludes`. */
+export const excludesEachOther=(a:Product,b:Product):boolean=>!!a.excludes?.includes(b.id)||!!b.excludes?.includes(a.id);
+/** One brand per call: the first item, or pack component, of another brand than the call's. */
+export function brandProblem(items:Product[],brand:Brand,catalogue:Product[]):string|null{
+ const p=items.flatMap(x=>[x,...expand(x,catalogue)]).find(x=>brandOf(x)!==brand);
+ return p?`« ${p.name} » est une référence ${BRAND_LABELS[brandOf(p)]} : un appel ${BRAND_LABELS[brand]} ne propose que des références ${BRAND_LABELS[brand]}.`:null;
 }
 /** An add-on must raise the order: a discount on the whole basket may not bring it to, or below, what the customer already ordered. */
 export function offerProblem(initial:OrderItem[],basket:OrderItem[],tier:Tier,catalogue:Product[]):string|null{
@@ -182,6 +190,7 @@ function ingredientRisk(p:Product,profile:Profile):boolean{
 }
 export function canCombine(base:Product,added:Product[],candidate:Product,profile:Profile,catalogue:Product[]=[base,...added,candidate]):boolean{
  if(!candidate.enabled||(!candidate.recommendable&&!profile.verifiedProducts?.includes(candidate.id))||candidate.id===base.id||added.some(x=>x.id===candidate.id)||domainOf(candidate)!==domainOf(base))return false;
+ if([candidate,...expand(candidate,catalogue)].some(p=>brandOf(p)!==brandOf(base)))return false;
  const basket=[base,...added];if(basketProblem([...basket,candidate],catalogue))return false;
  const current=basket.flatMap(p=>expand(p,catalogue)),incoming=expand(candidate,catalogue);
  if(incoming.some(p=>!p.enabled||(!p.recommendable&&!profile.verifiedProducts?.includes(p.id))))return false;
@@ -208,6 +217,8 @@ export function manualAddCheck(base:Product,added:Product[],candidate:Product,pr
  const stop=(blocked:string):ManualAddCheck=>({blocked,warnings:[],verifyIds:[]});
  if(!candidate.enabled)return stop('Référence désactivée.');
  if(expand(candidate,catalogue).some(p=>!p.enabled))return stop('Référence désactivée.');
+ const other=[candidate,...expand(candidate,catalogue)].find(p=>brandOf(p)!==brandOf(base));
+ if(other)return stop(`Référence ${BRAND_LABELS[brandOf(other)]} : elle ne s’ajoute pas à un appel ${BRAND_LABELS[brandOf(base)]}.`);
  if(candidate.id===base.id||added.some(x=>x.id===candidate.id))return stop('Déjà dans la routine.');
  const problem=basketProblem([base,...added,candidate],catalogue);if(problem)return stop(problem);
  const current=[base,...added].flatMap(p=>expand(p,catalogue)),incoming=expand(candidate,catalogue);
@@ -288,7 +299,7 @@ export function recommend(catalogue:Product[],base:Product,profile:Profile,added
 }
 export function packUpgrades(catalogue:Product[],base:Product,profile:Profile):Candidate[]{
  if(isPack(base)||!questionsReady(profile,base)||reviewReason(profile))return[];
- return catalogue.filter(p=>p.enabled&&(p.recommendable||profile.verifiedProducts?.includes(p.id))&&isPack(p)&&p.components?.includes(base.id)&&domainOf(p)===domainOf(base)).filter(p=>{
+ return catalogue.filter(p=>p.enabled&&(p.recommendable||profile.verifiedProducts?.includes(p.id))&&isPack(p)&&p.components?.includes(base.id)&&domainOf(p)===domainOf(base)&&brandOf(p)===brandOf(base)).filter(p=>{
   const extra=expand(p,catalogue).filter(x=>x.id!==base.id);
   return extra.length>0&&extra.every(x=>canCombine(p.id==='bodypack'&&x.id==='nia10'?{...base,domain:'face'}:base,[],x,profile,catalogue))&&p.concerns.some(c=>profile.concerns.includes(c));
  }).map(p=>({product:p,score:100,reason:p.pitch||p.description}));
