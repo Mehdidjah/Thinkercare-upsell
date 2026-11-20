@@ -31,7 +31,8 @@ test('Gestion has a section index and a catalogue search built on searchIds (F2)
   }
   expect(html).toContain('<span class="sr-only">Rechercher dans le catalogue</span>');
   expect(html).toContain('2 produits');
-  expect(ui('pages/Admin.tsx')).toContain('const ids=searchIds(state.products,query)');
+  // The search runs over the brand shown (« Marque »).
+  expect(ui('pages/Admin.tsx')).toContain('const list=ofBrand(state.products,brandView),ids=searchIds(list,query)');
 });
 
 test('product dialog errors stay inside the dialog and unsaved edits ask before closing (PN3, PN8)', () => {

@@ -40,7 +40,7 @@ export default function Desk(){
  const [orderRefAsked,setOrderRefAsked]=useState(false),[loginNotice,setLoginNotice]=useState(''),[locked,setLocked]=useState(false),[offline,setOffline]=useState(()=>typeof navigator!=='undefined'&&navigator.onLine===false);
  const [progressEpoch,setProgressEpoch]=useState(0),[focusOperator,setFocusOperator]=useState(''),[pilotageTab,setPilotageTab]=useState('');
  // Catalogue and Parcours keep their own search, apart from the call's step-0 search (PN4).
- const [catalogueSearch,setCatalogueSearch]=useState(''),[catalogueScope,setCatalogueScope]=useState('Tous'),[coverageSearch,setCoverageSearch]=useState('');
+ const [catalogueSearch,setCatalogueSearch]=useState(''),[catalogueScope,setCatalogueScope]=useState('Tous'),[browseBrand,setBrowseBrand]=useState<Brand>('touche'),[coverageSearch,setCoverageSearch]=useState('');
  // The call: one draft, plus the live call set aside during an example, saved per account in this tab (call/callState.ts).
  const [store,setStore]=useState<callState.CallStore>(()=>({draft:callState.newDraft(),parked:null}));
  const [busy,setBusy]=useState(false),[presenting,setPresenting]=useState(false),[search,setSearch]=useState(''),[scope,setScope]=useState('Tous'),[category,setCategory]=useState('Tous'),[detail,setDetail]=useState<Product|null>(null);
@@ -490,8 +490,8 @@ export default function Desk(){
  {/* The progress card has its own boundary: a failure there never hides the call. */}
  {view==='call'&&!canManageWorkspace(state.user)&&<ViewBoundary title='Votre progression n’a pas pu s’afficher.'><PersonalProgress compact refreshKey={progressEpoch} features={state.features}/></ViewBoundary>}
  {view==='call'&&<CallModelContext value={call}><CallView/></CallModelContext>}
- {view==='catalogue'&&<Catalogue search={catalogueSearch} setSearch={setCatalogueSearch} scope={catalogueScope} setScope={setCatalogueScope} products={products} inScope={scopeFilter(catalogueScope)} setDetail={setDetail} canManage={canManageWorkspace(state.user)}/>}
- {view==='coverage'&&<Coverage search={coverageSearch} setSearch={setCoverageSearch} products={products} setDetail={setDetail}/>}
+ {view==='catalogue'&&<Catalogue search={catalogueSearch} setSearch={setCatalogueSearch} scope={catalogueScope} setScope={setCatalogueScope} products={products} inScope={scopeFilter(catalogueScope)} setDetail={setDetail} canManage={canManageWorkspace(state.user)} brand={browseBrand} setBrand={setBrowseBrand}/>}
+ {view==='coverage'&&<Coverage search={coverageSearch} setSearch={setCoverageSearch} products={products} setDetail={setDetail} brand={browseBrand} setBrand={setBrowseBrand}/>}
  {view==='results'&&canManageWorkspace(state.user)&&<Analytics user={state.user} users={state.users} products={products} resume={resume} initialOperator={focusOperator} initialTab={pilotageTab||undefined} onOperatorUsed={()=>setFocusOperator('')} features={state.features}/>}
  {view==='progress'&&!canManageWorkspace(state.user)&&<PersonalProgress refreshKey={progressEpoch} resume={resume} features={state.features}/>}
  {view==='contributions'&&canManageWorkspace(state.user)&&<ContributionDashboard openOperator={id=>{setFocusOperator(id);setPilotageTab('journal');go('results');}}/>}
