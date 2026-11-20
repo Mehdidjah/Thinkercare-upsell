@@ -1,4 +1,5 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
+import request from 'supertest';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { localDay } from '@touche/domain';
@@ -12,6 +13,7 @@ import { type FakeEcoManager, ecoOrder, startFakeEcoManager } from './support/ec
 import { createUser, loginCookie } from './support/users.js';
 
 const PASSWORD = 'mot-de-passe-solide-2026';
+const SECRET = 'whsec-test-0123456789';
 
 /** EcoManager settings for a test app pointing at the fake server. Each test uses its own order numbers: the
  *  app's client caches answers for the whole file. */
@@ -28,7 +30,7 @@ let linaUser: DeskUser;
 
 beforeAll(async () => {
   fake = await startFakeEcoManager();
-  on = await createTestApp(ecomanager(fake.url));
+  on = await createTestApp(ecomanager(fake.url, { webhookSecret: SECRET }));
   off = await createTestApp();
 });
 afterAll(async () => {
@@ -185,5 +187,63 @@ describe('order check at save (save-call)', () => {
     expect(report.body.calls.find((c: { id: string }) => c.id === id)).toMatchObject({
       order_check: 'verified', order_state_group: 'failed', order_state_name: 'En retour', ecomanager_order_id: '2000005',
     });
+  });
+});
+
+/** EcoManager posting an order event to the webhook, signed with `secret` (or unsigned). */
+function hook(order: Record<string, unknown>, { secret = SECRET as string | null, ctx = on } = {}) {
+  const raw = JSON.stringify(order);
+  const req = request(ctx.server).post('/api/ecomanager/webhook').set('Content-Type', 'application/json').set('X-Ecomanager-Event', 'OrderStatusChanged');
+  if (secret) req.set('X-Ecomanager-Signature', createHmac('sha256', secret).update(raw).digest('hex'));
+  return req.send(raw);
+}
+
+describe('order state webhook', () => {
+  it('activation GET answers 200', async () => {
+    const res = await request(on.server).get('/api/ecomanager/webhook');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it('an unsigned or wrongly signed webhook is refused', async () => {
+    expect((await hook(ecoOrder(3000000), { secret: null })).status).toBe(401);
+    expect((await hook(ecoOrder(3000000), { secret: 'another-secret-0123' })).status).toBe(401);
+    expect((await hook(ecoOrder(3000000), { ctx: off })).status).toBe(401);
+  });
+
+  it('a signed status change updates the saved call', async () => {
+    fake.orders.set(3000001, ecoOrder(3000001, 'En confirmation'));
+    const { id, res } = saveInitial('TOU3000001');
+    expect((await res).status).toBe(200);
+    const done = await hook(ecoOrder(3000001, 'Livrée', { updated_at: '2026-11-21 09:00:00' }));
+    expect(done.status).toBe(200);
+    expect(done.body).toEqual({ ok: true });
+    expect(await metaOf(id)).toMatchObject({
+      order_check: 'verified', order_state_group: 'delivered', order_state_name: 'Livrée', order_state_at: new Date('2026-11-21T08:00:00.000Z'),
+    });
+    const calls = fake.calls.length;
+    expect((await lookup('TOU3000001')).body.order.stateGroup).toBe('delivered');
+    expect(fake.calls.length).toBe(calls);
+  });
+
+  it('an unverified call is confirmed by its webhook', async () => {
+    fake.setStatus(503);
+    const { id, res } = saveInitial('TOU3000003');
+    expect((await res).status).toBe(200);
+    expect((await hook(ecoOrder(3000003, 'En livraison'))).status).toBe(200);
+    expect(await metaOf(id)).toMatchObject({ order_check: 'verified', order_state_group: 'shipping', order_state_name: 'En livraison' });
+  });
+
+  it('an unknown order is acknowledged', async () => {
+    expect((await hook(ecoOrder(3999999, 'Livrée'))).status).toBe(200);
+    expect((await hook({ event: 'ping' })).status).toBe(200);
+  });
+
+  it('another store’s order changes nothing', async () => {
+    fake.orders.set(3000002, ecoOrder(3000002, 'En confirmation'));
+    const { id, res } = saveInitial('TOU3000002');
+    expect((await res).status).toBe(200);
+    expect((await hook(ecoOrder(3000002, 'Annulée', { reference: 'SHT3000002' }))).status).toBe(200);
+    expect(await metaOf(id)).toMatchObject({ order_state_group: 'pending', order_state_name: 'En confirmation' });
   });
 });
