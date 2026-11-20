@@ -11,7 +11,8 @@ const fixture: Array<{ id: string } & Record<string, unknown>> = JSON.parse(
 const belnco: Array<{ id: string } & Record<string, unknown>> = JSON.parse(
   readFileSync(resolve(import.meta.dirname, '../../shared/test/fixtures/belnco.json'), 'utf8'),
 );
-const seeded = [...fixture, ...belnco];
+// 0007 seeds BEL.NCO switched off: the code running when it applies offers every enabled row, whatever its brand.
+const seeded = [...fixture, ...belnco.map((p) => ({ ...p, enabled: false }))];
 
 const handle = openDb(testDatabaseUrl());
 const { db } = handle;
@@ -140,6 +141,20 @@ describe('migrations', () => {
     expect((await db.execute(sql`SELECT data->>'name' AS name FROM tc_products WHERE id = 'bel-oil'`)).rows).toEqual([{ name: 'Huile éditée en Gestion' }]);
     expect((await db.execute(sql`SELECT COUNT(*)::int AS n FROM tc_products WHERE id LIKE 'bel-%'`)).rows).toEqual([{ n: 10 }]);
     await expect(db.execute(sql`UPDATE tc_calls SET brand = 'shein' WHERE id = 'c1'`)).rejects.toMatchObject({ cause: { code: '23514' } });
+  });
+
+  it('0007 seeds BEL.NCO switched off, so code that can’t tell brands apart still offers Touché rows only', async () => {
+    const journal = JSON.parse(readFileSync(resolve(import.meta.dirname, '../drizzle/meta/_journal.json'), 'utf8'));
+    const entry = journal.entries.find((e: { tag: string }) => e.tag === '0007_belnco_brand');
+    await db.execute(sql`ALTER TABLE tc_calls DROP CONSTRAINT tc_calls_brand_check`);
+    await db.execute(sql`ALTER TABLE tc_calls DROP COLUMN brand`);
+    await db.execute(sql`DELETE FROM tc_products WHERE id LIKE 'bel-%'`);
+    await db.execute(sql`DELETE FROM drizzle.__drizzle_migrations WHERE created_at = ${entry.when}`);
+    await runMigrations(testDatabaseUrl());
+    // The API and desk from before BEL.NCO read every row and offer the enabled ones: grid, suggestions, picker, server.
+    const rows = (await db.execute(sql`SELECT id, data FROM tc_products ORDER BY position`)).rows as Array<{ id: string; data: { enabled: boolean } }>;
+    expect(rows.filter((r) => r.data.enabled).map((r) => r.id)).toEqual(fixture.filter((p) => p.enabled).map((p) => p.id));
+    expect(rows.filter((r) => r.id.startsWith('bel-')).map((r) => r.data)).toEqual(belnco.map((p) => ({ ...p, enabled: false })));
   });
 
   it('jsonb keeps French typography', async () => {

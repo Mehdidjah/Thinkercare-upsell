@@ -9,7 +9,7 @@ import type { DeskUser } from '../src/desk/desk.types.js';
 import { OrderSyncService } from '../src/ecomanager/sync.service.js';
 import { insertCall } from './support/calls.js';
 import { type TestContext, createTestApp } from './support/context.js';
-import { resetDatabase } from './support/database.js';
+import { launchBelnco, resetDatabase } from './support/database.js';
 import { deskGet, deskPost } from './support/desk.js';
 import { type FakeEcoManager, ecoOrder, startFakeEcoManager } from './support/ecomanager-fake.js';
 import { createUser, loginCookie } from './support/users.js';
@@ -439,6 +439,7 @@ describe('BEL.NCO store', () => {
   let bel: TestContext;
   beforeAll(async () => { bel = await createTestApp(ecomanager(fake.url, { webhookSecret: SECRET, belToken: 'bel-token' })); });
   afterAll(() => bel.close());
+  beforeEach(() => launchBelnco(bel.db));
   const belOrder = (id: number, state = 'En confirmation') => ecoOrder(id, state, { reference: `BEL${id}` });
   const meta = (orderRef: string, extra: Record<string, unknown> = {}) => ({ version: 3, source: 'manual', customerStage: 'new', orderRef, startedAt: new Date(Date.now() - 60_000).toISOString(), eligible: false, objections: [], ...extra });
   const saveBel = (ctx: TestContext, orderRef: string, extra: Record<string, unknown> = {}) => deskPost(ctx, { action: 'save-call', id: randomUUID(), brand: 'belnco', baseId: 'bel-retinol', productIds: ['bel-retinol'], outcome: 'noanswer', tier: 'catalogue', delivery: null, consent: false, checked: false, refusal: '', expectedUserId: linaUser.id, meta: meta(orderRef), ...extra }, { cookie: lina });

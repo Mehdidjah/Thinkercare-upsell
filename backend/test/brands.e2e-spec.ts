@@ -6,12 +6,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { localDay } from '@touche/domain';
 import { tcCallMeta, tcCalls, tcProducts, tcProposals } from '../src/db/schema.js';
 import { type TestContext, createTestApp } from './support/context.js';
-import { resetDatabase } from './support/database.js';
+import { launchBelnco, resetDatabase } from './support/database.js';
 import { deskGet, deskPost } from './support/desk.js';
 import { createUser, loginCookie } from './support/users.js';
 
 // BEL.NCO as a second brand (docs/superpowers/specs/2026-11-20-belnco-brand-design.md): the database holds both
-// catalogues, the BEL.NCO rows seeded by migration 0007.
+// catalogues, the BEL.NCO rows seeded switched off by migration 0007 and switched on in Gestion (launchBelnco).
 const PASSWORD = 'mot-de-passe-solide-2026';
 const load = (file: string) =>
   JSON.parse(readFileSync(resolve(import.meta.dirname, '../../shared/test/fixtures', file), 'utf8')) as Array<
@@ -55,6 +55,17 @@ describe('bootstrap by desk', () => {
     const [row] = await ctx.db.select().from(tcProducts).where(eq(tcProducts.id, 'bel-retinol'));
     expect(row!.data).toEqual(product);
   });
+  it('BEL.NCO stays off until Gestion switches it on: then a BEL.NCO offer goes through', async () => {
+    const enabled = (rows: Array<{ id: string; enabled?: unknown }>) => rows.filter((p) => p.enabled === true).map((p) => p.id);
+    const before = await deskGet(ctx, '?compact=1', lina, { 'X-Desk-Brands': '1' });
+    expect(enabled(before.body.products)).toEqual(enabled(touche));
+    const body = offer({ brand: 'belnco', baseId: 'bel-retinol', productIds: ['bel-retinol', 'bel-moist'], agreedTotal: 3300 });
+    expect((await deskPost(ctx, body, { cookie: lina })).body.code).toBe('product-disabled');
+    for (const product of bel) expect((await deskPost(ctx, { action: 'product', product }, { cookie: admin })).status).toBe(200);
+    const after = await deskGet(ctx, '?compact=1', lina, { 'X-Desk-Brands': '1' });
+    expect(enabled(after.body.products)).toEqual(enabled([...touche, ...bel]));
+    expect((await deskPost(ctx, { ...body, id: randomUUID() }, { cookie: lina })).status).toBe(200);
+  });
 });
 
 const NEVER = 'Retinol Complex Serum et Clarifying Serum ne s’utilisent jamais dans la même routine : gardez l’un ou l’autre.';
@@ -62,6 +73,7 @@ const offer = (o: Record<string, unknown>) => ({ action: 'present-offer', id: ra
 const meta = (o: Record<string, unknown> = {}) => ({ version: 3, source: 'manual', customerStage: 'new', orderRef: 'BEL1763838', startedAt: new Date(Date.now() - 60_000).toISOString(), eligible: false, objections: [], ...o });
 
 describe('one brand per call on the server', () => {
+  beforeEach(() => launchBelnco(ctx.db));
   it('lists the brands feature', async () => {
     expect((await deskGet(ctx, '?compact=1', lina)).body.features).toContain('brands');
   });
@@ -109,6 +121,7 @@ describe('one brand per call on the server', () => {
 });
 
 describe('recorded brand', () => {
+  beforeEach(() => launchBelnco(ctx.db));
   it('a saved call keeps its brand and rule version; an older tab’s call is Touché', async () => {
     const shown = await deskPost(ctx, offer({ brand: 'belnco', baseId: 'bel-retinol', productIds: ['bel-retinol', 'bel-moist'], agreedTotal: 3300 }), { cookie: lina });
     const callId = shown.body.proposal.call_id;

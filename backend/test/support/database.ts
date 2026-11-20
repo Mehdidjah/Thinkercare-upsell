@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sql } from 'drizzle-orm';
+import { inArray, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import type { Db } from '../../src/db/schema.js';
+import { type Db, tcProducts } from '../../src/db/schema.js';
 
 const TABLES = [
   'tc_users',
@@ -40,4 +40,19 @@ export async function resetDatabase(db: Db): Promise<void> {
       if (/^\s*INSERT INTO/.test(statement)) await db.execute(sql.raw(statement));
     }
   }
+}
+
+/** The BEL.NCO products the catalogue sells (every one but the sold-out tinted serum). */
+const SOLD: string[] = (
+  JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../shared/test/fixtures/belnco.json'), 'utf8')) as Array<{ id: string; enabled: boolean }>
+)
+  .filter((p) => p.enabled)
+  .map((p) => p.id);
+
+/** What Gestion does once the brand-aware API is live: 0007 seeds BEL.NCO switched off, this switches its products on. */
+export async function launchBelnco(db: Db): Promise<void> {
+  await db
+    .update(tcProducts)
+    .set({ data: sql`jsonb_set(${tcProducts.data}, '{enabled}', 'true'::jsonb)` })
+    .where(inArray(tcProducts.id, SOLD));
 }
