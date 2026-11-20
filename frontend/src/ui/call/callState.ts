@@ -25,17 +25,20 @@ export type CallDraft={
 /** What a tab keeps: the call on screen and, during an example, the live call set aside. */
 export type CallStore={draft:CallDraft;parked:CallDraft|null};
 export type Revalidated={draft:CallDraft;removed:string[]};
-export type ExampleKind='face'|'hair';
+export type ExampleKind='face'|'hair'|'belnco';
 
-const EXAMPLES:Record<ExampleKind,{baseId:string;profile:Profile}>={
- face:{baseId:'antiacne',profile:{...EMPTY_PROFILE,concerns:['acne'],skin:'mixed',sensitive:'no',routine:[],routineKnown:true,safety:['none'],severity:'mild'}},
- hair:{baseId:'shpousse',profile:{...EMPTY_PROFILE,concerns:['growth','breakage'],skin:'mixed',sensitive:'no',routine:[],routineKnown:true,safety:['none'],severity:''}},
+const EXAMPLES:Record<ExampleKind,{baseId:string;brand:Brand;domain:string;profile:Profile}>={
+ face:{baseId:'antiacne',brand:'touche',domain:'face',profile:{...EMPTY_PROFILE,concerns:['acne'],skin:'mixed',sensitive:'no',routine:[],routineKnown:true,safety:['none'],severity:'mild'}},
+ hair:{baseId:'shpousse',brand:'touche',domain:'hair',profile:{...EMPTY_PROFILE,concerns:['growth','breakage'],skin:'mixed',sensitive:'no',routine:[],routineKnown:true,safety:['none'],severity:''}},
+ belnco:{baseId:'bel-retinol',brand:'belnco',domain:'face',profile:{...EMPTY_PROFILE,concerns:['dehydration'],skin:'normal',sensitive:'no',routine:[],routineKnown:true,safety:['none']}},
 };
+/** The worked examples of a brand: one brand per call, examples included. */
+export const examplesFor=(brand:Brand):ExampleKind[]=>brand==='belnco'?['belnco']:['face','hair'];
 const uuid=()=>crypto.randomUUID();
 
 export function newDraft({id=uuid(),now=new Date().toISOString(),example}:{id?:string;now?:string;example?:ExampleKind}={}):CallDraft{
  const sample=example?EXAMPLES[example]:null;
- return {callId:id,startedAt:now,step:sample?1:0,brand:'touche',baseIds:sample?[sample.baseId]:[],baseQuantities:{},profile:sample?{...sample.profile}:{...EMPTY_PROFILE},profileDomain:sample?example!:'',
+ return {callId:id,startedAt:now,step:sample?1:0,brand:sample?sample.brand:'touche',baseIds:sample?[sample.baseId]:[],baseQuantities:{},profile:sample?{...sample.profile}:{...EMPTY_PROFILE},profileDomain:sample?sample.domain:'',
   adds:[],quantities:{},requestedIds:[],verifiedProducts:[],upgradeId:'',tier:'duo',delivery:'',orderRef:'',customerStage:'unknown',callbackAt:'',handledObjections:[],linkedCallId:'',
   presented:[],presentationKeys:{},consent:false,checked:false,refusal:'',saved:false,savedOutcome:'',savedAt:'',demo:!!sample};
 }

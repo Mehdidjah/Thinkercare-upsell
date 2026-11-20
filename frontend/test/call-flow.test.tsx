@@ -639,6 +639,23 @@ describe('call brand on screen', () => {
     expect(render(<CallHeading/>, both)).not.toContain('Exemple cheveux');
     expect(render(<StepOrder/>, both)).not.toContain('>Cheveux<');
   });
+  it('the BEL.NCO call offers its own example, and evening serums carry their tag', () => {
+    const belCall = { brands: ['touche', 'belnco'], brand: 'belnco' } as Partial<CallModel>;
+    const heading = render(<CallHeading/>, belCall);
+    expect(heading).toContain('Exemple BEL.NCO');
+    expect(heading).not.toContain('Exemple visage');
+    expect(render(<CallHeading/>, { ...belCall, brand: 'touche' })).not.toContain('Exemple BEL.NCO');
+    expect(render(<CallHeading/>, { ...belCall, demo: true, domain: 'face' })).toContain('parcours fictif BEL.NCO');
+    expect(render(<CallHeading/>, { demo: true, domain: 'face' })).toContain('parcours fictif visage');
+    const all = [...catalogue, ...belnco], retinol = belnco.find(p => p.id === 'bel-retinol')!, nightTag = '<span class="tag tag--warning">Soir uniquement / SPF le lendemain matin</span>';
+    expect(render(<RoutineRail/>, { products: all, base: retinol, baseIds: [retinol.id], initial: [{ ...retinol, quantity: 1 }], basket: [{ ...retinol, quantity: 1 }] })).toContain(nightTag);
+    const moist = belnco.find(p => p.id === 'bel-moist')!;
+    expect(render(<RoutineRail/>, { products: all, base: moist, baseIds: [moist.id], initial: [{ ...moist, quantity: 1 }], basket: [{ ...moist, quantity: 1 }] })).not.toContain('Soir uniquement');
+    const row = (product: Product) => ({ product, check: manualAddCheck(moist, [], product, face, all), suggestion: { product, score: 10, reason: 'Raison' }, added: false }) as CallRequest;
+    const picker = render(<ProductPicker/>, { step: 2, products: all, brand: 'belnco', requests: [row(retinol), row(belnco.find(p => p.id === 'bel-uv50')!)], candidates: [] });
+    expect(picker).toMatch(/<h3 class="call-product__name">RETINOL COMPLEX SERUM<\/h3><span class="tag tag--neutral">.*?Suggéré<\/span><span class="tag tag--warning">Soir uniquement \/ SPF le lendemain matin<\/span>/);
+    expect(picker.match(/Soir uniquement/g)).toHaveLength(1);
+  });
   it('present-offer and save-call carry the brand only through brandField', () => {
     expect(readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8').match(/\.\.\.callState\.brandField\(now,state\?\.features\)/g)).toHaveLength(2);
   });

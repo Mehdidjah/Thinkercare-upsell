@@ -187,6 +187,8 @@
   .call-product + .call-product { border-block-start: 1px solid var(--color-border-hairline); }
   .call-product__main { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); min-inline-size: 0; }
   .call-product__title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+  /* A long tag (« Soir uniquement / SPF le lendemain matin ») wraps instead of overflowing a narrow row or the rail. */
+  .call-product__title > .tag, .call-basket__main > .tag { white-space: normal; }
   .call-product__name { font-size: var(--text-body); line-height: var(--leading-heading); letter-spacing: 0; }
   .call-product__meta { font-size: var(--text-caption); color: var(--color-text-tertiary); }
   .call-product__reason { font-size: var(--text-ui); color: var(--color-text-secondary); max-inline-size: var(--measure-text); }

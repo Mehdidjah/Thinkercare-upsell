@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {money} from '@touche/domain';
+import {money,productTags} from '@touche/domain';
 import {Button} from '../shared/Button';
 import {Icon} from '../shared/Icon';
 import {Photo} from '../shared/Photo';
@@ -62,7 +62,7 @@ export function ProductPicker(){const {saved,busy,presenting,setDetail,candidate
     return <li key={p.id} id={'picker-row-'+p.id} className="call-product" data-state={added?'added':line?'ordered':blockedRow?'blocked':confirming?'check':suggestion?'suggested':'default'}>
      <Photo product={p} small/>
      <div className="call-product__main">
-      <div className="call-product__title"><h3 className="call-product__name">{p.name}</h3>{suggestion&&<span className="tag tag--neutral"><Icon name="spark"/>Suggéré</span>}{!blockedRow&&!added&&needsConfirmation&&<span className="tag tag--warning"><Icon name="alert"/>À vérifier</span>}</div>
+      <div className="call-product__title"><h3 className="call-product__name">{p.name}</h3>{suggestion&&<span className="tag tag--neutral"><Icon name="spark"/>Suggéré</span>}{!blockedRow&&!added&&needsConfirmation&&<span className="tag tag--warning"><Icon name="alert"/>À vérifier</span>}{productTags(p).map(t=><span className="tag tag--warning" key={t}>{t}</span>)}</div>
       <p className="call-product__meta">{p.category}, {p.size}</p>
       {suggestion&&<p className="call-product__reason">{suggestion.reason}</p>}
       {line&&line.extra>0&&<p className="call-product__reason">Dont {line.extra} {line.extra>1?'unités ajoutées':'unité ajoutée'}</p>}

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_PROFILE, type Product, type Proposal } from '@touche/domain';
+import { EMPTY_PROFILE, recommend, type Product, type Proposal } from '@touche/domain';
 import * as cs from '../src/ui/call/callState';
 const load = (f: string) => JSON.parse(readFileSync(new URL('../../shared/test/fixtures/' + f, import.meta.url), 'utf8')) as Product[];
 const touche = load('catalogue.json'), bel = load('belnco.json'), all = [...touche, ...bel];
@@ -38,6 +38,21 @@ describe('call brand', () => {
     const b = { ...cs.newDraft({ id: 'c2', now: T }), brand: 'belnco' as const, baseIds: ['bel-retinol'] };
     expect(cs.pickerPool(t, all, new Set()).some((p) => p.id.startsWith('bel-'))).toBe(false);
     expect(cs.pickerPool(b, all, new Set()).every((p) => p.id.startsWith('bel-'))).toBe(true);
+  });
+  it('« Exemple BEL.NCO »: retinol serum and dehydration, then the SPF and the cream', () => {
+    const d = cs.newDraft({ id: 'x', now: T, example: 'belnco' });
+    expect(d).toMatchObject({ brand: 'belnco', baseIds: ['bel-retinol'], step: 1, demo: true, profileDomain: 'face' });
+    expect(d.profile.concerns).toEqual(['dehydration']);
+    expect(recommend(all, all.find(p => p.id === 'bel-retinol')!, d.profile).slice(0, 2).map(c => c.product.id)).toEqual(['bel-uv50', 'bel-moist']);
+    expect(cs.newDraft({ id: 'y', now: T, example: 'face' }).brand).toBe('touche');
+    expect(cs.newDraft({ id: 'y', now: T, example: 'hair' })).toMatchObject({ brand: 'touche', profileDomain: 'hair', baseIds: ['shpousse'] });
+    expect(cs.examplesFor('belnco')).toEqual(['belnco']);
+    expect(cs.examplesFor('touche')).toEqual(['face', 'hair']);
+    // An example started from a BEL.NCO call is a BEL.NCO call; the live call set aside keeps its own brand.
+    const live = { ...cs.newDraft({ id: 'c1', now: T }), brand: 'belnco' as const, baseIds: ['bel-gel'] };
+    const s = cs.startExample({ draft: live, parked: null }, 'belnco', { id: 'x', now: T });
+    expect(s.draft.brand).toBe('belnco');
+    expect(s.parked).toBe(live);
   });
   it('the brand goes only to a server that lists brands; a reminder keeps its brand', () => {
     expect(cs.brandField({ brand: 'belnco' }, ['void-call'])).toEqual({});

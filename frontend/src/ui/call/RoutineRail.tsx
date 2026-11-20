@@ -1,4 +1,4 @@
-import {quantityOf,lineTotal,isPack,expand,money} from '@touche/domain';
+import {quantityOf,lineTotal,isPack,expand,money,productTags} from '@touche/domain';
 import QuantityControl from '../QuantityControl';
 import {Icon} from '../shared/Icon';
 import {Photo} from '../shared/Photo';
@@ -15,6 +15,7 @@ export function RoutineRail(){const {step,saved,busy,presenting,products,baseIds
     <div className="call-basket__main">
      <p className="call-basket__role">{baseIds.includes(p.id)?'Commande initiale':p.id===upgradeId?'Pack de remplacement':requestedIds.includes(p.id)?'Demandé par la cliente':`Complément ${adds.indexOf(p.id)+1}`}</p>
      <p className="call-basket__name">{p.short}</p>
+     {productTags(p).map(t=><span className="tag tag--warning" key={t}>{t}</span>)}
      {isPack(p)&&<p className="call-basket__note">{expand(p,products).map(x=>x.short).join(' + ')}</p>}
      {quantityOf(p)>1&&<p className="call-basket__note"><span className="num">{quantityOf(p)} × {money(p.price)}</span> par unité</p>}
      {extra>0&&<p className="call-basket__note">Dont {extra} {extra>1?'unités ajoutées':'unité ajoutée'}</p>}
