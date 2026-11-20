@@ -9,6 +9,7 @@ export const FEATURES: readonly string[] = [
   'expected-user',
   'sliding-session',
   'price-codes',
+  'brands',
 ];
 
 /** The features this server lists: `order-check` only once EcoManager is configured. */

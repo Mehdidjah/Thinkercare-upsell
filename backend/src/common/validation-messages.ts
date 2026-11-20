@@ -24,6 +24,7 @@ const LABELS: Record<string, string> = {
   confirmed: 'Confirmation',
   reason: 'Motif de l’annulation',
   callId: 'Appel',
+  brand: 'Marque de l’appel',
   baseId: 'Commande initiale',
   baseIds: 'Commande initiale',
   baseQuantities: 'Quantités de la commande initiale',

@@ -193,6 +193,7 @@ export const proposalSchema = z
     action: z.literal('present-offer'),
     id: z.string().uuid(),
     callId: z.string().uuid(),
+    brand: z.enum(['touche', 'belnco']).optional(),
     baseId: id,
     baseIds: z.array(id).min(1).max(32).optional(),
     baseQuantities: quantities.optional(),
@@ -242,6 +243,7 @@ export const saveCallSchema = z
   .object({
     action: z.literal('save-call'),
     id: z.string().uuid(),
+    brand: z.enum(['touche', 'belnco']).optional(),
     baseId: z.string().max(60),
     baseIds: z.array(id).min(1).max(32).optional(),
     baseQuantities: quantities.optional(),

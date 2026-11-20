@@ -180,6 +180,15 @@ describe('order check at save (save-call)', () => {
     expect(r.body.code).toBe('order-ref-format');
   });
 
+  it('a BEL.NCO dossier on a Touché call is refused before EcoManager is asked', async () => {
+    const { id, res } = saveInitial('BEL2000006');
+    const r = await res;
+    expect(r.status).toBe(400);
+    expect(r.body).toEqual({ error: 'Cette référence est une commande BEL.NCO : l’appel est un appel Touché. Changez la marque de l’appel ou corrigez la référence.', code: 'order-ref-brand' });
+    expect(fake.calls).toEqual([]);
+    expect(await on.db.select().from(tcCalls).where(eq(tcCalls.id, id))).toEqual([]);
+  });
+
   it('analytics returns the order state', async () => {
     fake.orders.set(2000005, ecoOrder(2000005, 'En retour'));
     const { id, res } = saveInitial('TOU2000005');

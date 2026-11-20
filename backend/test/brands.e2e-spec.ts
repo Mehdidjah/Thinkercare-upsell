@@ -1,8 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { tcProducts } from '../src/db/schema.js';
+import { tcProducts, tcProposals } from '../src/db/schema.js';
 import { type TestContext, createTestApp } from './support/context.js';
 import { resetDatabase, seedBelnco } from './support/database.js';
 import { deskGet, deskPost } from './support/desk.js';
@@ -53,5 +54,56 @@ describe('bootstrap by desk', () => {
     expect((await deskPost(ctx, { action: 'product', product }, { cookie: admin })).status).toBe(200);
     const [row] = await ctx.db.select().from(tcProducts).where(eq(tcProducts.id, 'bel-retinol'));
     expect(row!.data).toEqual(product);
+  });
+});
+
+const NEVER = 'Retinol Complex Serum et Clarifying Serum ne s’utilisent jamais dans la même routine : gardez l’un ou l’autre.';
+const offer = (o: Record<string, unknown>) => ({ action: 'present-offer', id: randomUUID(), callId: randomUUID(), tier: 'duo', delivery: null, expectedUserId: linaUser.id, ...o });
+const meta = (o: Record<string, unknown> = {}) => ({ version: 3, source: 'manual', customerStage: 'new', orderRef: 'BEL1763838', startedAt: new Date(Date.now() - 60_000).toISOString(), eligible: false, objections: [], ...o });
+
+describe('one brand per call on the server', () => {
+  it('lists the brands feature', async () => {
+    expect((await deskGet(ctx, '?compact=1', lina)).body.features).toContain('brands');
+  });
+  it('a BEL.NCO offer is priced like Touché and its snapshot carries the brand', async () => {
+    const res = await deskPost(ctx, offer({ brand: 'belnco', baseId: 'bel-retinol', productIds: ['bel-retinol', 'bel-moist'], agreedTotal: 3300 }), { cookie: lina });
+    expect(res.status).toBe(200);
+    expect(res.body.proposal).toMatchObject({ brand: 'belnco', offerTotal: 3300, extra: 1400, version: 3 });
+    expect((await deskPost(ctx, offer({ brand: 'belnco', baseId: 'bel-oil', productIds: ['bel-oil', 'bel-gel'], agreedTotal: 3100 }), { cookie: lina })).status).toBe(200);
+  });
+  it('refuses a Touché offer with a BEL.NCO product, and tells an older tab to reload', async () => {
+    const body = offer({ baseId: 'antiacne', productIds: ['antiacne', 'bel-moist'], agreedTotal: 3200 });
+    const now = await deskPost(ctx, body, { cookie: lina });
+    expect(now.status).toBe(400);
+    expect(now.body).toEqual({ error: '« RICH MOISTURIZER » est une référence BEL.NCO : un appel Touché ne propose que des références Touché.', code: 'brand-mixed' });
+    const { expectedUserId: _x, ...old } = body;
+    const oldTab = await deskPost(ctx, { ...old, id: randomUUID() }, { cookie: lina, pricing: null });
+    expect(oldTab.body.error).toBe('« RICH MOISTURIZER » est une référence BEL.NCO : un appel Touché ne propose que des références Touché. Rechargez la page pour mettre le catalogue à jour.');
+    expect(await ctx.db.select().from(tcProposals)).toEqual([]);
+  });
+  it('an older tab sends no brand: its offer is a Touché offer', async () => {
+    const { expectedUserId: _x, ...old } = offer({ baseId: 'antiacne', productIds: ['antiacne', 'wcgel'], agreedTotal: 3000 });
+    const res = await deskPost(ctx, old, { cookie: lina, pricing: null });
+    expect(res.status).toBe(200);
+    expect(res.body.proposal.brand).toBe('touche');
+  });
+  it('refuses products that do not match the call’s brand', async () => {
+    const res = await deskPost(ctx, offer({ brand: 'belnco', baseId: 'antiacne', productIds: ['antiacne', 'wcgel'], agreedTotal: 3000 }), { cookie: lina });
+    expect(res.body.error).toBe('« Sérum Anti-Acné » est une référence Touché : un appel BEL.NCO ne propose que des références BEL.NCO.');
+  });
+  it('never presents the retinol with the acid serum', async () => {
+    const res = await deskPost(ctx, offer({ brand: 'belnco', baseId: 'bel-retinol', productIds: ['bel-retinol', 'bel-clarifying'], agreedTotal: 3500 }), { cookie: lina });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(NEVER);
+  });
+  it('save-call refuses a mixed initial order, whatever the outcome', async () => {
+    const res = await deskPost(ctx, { action: 'save-call', id: randomUUID(), baseId: 'antiacne', baseIds: ['antiacne', 'bel-moist'], productIds: ['antiacne', 'bel-moist'], outcome: 'noanswer', tier: 'catalogue', delivery: null, consent: false, checked: false, refusal: '', expectedUserId: linaUser.id, meta: meta({ orderRef: 'TOU1763816' }) }, { cookie: lina });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('« RICH MOISTURIZER » est une référence BEL.NCO : un appel Touché ne propose que des références Touché.');
+  });
+  it('save-call refuses a TOU dossier on a BEL.NCO call', async () => {
+    const res = await deskPost(ctx, { action: 'save-call', id: randomUUID(), brand: 'belnco', baseId: 'bel-retinol', productIds: ['bel-retinol'], outcome: 'noanswer', tier: 'catalogue', delivery: null, consent: false, checked: false, refusal: '', expectedUserId: linaUser.id, meta: meta({ orderRef: 'TOU1763816' }) }, { cookie: lina });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Cette référence est une commande Touché : l’appel est un appel BEL.NCO. Changez la marque de l’appel ou corrigez la référence.', code: 'order-ref-brand' });
   });
 });
