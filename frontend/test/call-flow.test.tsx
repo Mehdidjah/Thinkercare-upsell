@@ -605,6 +605,11 @@ describe('EcoManager order check in the call context', () => {
     expect(render(<CallContextPanel/>, { step: 0, orderRef: 'TOU1', orderCheck: { reference: 'TOU1', status: 'unavailable' } })).toContain('EcoManager ne répond pas : la commande sera marquée « à vérifier ».');
     expect(render(<CallContextPanel/>, { step: 2, orderRef: 'TOU1763816', orderCheck: { reference: 'TOU1763816', status: 'verified', order } })).toContain('En cours de livraison');
   });
+  it('the dossier placeholder names the call’s store', () => {
+    expect(render(<CallContextPanel/>, { step: 0, orderCheck: { reference: '', status: 'idle' } })).toContain('placeholder="TOU1763816"');
+    expect(render(<CallContextPanel/>, { step: 0, orderCheck: null })).toContain('placeholder="DOS-0142"');
+    expect(render(<CallContextPanel/>, { step: 0, brand: 'belnco', orderCheck: null })).toContain('placeholder="BEL1763838"');
+  });
   it('without the feature the field is unchanged', () => {
     const html = render(<CallContextPanel/>, { step: 0, orderRef: 'TOU1', orderCheck: null });
     expect(html).toContain('Obligatoire pour continuer l’appel.');

@@ -2,7 +2,7 @@ import {useState,useEffect,useRef,type ReactNode} from 'react';
 import {normalizeOrderReference,profileChanges,money,quantityOf,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,packDuplicate,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,brandOf,availableBrands,BRAND_LABELS,type Brand,type Profile,type Product,type Tier} from '@touche/domain';
 import {reportCache} from '../data/report-cache';
 import {setExpectedUser,lockRequests,requestJson,type RequestError} from '../data/api';
-import {startCheck,checkFromResponse,checkFromError,orderCheckBlocksSave,advanceBlocker,type OrderCheck} from './call/orderCheck';
+import {startCheck,checkFromResponse,checkFromError,orderCheckBlocksSave,advanceBlocker,orderCheckEnabled,orderLookupQuery,type OrderCheck} from './call/orderCheck';
 import {announceSession,onSessionMessage,sessionReaction} from '../data/session-channel';
 import {startCallClaims} from '../data/call-claims';
 import {allowedView,landingView,viewFromEntry,viewFromSearch,isGuardEntry,viewHref,backFromGuard} from '../data/view-history';
@@ -36,7 +36,7 @@ const scopeFilter=(scope:string)=>(p:Product)=>scope==='Tous'||(scope==='Packs'?
 
 export default function Desk(){
  const [state,setState]=useState<State|null>(null),[loading,setLoading]=useState(true),[fatal,setFatal]=useState(''),[bootError,setBootError]=useState(''),[view,setView]=useState('call'),[signingOut,setSigningOut]=useState(false);
- const [orderCheck,setOrderCheckState]=useState<OrderCheck>({reference:'',status:'idle'}),orderCheckRef=useRef<OrderCheck>({reference:'',status:'idle'}),checkPromise=useRef<Promise<OrderCheck>|null>(null);
+ const [orderCheck,setOrderCheckState]=useState<OrderCheck>({reference:'',status:'idle'}),orderCheckRef=useRef<OrderCheck>({reference:'',status:'idle'}),checkBrand=useRef<Brand>('touche'),checkPromise=useRef<Promise<OrderCheck>|null>(null);
  const [orderRefAsked,setOrderRefAsked]=useState(false),[loginNotice,setLoginNotice]=useState(''),[locked,setLocked]=useState(false),[offline,setOffline]=useState(()=>typeof navigator!=='undefined'&&navigator.onLine===false);
  const [progressEpoch,setProgressEpoch]=useState(0),[focusOperator,setFocusOperator]=useState(''),[pilotageTab,setPilotageTab]=useState('');
  // Catalogue and Parcours keep their own search, apart from the call's step-0 search (PN4).
@@ -200,23 +200,25 @@ export default function Desk(){
  const d=store.draft,products=state?.products||[];
  // One brand per call: « Marque » shows once two brands have enabled products (a server from before BEL.NCO sends Touché only).
  const brands=availableBrands(products);
- // EcoManager (server feature order-check): the dossier reference must be a real TOU order. Checked while typing (700 ms
- // after a complete reference), on leaving the field, and before any save; the number alone becomes its TOU reference.
- const orderCheckOn=!!state?.features?.includes('order-check');
- function setCheck(next:OrderCheck){orderCheckRef.current=next;setOrderCheckState(next);}
+ // EcoManager (server features order-check, order-check-bel): the dossier reference must be a real order of the store of
+ // the call's brand (TOU, BEL). Checked while typing (700 ms after a complete reference), on leaving the field, and before
+ // any save; the number alone becomes that store's reference. A check counts only for the brand it was made for.
+ const orderCheckOn=orderCheckEnabled(state?.features,d.brand);
+ function setCheck(next:OrderCheck,brand:Brand){orderCheckRef.current=next;checkBrand.current=brand;setOrderCheckState(next);}
+ const checkNow=():OrderCheck=>checkBrand.current===current().brand?orderCheckRef.current:{reference:'',status:'idle'};
  const sameRef=(check:OrderCheck,raw:string)=>{const r=normalizeOrderReference(raw);return check.reference===r||check.order?.reference===r;};
  async function runCheck(raw:string,explicit=false):Promise<OrderCheck>{
-  const start=startCheck(raw),prev=orderCheckRef.current;
-  if(start.status!=='checking'){const shown=explicit||start.status==='idle'?start:{reference:start.reference,status:'idle' as const};setCheck(shown);return shown;}
+  const brand=current().brand,start=startCheck(raw,brand),prev=checkNow();
+  if(start.status!=='checking'){const shown=explicit||start.status==='idle'?start:{reference:start.reference,status:'idle' as const};setCheck(shown,brand);return shown;}
   if(prev.status==='verified'&&sameRef(prev,raw))return prev;
   if(prev.status==='checking'&&prev.reference===start.reference&&checkPromise.current)return checkPromise.current;
-  setCheck(start);
-  const pending=requestJson('?action=order&ref='+encodeURIComponent(start.reference))
+  setCheck(start,brand);
+  const pending=requestJson(orderLookupQuery(start.reference,brand))
    .then(body=>checkFromResponse(start.reference,body),error=>checkFromError(start.reference,error as RequestError))
    .then(result=>{
-    // A newer reference was typed meanwhile: its own check decides.
-    if(!sameRef(result,current().orderRef)&&normalizeOrderReference(current().orderRef)!==start.reference)return result;
-    setCheck(result);
+    // The call's brand changed or a newer reference was typed meanwhile: its own check decides.
+    if(current().brand!==brand||!sameRef(result,current().orderRef)&&normalizeOrderReference(current().orderRef)!==start.reference)return result;
+    setCheck(result,brand);
     if(result.status==='verified'&&result.order&&current().orderRef!==result.order.reference&&!current().saved)commit({...current(),orderRef:result.order.reference});
     return result;
    });
@@ -225,10 +227,13 @@ export default function Desk(){
  }
  useEffect(()=>{
   if(!orderCheckOn)return;
-  if(startCheck(d.orderRef).status!=='checking'){if(!sameRef(orderCheckRef.current,d.orderRef))setCheck({reference:normalizeOrderReference(d.orderRef),status:'idle'});return;}
+  // Another brand: the other store's check is dropped at once.
+  const start=startCheck(d.orderRef,d.brand),stale=checkBrand.current!==d.brand;
+  if(start.status!=='checking'){if(stale||!sameRef(orderCheckRef.current,d.orderRef))setCheck({reference:start.reference,status:'idle'},d.brand);return;}
+  if(stale)setCheck({reference:start.reference,status:'idle'},d.brand);
   const timer=setTimeout(()=>void runCheck(d.orderRef),700);
   return ()=>clearTimeout(timer);
- },[d.orderRef,orderCheckOn]);
+ },[d.orderRef,d.brand,orderCheckOn]);
  const {base,upgrade,active:activeBase,initial,companions,basket}=callState.basketOf(d,products);
  const baseId=d.baseIds[0]||'',profile=d.profile,verifiedProducts=d.verifiedProducts,tier=d.tier;
  // Same shared pricing as the server: a hair pack's products chosen one by one cost the pack (callState.callAmounts).
@@ -404,7 +409,7 @@ export default function Desk(){
  /** With EcoManager on: the order is checked (again if needed) before a save; an unknown order or a malformed
   *  reference stops it, an unreachable EcoManager lets it through (saved « à vérifier »). */
  async function orderReady():Promise<boolean>{
-  let check=orderCheckRef.current;const raw=current().orderRef;
+  let check=checkNow();const raw=current().orderRef;
   const settled=sameRef(check,raw)&&(check.status==='not-found'||check.status==='invalid');
   if(orderCheckBlocksSave(check,raw)&&!settled)check=await runCheck(raw,true);
   const why=orderCheckBlocksSave(check,current().orderRef);
