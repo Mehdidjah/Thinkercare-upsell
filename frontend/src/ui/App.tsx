@@ -1,5 +1,5 @@
 import {useState,useEffect,useMemo,useRef,type ReactNode} from 'react';
-import {normalizeOrderReference,profileChanges,money,quantityOf,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,packDuplicate,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,brandOf,availableBrands,BRAND_LABELS,type Brand,type Profile,type Product,type Tier} from '@touche/domain';
+import {normalizeOrderReference,profileChanges,money,quantityOf,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,packDuplicate,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,brandOf,availableBrands,BRAND_LABELS,type Brand,type Profile,type Product,type Tier,concernLabel} from '@touche/domain';
 import {reportCache} from '../data/report-cache';
 import {setExpectedUser,lockRequests,requestJson,type RequestError} from '../data/api';
 import {startCheck,checkFromResponse,checkFromError,orderCheckBlocksSave,advanceBlocker,orderCheckEnabled,orderLookupQuery,type OrderCheck} from './call/orderCheck';
@@ -283,7 +283,7 @@ export default function Desk(){
  function toggleConcern(id:string){
   const before=current().profile,replaced=callState.replacedConcern(before,id);
   changeProfile(callState.concernPatch(before,id));
-  if(replaced&&current().profile!==before){const label=(c:string)=>concernsFor(products.find(p=>p.id===current().baseIds[0])).find(x=>x[0]===c)?.[1]||c;announce(`« ${label(replaced)} » remplacé par « ${label(id)} ».`);}
+  if(replaced&&current().profile!==before){const label=(c:string)=>concernLabel(c,products.find(p=>p.id===current().baseIds[0]));announce(`« ${label(replaced)} » remplacé par « ${label(id)} ».`);}
  }
  /** Resolves true when the new initial order is applied. */
  async function changeInitial(ids:string[]):Promise<boolean>{

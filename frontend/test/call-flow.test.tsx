@@ -173,6 +173,10 @@ describe('step 3 offer (STEP3, C1, M5, RAIL)', () => {
   });
 
   it('step 3 shows price and recap before the presentation (narrow screens), then the bar after the close-out', () => {
+    // The step-3 summary names the priority in the call's brand (« Peau sèche ou déshydratée » for BEL.NCO).
+    const bel = JSON.parse(readFileSync(new URL('../../shared/test/fixtures/belnco.json', import.meta.url), 'utf8')) as Product[];
+    const belMoist = bel.find((x) => x.id === 'bel-moist')!;
+    expect(render(<StepRoutine base={belMoist}/>, { step: 2, base: belMoist, products: [...catalogue, ...bel], profile: { ...EMPTY_PROFILE, concerns: ['dehydration'], skin: 'mixed' } })).toContain('<dt>Priorité</dt><dd>Peau sèche ou déshydratée</dd>');
     const html = render(<StepRoutine base={p('antiacne')}/>, { step: 2 });
     const offer = html.indexOf('<section class="card call-offer"'), present = html.indexOf('call-present'), close = html.indexOf('call-close'), bar = html.indexOf('call-actions--offer');
     expect(offer).toBeGreaterThan(0);

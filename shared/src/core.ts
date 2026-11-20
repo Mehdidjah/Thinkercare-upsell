@@ -25,6 +25,9 @@ export const money=(n:number)=>new Intl.NumberFormat('fr-DZ',{maximumFractionDig
 export const domainOf=(p?:Product)=>p?.domain||'face';
 export const concernsFor=(p?:Product)=>brandOf(p)==='belnco'?BEL_CONCERNS:domainOf(p)==='hair'?HAIR_CONCERNS:domainOf(p)==='body'?BODY_CONCERNS:FACE_CONCERNS;
 export const routinesFor=(p?:Product)=>domainOf(p)==='hair'?HAIR_ROUTINES:domainOf(p)==='body'?BODY_ROUTINES:ROUTINES;
+/** A priority's label in the call's brand; a priority the brand does not offer (kept after « Marque » changed) keeps
+ *  its own label, never its id. */
+export const concernLabel=(id:string,base?:Product):string=>(concernsFor(base).find(c=>c[0]===id)??CONCERNS.find(c=>c[0]===id))?.[1]||id;
 export const labelConcern=(p:Profile,base?:Product)=>(brandOf(base)==='belnco'?BEL_CONCERNS:CONCERNS).find(c=>c[0]===p.concerns[0])?.[1]?.toLowerCase()||'votre besoin';
 export function priceOffer(total:number,tier:Tier,count=2):number{
  if(!Number.isSafeInteger(total)||total<0)throw new Error('Montant invalide');

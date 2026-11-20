@@ -1,6 +1,6 @@
 import {readFileSync} from 'node:fs';
 import {describe,expect,it} from 'vitest';
-import {BEL_CONCERNS,BEL_TARGETED,EMPTY_PROFILE,FACE_CONCERNS,concernsFor,manualAddCheck,missingAnswers,questionsReady,recommend,type Candidate,type Product,type Profile} from '../src/index.js';
+import {BEL_CONCERNS,BEL_TARGETED,EMPTY_PROFILE,concernLabel,FACE_CONCERNS,concernsFor,manualAddCheck,missingAnswers,questionsReady,recommend,type Candidate,type Product,type Profile} from '../src/index.js';
 const load=(f:string)=>JSON.parse(readFileSync(new URL('./fixtures/'+f,import.meta.url),'utf8')) as Product[];
 const touche=load('catalogue.json'),bel=load('belnco.json'),all=[...touche,...bel];
 const get=(id:string)=>all.find(p=>p.id===id)!;
@@ -188,4 +188,15 @@ describe('BEL.NCO suggestions from the answers',()=>{
    for(const p of bel.filter(p=>p.enabled&&p.id!=='bel-moist'))expect(manualAddCheck(get('bel-moist'),[],p,allergy(allergens),all).blocked,p.id+' '+allergens).toBe('Allergie déclarée : ingrédient à risque ou liste INCI non publiée.');
   }
  });
+});
+
+describe('a priority is named in the call\'s brand', () => {
+  it('BEL.NCO wording on a BEL.NCO call, Touché wording on a Touché call, any leftover priority still named', () => {
+    expect(concernLabel('dehydration',get('bel-moist'))).toBe('Peau sèche ou déshydratée');
+    expect(concernLabel('acne',get('bel-gel'))).toBe('Boutons et imperfections');
+    expect(concernLabel('acne',get('antiacne'))).toBe(FACE_CONCERNS.find(c=>c[0]==='acne')![1]);
+    // A Touché priority kept after « Marque » changed: named with its Touché label, never its id.
+    expect(concernLabel('dry',get('bel-moist'))).toBe(FACE_CONCERNS.find(c=>c[0]==='dry')![1]);
+    expect(concernLabel('inconnu',get('bel-moist'))).toBe('inconnu');
+  });
 });
