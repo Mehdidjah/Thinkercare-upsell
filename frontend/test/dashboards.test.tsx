@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { bonusEstimate, type BonusRule } from '@touche/domain';
+import { bonusEstimate, money, type BonusRule } from '@touche/domain';
 import { ReminderTable, isDue, type Reminder } from '../src/ui/pages/Reminders';
 import { ProgressCard } from '../src/ui/Commission';
 import Analytics, { CallDetail, DeliveryCard, analyticsQuery, auditDetail, auditLabel, orderStateMatch, orderTag } from '../src/ui/Analytics';
@@ -175,14 +175,25 @@ test('Pilotage: the order state filter keeps only matching calls', () => {
 });
 
 test('Pilotage: the delivery card counts the upsells by order state', () => {
-  const call = (outcome: string, group: string | null, extra: number) => ({ outcome, order_state_group: group, extra, voided_at: null }) as never;
-  const html = renderToStaticMarkup(<DeliveryCard calls={[call('duo', 'delivered', 1200), call('trio', 'delivered', 900), call('duo', 'failed', 700), call('duo', 'shipping', 500), call('duo', null, 300), call('refused', 'delivered', 0)]} sync={{ total: 10, known: 6, pending: 4, notFound: 0, unrecognized: 0 }}/>);
+  const call = (outcome: string, group: string | null, extra: number, total = 0) => ({ outcome, order_state_group: group, extra, offered_total: total, voided_at: null }) as never;
+  const html = renderToStaticMarkup(<DeliveryCard calls={[call('duo', 'delivered', 1200, 3000), call('trio', 'delivered', 900, 2500), call('duo', 'failed', 700, 2200), call('duo', 'shipping', 500, 2000), call('duo', null, 300, 1500), call('refused', 'delivered', 0)]} sync={{ total: 10, known: 6, pending: 4, notFound: 0, unrecognized: 0 }}/>);
   expect(html).toContain('Livraison des upsells');
   expect(html).toMatch(/Livrées<\/span><strong[^>]*>2</);
   expect(html).toMatch(/Non livrées<\/span><strong[^>]*>1</);
   expect(html).toContain('Taux de livraison');
   expect(html).toContain('67 %');
   expect(html).toContain('États connus pour 6 appels sur 10');
+  // What the upsells are worth: the supplement delivered, lost and still on its way, with the value of those orders.
+  const kpi = (title: string, value: string) => new RegExp(`${title}</span><strong[^>]*>${value}</strong>`);
+  expect(html).toContain('Valeur des upsells');
+  expect(html).toMatch(kpi('Supplément livré', money(2100)));
+  expect(html).toContain(`Valeur totale des 2 commandes livrées : <span class="num">${money(5500)}</span>`);
+  expect(html).toMatch(kpi('Supplément non livré', money(700)));
+  expect(html).toContain(`Valeur totale de la commande non livrée : <span class="num">${money(2200)}</span>`);
+  expect(html).toMatch(kpi('Supplément en cours', money(500)));
+  expect(html).toContain(`Valeur totale de la commande en cours : <span class="num">${money(2000)}</span>`);
+  expect(html).toMatch(kpi('Taux de livraison en valeur', '75 %'));
+  expect(html).toContain(`Supplément non vérifiable : <span class="num">${money(300)}</span>`);
   expect(renderToStaticMarkup(<DeliveryCard calls={[]} sync={{ total: 3, known: 3, pending: 0, notFound: 0, unrecognized: 0 }}/>)).not.toContain('synchronisation en cours');
 });
 

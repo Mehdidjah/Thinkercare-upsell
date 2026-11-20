@@ -84,21 +84,28 @@ export function parseOrderReference(raw: string, prefix = 'TOU'): { reference: s
 }
 
 const ACCEPTED = new Set(['duo', 'trio', 'routine']);
+const GROUPS: OrderStateGroup[] = ['delivered', 'shipping', 'pending', 'failed', 'unknown'];
+const byGroup = () => ({ delivered: 0, shipping: 0, pending: 0, failed: 0, unknown: 0 }) as Record<OrderStateGroup, number>;
 
-/** Delivery of the accepted upsells (voided calls left out): rate = delivered ÷ (delivered + not delivered). */
+/** Delivery of the accepted upsells (voided calls left out), in orders and in money: `extra` is the supplement the
+ *  upsell added, `total` the value of the whole order after it. rate = delivered ÷ (delivered + not delivered), in
+ *  orders; valueRate the same in supplement. */
 export function upsellDelivery(calls: ActivityCall[]) {
-  const r = { delivered: 0, shipping: 0, pending: 0, failed: 0, unknown: 0, rate: null as number | null, deliveredExtra: 0 };
+  const count = byGroup(), extra = byGroup(), total = byGroup();
   for (const c of calls) {
     if (!ACCEPTED.has(c.outcome) || c.voided_at) continue;
-    const group = (c.order_state_group || 'unknown') as OrderStateGroup;
-    if (group === 'delivered') {
-      r.delivered++;
-      r.deliveredExtra += c.extra || 0;
-    } else if (group === 'shipping') r.shipping++;
-    else if (group === 'pending') r.pending++;
-    else if (group === 'failed') r.failed++;
-    else r.unknown++;
+    const group = GROUPS.includes(c.order_state_group as OrderStateGroup) ? (c.order_state_group as OrderStateGroup) : 'unknown';
+    count[group]++;
+    extra[group] += c.extra || 0;
+    total[group] += c.offered_total || 0;
   }
-  r.rate = r.delivered + r.failed > 0 ? r.delivered / (r.delivered + r.failed) : null;
-  return r;
+  const settled = count.delivered + count.failed, settledExtra = extra.delivered + extra.failed;
+  return {
+    ...count,
+    rate: settled > 0 ? count.delivered / settled : null,
+    deliveredExtra: extra.delivered,
+    extra,
+    total,
+    valueRate: settledExtra > 0 ? extra.delivered / settledExtra : null,
+  };
 }

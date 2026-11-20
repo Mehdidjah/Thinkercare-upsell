@@ -37,17 +37,31 @@ test('final states', () => {
 });
 
 test('upsell delivery figures', () => {
-  const call = (outcome: string, group: string | null, extra = 0, voided: string | null = null) =>
-    ({ outcome, order_state_group: group, extra, voided_at: voided }) as unknown as c.ActivityCall;
+  const call = (outcome: string, group: string | null, extra = 0, voided: string | null = null, total = 0) =>
+    ({ outcome, order_state_group: group, extra, voided_at: voided, offered_total: total }) as unknown as c.ActivityCall;
   const calls = [
-    call('duo', 'delivered', 1200), call('trio', 'delivered', 900), call('routine', 'shipping', 500),
-    call('duo', 'pending', 400), call('duo', 'failed', 700), call('duo', null, 300),
-    call('duo', 'delivered', 5000, '2026-11-20T10:00:00Z'), call('refused', 'delivered', 0),
+    call('duo', 'delivered', 1200, null, 3000), call('trio', 'delivered', 900, null, 2500), call('routine', 'shipping', 500, null, 2000),
+    call('duo', 'pending', 400, null, 1800), call('duo', 'failed', 700, null, 2200), call('duo', null, 300, null, 1500),
+    call('duo', 'delivered', 5000, '2026-11-20T10:00:00Z', 9000), call('refused', 'delivered', 0, null, 1000),
   ];
   const r = c.upsellDelivery(calls);
-  assert.deepEqual({ ...r, rate: undefined }, { delivered: 2, shipping: 1, pending: 1, failed: 1, unknown: 1, rate: undefined, deliveredExtra: 2100 });
+  assert.deepEqual([r.delivered, r.shipping, r.pending, r.failed, r.unknown, r.deliveredExtra], [2, 1, 1, 1, 1, 2100]);
   assert.equal(r.rate, 2 / 3);
   assert.equal(c.upsellDelivery([]).rate, null);
+});
+
+test('upsell delivery worth: supplement and order value by order state', () => {
+  const call = (group: string | null, extra: number, total: number) =>
+    ({ outcome: 'duo', order_state_group: group, extra, voided_at: null, offered_total: total }) as unknown as c.ActivityCall;
+  const r = c.upsellDelivery([
+    call('delivered', 1200, 3000), call('delivered', 900, 2500), call('shipping', 500, 2000), call('pending', 400, 1800),
+    call('failed', 700, 2200), call(null, 300, 1500), call('autre', 100, 900),
+  ]);
+  assert.deepEqual(r.extra, { delivered: 2100, shipping: 500, pending: 400, failed: 700, unknown: 400 });
+  assert.deepEqual(r.total, { delivered: 5500, shipping: 2000, pending: 1800, failed: 2200, unknown: 2400 });
+  assert.equal(r.unknown, 2);
+  assert.equal(r.valueRate, 2100 / 2800);
+  assert.equal(c.upsellDelivery([call('shipping', 500, 2000)]).valueRate, null);
 });
 
 test('order check labels', () => {

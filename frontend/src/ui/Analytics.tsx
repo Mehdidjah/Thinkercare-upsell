@@ -40,15 +40,21 @@ export function orderStateMatch(c:ActivityCall,filter:string):boolean{
  return c.order_state_group===filter;
 }
 type SyncStatus={total:number;known:number;pending:number;notFound:number;unrecognized:number};
-/** How many accepted upsells were delivered, from the EcoManager state of their orders (voided calls left out). */
+/** How many accepted upsells were delivered, from the EcoManager state of their orders (voided calls left out), and
+ *  what they are worth: the supplement delivered, lost and still on its way, with the value of those whole orders. */
 export function DeliveryCard({calls,sync}:{calls:ActivityCall[];sync?:SyncStatus|null}){
- const r=upsellDelivery(calls);
+ const r=upsellDelivery(calls),rate=(x:number|null)=>x===null?'—':`${Math.round(x*100)} %`;
+ const amount=(n:number)=><span className="num">{money(n)}</span>;
+ const worth=(n:number,[one,many]:[string,string],value:number)=>n===0?<>Aucune commande {one}</>:n===1?<>Valeur totale de la commande {one} : {amount(value)}</>:<>Valeur totale des {n} commandes {many} : {amount(value)}</>;
  return <section className="card pilot-panel pilot-delivery" aria-labelledby="pilot-delivery-title"><div className="section-head"><div><h2 id="pilot-delivery-title">Livraison des upsells</h2><p>État EcoManager des commandes dont l’ajout a été accepté, résultats annulés exclus.</p></div></div>
-  <div className="kpi-grid"><Metric title="Livrées" value={r.delivered} note={`Supplément livré : ${money(r.deliveredExtra)}`}/><Metric title="En cours de livraison" value={r.shipping} note="En livraison"/><Metric title="Pas encore expédiées" value={r.pending} note="En confirmation, préparation ou dispatch"/><Metric title="Non livrées" value={r.failed} note="En retour, retournées ou annulées"/><Metric title="Non vérifiables" value={r.unknown} note="État inconnu ou commande non retrouvée"/><Metric title="Taux de livraison" value={r.rate===null?'—':`${Math.round(r.rate*100)} %`} note="Livrées ÷ (livrées + non livrées)"/></div>
+  <div className="kpi-grid"><Metric title="Livrées" value={r.delivered} note="Livrées ou encaissées"/><Metric title="En cours de livraison" value={r.shipping} note="En livraison"/><Metric title="Pas encore expédiées" value={r.pending} note="En confirmation, préparation ou dispatch"/><Metric title="Non livrées" value={r.failed} note="En retour, retournées ou annulées"/><Metric title="Non vérifiables" value={r.unknown} note={<>État inconnu ou commande non retrouvée. Supplément non vérifiable : {amount(r.extra.unknown)}</>}/><Metric title="Taux de livraison" value={rate(r.rate)} note="Livrées ÷ (livrées + non livrées)"/></div>
+  <h3>Valeur des upsells</h3>
+  <p>Le supplément annoncé par l’ajout, selon l’état de la commande. La valeur totale comprend la commande initiale.</p>
+  <div className="kpi-grid"><Metric title="Supplément livré" value={money(r.extra.delivered)} note={worth(r.delivered,['livrée','livrées'],r.total.delivered)}/><Metric title="Supplément non livré" value={money(r.extra.failed)} note={worth(r.failed,['non livrée','non livrées'],r.total.failed)}/><Metric title="Supplément en cours" value={money(r.extra.shipping+r.extra.pending)} note={worth(r.shipping+r.pending,['en cours','en cours'],r.total.shipping+r.total.pending)}/><Metric title="Taux de livraison en valeur" value={rate(r.valueRate)} note="Supplément livré ÷ (livré + non livré)"/></div>
   {sync&&sync.pending>0&&<p className="footnote" role="status">États connus pour {sync.known} appels sur {sync.total} — synchronisation en cours.</p>}
  </section>;
 }
-function Metric({title,value,note}:{title:string;value:string|number;note:string}){return <div className="kpi"><span className="kpi__label">{title}</span><strong className={'kpi__value'+(String(value).length>12?' kpi__value--md':'')}>{value}</strong><small className="kpi__note">{note}</small></div>;}
+function Metric({title,value,note}:{title:string;value:string|number;note:ReactNode}){return <div className="kpi"><span className="kpi__label">{title}</span><strong className={'kpi__value'+(String(value).length>12?' kpi__value--md':'')}>{value}</strong><small className="kpi__note">{note}</small></div>;}
 function Bars({rows,suffix=''}:{rows:{name:string;value:number}[];suffix?:string}){const max=Math.max(1,...rows.map(r=>r.value));return <ul className="bar-chart" role="list">{rows.map((r,i)=><li className="bar-chart__row" key={i}><span className="bar-chart__label">{r.name}</span><span className="bar-chart__track" aria-hidden="true"><span className="bar-chart__bar" style={{inlineSize:Math.max(0,r.value)/max*100+'%'}}/></span><b className="bar-chart__value">{Math.round(r.value).toLocaleString('fr-FR')}{suffix}</b></li>)}</ul>;}
 
 /** Pilotage views. Rappels, Définitions and Traçabilité ignore the report filters, so the filter card hides there (PN7). */
