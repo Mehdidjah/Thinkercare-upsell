@@ -31,7 +31,7 @@ const noop = () => {};
 function model(extra: Partial<CallModel>): CallModel {
   const base = catalogue.find(p => p.id === 'antiacne')!;
   return { step: 0, toStep: noop, demo: false, saved: false, busy: false, presenting: false, savedOutcome: '', savedAt: '', canVoid: false, voidCall: async () => '', newCall: noop, startExample: noop, exitExample: noop, hasParkedCall: false,
-    orderRef: '', setOrderRef: noop, orderRefAsked: false, customerStage: 'unknown', setCustomerStage: noop, linkedCallId: '', products: catalogue, visible: catalogue.slice(0, 2), nearby: [], search: '', setSearch: noop, scope: 'Tous', setScope: noop, category: 'Tous', setCategory: noop,
+    orderRef: '', setOrderRef: noop, orderRefAsked: false, orderCheck: null, checkOrder: noop, customerStage: 'unknown', setCustomerStage: noop, linkedCallId: '', products: catalogue, visible: catalogue.slice(0, 2), nearby: [], search: '', setSearch: noop, scope: 'Tous', setScope: noop, category: 'Tous', setCategory: noop,
     baseId: base.id, baseIds: [base.id], base, initial: [{ ...base, quantity: 1 }], baseTotal: base.price, orderLocked: false, changeInitial: noop, changeInitialQuantity: () => true, duplicate: null,
     domain: 'face', profile: face, changeProfile: noop, toggleConcern: noop, blocked: null, stop: null, notes: [], missing: [],
     upgrades: [], heldPacks: [], upgrade: undefined, upgradeId: '', chooseUpgrade: noop, clearUpgrade: noop, adds: [], requestedIds: [], verifiedProducts: [], toggleVerified: noop, setDetail: noop,
@@ -576,6 +576,26 @@ describe('dossier reference is required', () => {
     expect(asked).toContain('aria-invalid="true"');
     expect(asked).toContain('Renseignez la référence du dossier pour enregistrer le résultat.');
     expect(render(<CallContextPanel/>, { step: 2, orderRef: '' })).toContain('Référence du dossier à renseigner');
+  });
+});
+
+describe('EcoManager order check in the call context', () => {
+  const order = { id: 1763816, reference: 'TOU1763816', stateGroup: 'shipping', stateLabel: 'En cours de livraison', stateName: 'En livraison' };
+  it('shows each state of the check under the dossier field', () => {
+    expect(render(<CallContextPanel/>, { step: 0, orderRef: 'TOU1763816', orderCheck: { reference: 'TOU1763816', status: 'checking' } })).toContain('Vérification dans EcoManager…');
+    const ok = render(<CallContextPanel/>, { step: 0, orderRef: 'TOU1763816', orderCheck: { reference: 'TOU1763816', status: 'verified', order } });
+    expect(ok).toContain('Commande vérifiée · En cours de livraison (En livraison)');
+    expect(ok).not.toContain('aria-invalid');
+    const missing = render(<CallContextPanel/>, { step: 0, orderRef: 'TOU9', orderCheck: { reference: 'TOU9', status: 'not-found', message: 'Commande TOU9 introuvable dans EcoManager. Vérifiez la référence.' } });
+    expect(missing).toContain('aria-invalid="true"');
+    expect(missing).toContain('Commande TOU9 introuvable dans EcoManager. Vérifiez la référence.');
+    expect(render(<CallContextPanel/>, { step: 0, orderRef: 'TOU1', orderCheck: { reference: 'TOU1', status: 'unavailable' } })).toContain('EcoManager ne répond pas : la commande sera marquée « à vérifier ».');
+    expect(render(<CallContextPanel/>, { step: 2, orderRef: 'TOU1763816', orderCheck: { reference: 'TOU1763816', status: 'verified', order } })).toContain('En cours de livraison');
+  });
+  it('without the feature the field is unchanged', () => {
+    const html = render(<CallContextPanel/>, { step: 0, orderRef: 'TOU1', orderCheck: null });
+    expect(html).toContain('Obligatoire pour enregistrer le résultat de l’appel.');
+    expect(html).not.toContain('EcoManager');
   });
 });
 

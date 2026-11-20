@@ -1,7 +1,8 @@
 import {useState,useEffect,useRef,type ReactNode} from 'react';
-import {profileChanges,money,quantityOf,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,packDuplicate,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,type Profile,type Product,type Tier} from '@touche/domain';
+import {normalizeOrderReference,profileChanges,money,quantityOf,orderSignature,sameOrder,canManageWorkspace,type Proposal,type ItemSnapshot,type OrderItem,missingAnswers,reviewStop,recommend,manualAddCheck,orderOffer,packDuplicate,physicalCount,domainOf,safetyNotes,isPack,expand,packUpgrades,searchIds,closestProducts,concernsFor,type Profile,type Product,type Tier} from '@touche/domain';
 import {reportCache} from '../data/report-cache';
-import {setExpectedUser,lockRequests,type RequestError} from '../data/api';
+import {setExpectedUser,lockRequests,requestJson,type RequestError} from '../data/api';
+import {startCheck,checkFromResponse,checkFromError,orderCheckBlocksSave,type OrderCheck} from './call/orderCheck';
 import {announceSession,onSessionMessage,sessionReaction} from '../data/session-channel';
 import {startCallClaims} from '../data/call-claims';
 import {allowedView,landingView,viewFromEntry,viewFromSearch,isGuardEntry,viewHref,backFromGuard} from '../data/view-history';
@@ -35,6 +36,7 @@ const scopeFilter=(scope:string)=>(p:Product)=>scope==='Tous'||(scope==='Packs'?
 
 export default function Desk(){
  const [state,setState]=useState<State|null>(null),[loading,setLoading]=useState(true),[fatal,setFatal]=useState(''),[bootError,setBootError]=useState(''),[view,setView]=useState('call'),[signingOut,setSigningOut]=useState(false);
+ const [orderCheck,setOrderCheckState]=useState<OrderCheck>({reference:'',status:'idle'}),orderCheckRef=useRef<OrderCheck>({reference:'',status:'idle'}),checkPromise=useRef<Promise<OrderCheck>|null>(null);
  const [orderRefAsked,setOrderRefAsked]=useState(false),[loginNotice,setLoginNotice]=useState(''),[locked,setLocked]=useState(false),[offline,setOffline]=useState(()=>typeof navigator!=='undefined'&&navigator.onLine===false);
  const [progressEpoch,setProgressEpoch]=useState(0),[focusOperator,setFocusOperator]=useState(''),[pilotageTab,setPilotageTab]=useState('');
  // Catalogue and Parcours keep their own search, apart from the call's step-0 search (PN4).
@@ -196,6 +198,35 @@ export default function Desk(){
 
  // ── The call on screen ────────────────────────────────────────────────────────────────────────────────────
  const d=store.draft,products=state?.products||[];
+ // EcoManager (server feature order-check): the dossier reference must be a real TOU order. Checked while typing (700 ms
+ // after a complete reference), on leaving the field, and before any save; the number alone becomes its TOU reference.
+ const orderCheckOn=!!state?.features?.includes('order-check');
+ function setCheck(next:OrderCheck){orderCheckRef.current=next;setOrderCheckState(next);}
+ const sameRef=(check:OrderCheck,raw:string)=>{const r=normalizeOrderReference(raw);return check.reference===r||check.order?.reference===r;};
+ async function runCheck(raw:string,explicit=false):Promise<OrderCheck>{
+  const start=startCheck(raw),prev=orderCheckRef.current;
+  if(start.status!=='checking'){const shown=explicit||start.status==='idle'?start:{reference:start.reference,status:'idle' as const};setCheck(shown);return shown;}
+  if(prev.status==='verified'&&sameRef(prev,raw))return prev;
+  if(prev.status==='checking'&&prev.reference===start.reference&&checkPromise.current)return checkPromise.current;
+  setCheck(start);
+  const pending=requestJson('?action=order&ref='+encodeURIComponent(start.reference))
+   .then(body=>checkFromResponse(start.reference,body),error=>checkFromError(start.reference,error as RequestError))
+   .then(result=>{
+    // A newer reference was typed meanwhile: its own check decides.
+    if(!sameRef(result,current().orderRef)&&normalizeOrderReference(current().orderRef)!==start.reference)return result;
+    setCheck(result);
+    if(result.status==='verified'&&result.order&&current().orderRef!==result.order.reference&&!current().saved)commit({...current(),orderRef:result.order.reference});
+    return result;
+   });
+  checkPromise.current=pending;
+  return pending;
+ }
+ useEffect(()=>{
+  if(!orderCheckOn)return;
+  if(startCheck(d.orderRef).status!=='checking'){if(!sameRef(orderCheckRef.current,d.orderRef))setCheck({reference:normalizeOrderReference(d.orderRef),status:'idle'});return;}
+  const timer=setTimeout(()=>void runCheck(d.orderRef),700);
+  return ()=>clearTimeout(timer);
+ },[d.orderRef,orderCheckOn]);
  const {base,upgrade,active:activeBase,initial,companions,basket}=callState.basketOf(d,products);
  const baseId=d.baseIds[0]||'',profile=d.profile,verifiedProducts=d.verifiedProducts,tier=d.tier;
  // Same shared pricing as the server: a hair pack's products chosen one by one cost the pack (callState.callAmounts).
@@ -342,11 +373,23 @@ export default function Desk(){
    :{title:'Conserver la commande initiale ?',body:<p>L’appel sera enregistré sans ajout : la cliente garde sa commande initiale.{after}</p>,cancelLabel:'Revenir à l’appel',confirmLabel:'Enregistrer sans ajout',tone:'primary'};
  }
  /** `callback`: the targeted stop's « Programmer un rappel », recorded as « review » with its callback date. */
+ function focusOrderRef(){requestAnimationFrame(()=>{const field=document.getElementById('call-order-ref') as HTMLInputElement|null;const fold=field?.closest('details');if(fold)fold.open=true;field?.focus();});}
+ /** With EcoManager on: the order is checked (again if needed) before a save; an unknown order or a malformed
+  *  reference stops it, an unreachable EcoManager lets it through (saved « à vérifier »). */
+ async function orderReady():Promise<boolean>{
+  let check=orderCheckRef.current;const raw=current().orderRef;
+  const settled=sameRef(check,raw)&&(check.status==='not-found'||check.status==='invalid');
+  if(orderCheckBlocksSave(check,raw)&&!settled)check=await runCheck(raw,true);
+  const why=orderCheckBlocksSave(check,current().orderRef);
+  if(why){notify(why,'error');focusOrderRef();return false;}
+  return true;
+ }
  async function record(outcome:string,{callback=false}:{callback?:boolean}={}){
+  if(orderCheckOn&&!current().demo&&!current().saved&&current().orderRef.trim()&&!(await orderReady()))return;
   const now=current(),withCallback=outcome==='callback'||callback;
   if(!base)return;if(now.demo){notify('Exemple : aucun résultat n’est enregistré.','info');return;}if(now.saved||busy)return;
   // Every recorded result names its dossier: open the call context if it is folded, then move to the field.
-  if(!now.orderRef.trim()){setOrderRefAsked(true);notify('Renseignez la référence du dossier avant d’enregistrer le résultat.','error');requestAnimationFrame(()=>{const field=document.getElementById('call-order-ref') as HTMLInputElement|null;const fold=field?.closest('details');if(fold)fold.open=true;field?.focus();});return;}
+  if(!now.orderRef.trim()){setOrderRefAsked(true);notify('Renseignez la référence du dossier avant d’enregistrer le résultat.','error');focusOrderRef();return;}
   const won=['duo','trio','routine'].includes(outcome);
   if(blocked&&won){notify('Vérification ciblée nécessaire.','error');return;}
   if(won&&offerIssue){notify(offerIssue,'error');return;}
@@ -397,7 +440,7 @@ export default function Desk(){
   step:d.step,toStep,demo:d.demo,saved:d.saved,busy,presenting,
   savedOutcome:d.savedOutcome,savedAt:d.savedAt,canVoid:deadline!==null&&clock<deadline,voidCall,
   newCall:()=>void newCall(),startExample:kind=>void startExample(kind),exitExample,hasParkedCall:!!store.parked,parkedSaved:!!store.parked?.saved,
-  orderRef:d.orderRef,setOrderRef:edit('orderRef'),orderRefAsked:orderRefAsked&&!d.orderRef.trim(),customerStage:d.customerStage,setCustomerStage:edit('customerStage'),linkedCallId:d.linkedCallId,
+  orderRef:d.orderRef,setOrderRef:edit('orderRef'),orderRefAsked:orderRefAsked&&!d.orderRef.trim(),orderCheck:orderCheckOn?orderCheck:null,checkOrder:()=>void runCheck(current().orderRef,true),customerStage:d.customerStage,setCustomerStage:edit('customerStage'),linkedCallId:d.linkedCallId,
   products,visible,nearby,search,setSearch,scope,setScope,category,setCategory,
   baseId,baseIds:d.baseIds,base,initial,baseTotal,orderLocked:callState.orderLocked(d),changeInitial,changeInitialQuantity,duplicate,
   domain,profile,changeProfile,toggleConcern,blocked,stop,notes,missing,

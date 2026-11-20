@@ -1,4 +1,5 @@
 import {createContext,useContext,type Dispatch,type SetStateAction} from 'react';
+import type {OrderCheck} from './orderCheck';
 import {type domainOf,type Candidate,type ManualAddCheck,type MissingAnswer,type OrderItem,type Product,type Profile,type Proposal,type ReviewStop,type Tier} from '@touche/domain';
 import {type BasketLine,type ExampleKind} from './callState';
 
@@ -29,7 +30,9 @@ export type CallModel={
  newCall:()=>void;startExample:(kind:ExampleKind)=>void;exitExample:()=>void;hasParkedCall:boolean;parkedSaved:boolean;
  orderRef:string;setOrderRef:(value:string)=>void;
  /** A save was refused because the dossier reference is empty: the field shows why. */
- orderRefAsked:boolean;customerStage:string;setCustomerStage:(value:string)=>void;linkedCallId:string;
+ orderRefAsked:boolean;
+ /** EcoManager check of the reference (null when the server does not list order-check) and a way to run it now. */
+ orderCheck:OrderCheck|null;checkOrder:()=>void;customerStage:string;setCustomerStage:(value:string)=>void;linkedCallId:string;
  products:Product[];visible:Product[];
  /** Step 0 found nothing exact: the closest products (SEARCH). */
  nearby:Product[];search:string;setSearch:Setter<string>;scope:string;setScope:Setter<string>;category:string;setCategory:Setter<string>;

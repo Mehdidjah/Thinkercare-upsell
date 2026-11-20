@@ -100,3 +100,10 @@ test('Every catalogue image file exists', () => {
   const catalogue = JSON.parse(readFileSync(new URL('../../shared/test/fixtures/catalogue.json', import.meta.url), 'utf8'));
   for (const p of catalogue) assert.ok(existsSync(new URL('../public' + p.image, import.meta.url)), p.id);
 });
+
+test('the order lookup is only requested when the server lists order-check', () => {
+  const app = readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8');
+  assert.ok(app.includes("requestJson('?action=order&ref='"), 'App asks the API for the order');
+  assert.ok(/orderCheckOn=!!state\?\.features\?\.includes\('order-check'\)/.test(app), 'the lookup is behind the order-check feature');
+});
+
