@@ -24,6 +24,8 @@ export interface EcoManagerEnv {
   timeoutMs: number;
   /** 0 = no background catch-up of recorded calls. */
   syncIntervalMs: number;
+  /** The BEL.NCO store's shop API token (references BEL…); without it BEL.NCO calls are saved unchecked. */
+  belToken?: string;
 }
 
 function loadEcoManager(source: Record<string, string | undefined>, production: boolean): EcoManagerEnv | undefined {
@@ -37,7 +39,8 @@ function loadEcoManager(source: Record<string, string | undefined>, production: 
   const webhookSecret = source.ECOMANAGER_WEBHOOK_SECRET?.trim() || undefined;
   if (webhookSecret && webhookSecret.length < 16) throw new Error('ECOMANAGER_WEBHOOK_SECRET doit contenir au moins 16 caractères.');
   const syncIntervalMs = source.ECOMANAGER_SYNC?.trim().toLowerCase() === 'off' ? 0 : 120_000;
-  return { token, baseUrl, prefix, webhookSecret, timeoutMs: 8000, syncIntervalMs };
+  const belToken = source.ECOMANAGER_BEL_API_TOKEN?.trim() || undefined;
+  return { token, baseUrl, prefix, webhookSecret, timeoutMs: 8000, syncIntervalMs, belToken };
 }
 
 const DEFAULT_ORIGINS = ['http://localhost:3000', 'http://localhost:5173'];

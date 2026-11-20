@@ -46,6 +46,11 @@ describe('EcoManager', () => {
     expect(() => loadEnv({
       DATABASE_URL: url, NODE_ENV: 'production', APP_ORIGIN: 'https://x.dz', ECOMANAGER_API_TOKEN: 'tok', ECOMANAGER_BASE_URL: 'http://shop.ecomanager.dz',
     })).toThrow('ECOMANAGER_BASE_URL doit commencer par https:// en production.'));
+  it('reads the BEL.NCO store token beside the TOU store', () => {
+    expect(loadEnv({ DATABASE_URL: url, ECOMANAGER_API_TOKEN: 'tok', ECOMANAGER_BEL_API_TOKEN: ' bel ' }).ecomanager?.belToken).toBe('bel');
+    expect(loadEnv({ DATABASE_URL: url, ECOMANAGER_API_TOKEN: 'tok' }).ecomanager?.belToken).toBeUndefined();
+    expect(loadEnv({ DATABASE_URL: url, ECOMANAGER_BEL_API_TOKEN: 'bel' }).ecomanager).toBeUndefined();
+  });
   it('rejects a short webhook secret and a bad prefix', () => {
     expect(() => loadEnv({ DATABASE_URL: url, ECOMANAGER_API_TOKEN: 'tok', ECOMANAGER_WEBHOOK_SECRET: 'short' })).toThrow(/ECOMANAGER_WEBHOOK_SECRET/);
     expect(() => loadEnv({ DATABASE_URL: url, ECOMANAGER_API_TOKEN: 'tok', ECOMANAGER_REFERENCE_PREFIX: 'T0U' })).toThrow(/ECOMANAGER_REFERENCE_PREFIX/);

@@ -80,7 +80,8 @@ export class DeskController {
       return sendJson(res, await this.orderSync.status());
     }
     if (action === 'order') {
-      const found = await this.orders.check(user, params.get('ref') ?? '');
+      // The store of the call's brand: `brand=belnco` for the BEL store; anything else (an older tab) is the TOU store.
+      const found = await this.orders.check(user, params.get('ref') ?? '', params.get('brand') === 'belnco' ? 'belnco' : 'touche');
       if (found.status === 'not-found') throw orderNotFound(found.reference);
       if (found.status === 'unavailable')
         return sendJson(res, {
