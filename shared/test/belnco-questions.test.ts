@@ -133,7 +133,7 @@ describe('BEL.NCO suggestions from the answers',()=>{
   expect(daily.get('bel-oil')!.reason).toBe(double);
   expect(daily.get('bel-ritual')!.reason).toBe(double);
   expect(spf.get('bel-oil')!.reason).toBe('Elle met une crème solaire tous les jours : l’huile démaquillante la retire en douceur, sans dessécher.');
-  expect(none.get('bel-oil')!.reason).toBe('Une étape lavante adaptée manque. Le double nettoyage passe par le rituel (huile puis gel), jamais par deux nettoyants séparés.');
+  expect(none.get('bel-oil')!.reason).toBe('Une étape lavante adaptée manque.');
   expect(none.get('bel-ritual')!.reason).toBe(spf.get('bel-ritual')!.reason);
   expect(none.get('bel-ritual')!.reason).toBe(get('bel-ritual').pitch+' Son contenu est compté dans la routine pour éviter tout doublon.');
   // Every other suggestion keeps its score: the bonus is for the cleansers only.
