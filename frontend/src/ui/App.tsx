@@ -235,7 +235,8 @@ export default function Desk(){
   return ()=>clearTimeout(timer);
  },[d.orderRef,d.brand,orderCheckOn]);
  const {base,upgrade,active:activeBase,initial,companions,basket}=callState.basketOf(d,products);
- const baseId=d.baseIds[0]||'',profile=d.profile,verifiedProducts=d.verifiedProducts,tier=d.tier;
+ // An offer of packs only has one price level, presented and saved as the catalogue one (callState.offerTier).
+ const baseId=d.baseIds[0]||'',profile=d.profile,verifiedProducts=d.verifiedProducts,tier=callState.offerTier(d.tier,basket,products);
  // Same shared pricing as the server: a hair pack's products chosen one by one cost the pack (callState.callAmounts).
  const {total,baseTotal,offer,offerIssue}=callState.callAmounts(initial,basket,tier,products),fee=d.delivery===''?null:Number(d.delivery),stop=reviewStop(profile),blocked=stop?.text??null;
  // The official pack offered for a single initial product. Once something is added it is held back, with a note (PACK).

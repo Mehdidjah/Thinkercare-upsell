@@ -1,5 +1,5 @@
 import {useId} from 'react';
-import {money,type Tier} from '@touche/domain';
+import {money,packPricing,type Tier} from '@touche/domain';
 import {Button} from '../shared/Button';
 import {DisabledReason} from '../shared/DisabledReason';
 import {Icon} from '../shared/Icon';
@@ -13,9 +13,9 @@ const visiblePrice=()=>[...document.querySelectorAll<HTMLElement>('.call-price')
 /**
  * Step 03 · sticky action bar, like steps 01 and 02 (STEP3): the current offer and « J’ai présenté · prix » stay in reach
  * below the picker and the coach. A price that does not raise the initial order keeps the button focusable with its reason
- * (M5, B3). Once the offer is traced, the bar leads to the close-out.
+ * (M5, B3). Once the offer is traced, the bar leads to the close-out. An offer of packs only has one price, « prix du pack ».
  */
-export function OfferBar(){const {saved,presenting,altered,count,baseTotal,tier,offer,fee,offerIssue,matchingOffer,presentOffer}=useCall();
+export function OfferBar(){const {saved,presenting,altered,count,baseTotal,tier,offer,fee,offerIssue,matchingOffer,presentOffer,basket,products}=useCall();
  const reasonId=useId();
  if(saved)return null;
  const toClose=()=>reveal(document.getElementById('call-close-title'),'start');
@@ -27,7 +27,7 @@ export function OfferBar(){const {saved,presenting,altered,count,baseTotal,tier,
     ?<><p className="call-actions__status call-actions__status--done"><Icon name="check"/><span>Offre tracée à <b className="num">{money(matchingOffer.offerTotal)}</b>. Enregistrez la réponse de la cliente.</span></p><Button variant="primary" onClick={toClose}>Clôturer l’appel<Icon name="arrow"/></Button></>
     :<>{offerIssue
       ?<DisabledReason id={reasonId} title="Pour présenter cette offre :" items={[{label:offerIssue,done:false}]}/>
-      :<p className="call-actions__status">{count} unité{count>1?'s':''}, {TIER_NAMES[tier]}{fee!==null?<>, livraison <span className="num">{money(fee)}</span></>:', livraison à confirmer'}.</p>}
+      :<p className="call-actions__status">{count} unité{count>1?'s':''}, {packPricing(basket,products)==='pack'?'prix du pack':TIER_NAMES[tier]}{fee!==null?<>, livraison <span className="num">{money(fee)}</span></>:', livraison à confirmer'}.</p>}
      <Button variant="primary" busy={presenting} busyLabel="Enregistrement…" blocked={!!offerIssue} reasonId={reasonId} onBlocked={toPrice} onClick={()=>void presentOffer()}>J’ai présenté · <span className="num">{money(offer)}</span></Button></>}
  </div>;
 }
