@@ -160,6 +160,18 @@ describe('order check at save (save-call)', () => {
     });
   });
 
+  it('a call saved on a delivered order keeps its delivery date; on any other state it has none', async () => {
+    fake.orders.set(2000010, ecoOrder(2000010, 'Encaissée', { updated_at: '2026-11-20 10:00:00', delivered_at: '2026-11-18 19:30:00' }));
+    fake.orders.set(2000011, ecoOrder(2000011, 'Livrée'));
+    fake.orders.set(2000012, ecoOrder(2000012, 'En livraison'));
+    const paid = saveInitial('TOU2000010'), noDate = saveInitial('TOU2000011'), shipping = saveInitial('TOU2000012');
+    for (const s of [paid, noDate, shipping]) expect((await s.res).status).toBe(200);
+    expect(await metaOf(paid.id)).toMatchObject({ order_state_group: 'delivered', delivered_at: new Date('2026-11-18T18:30:00.000Z') });
+    // EcoManager without delivered_at: the state's date stands in for it.
+    expect(await metaOf(noDate.id)).toMatchObject({ order_state_group: 'delivered', delivered_at: new Date('2026-11-20T09:00:00.000Z') });
+    expect(await metaOf(shipping.id)).toMatchObject({ order_state_group: 'shipping', delivered_at: null });
+  });
+
   it('a timeout saves the call as unverified', async () => {
     fake.setDelay(1_000);
     const { id, res } = saveInitial('TOU2000003');
@@ -255,6 +267,29 @@ describe('order state webhook', () => {
     expect((await lookup('TOU3000005')).body.order.stateGroup).toBe('delivered');
   });
 
+  it('a delivered order keeps its delivery date when it becomes « Encaissée », even when the event leaves it out', async () => {
+    fake.orders.set(3000010, ecoOrder(3000010, 'En livraison'));
+    const { id, res } = saveInitial('TOU3000010');
+    expect((await res).status).toBe(200);
+    expect((await hook(ecoOrder(3000010, 'Livrée', { updated_at: '2026-11-21 08:00:00', delivered_at: '2026-11-21 08:00:00' }))).status).toBe(200);
+    expect(await metaOf(id)).toMatchObject({ order_state_group: 'delivered', delivered_at: new Date('2026-11-21T07:00:00.000Z') });
+    expect((await hook(ecoOrder(3000010, 'Encaissée', { updated_at: '2026-11-25 11:00:00', delivered_at: '2026-11-21 08:00:00' }))).status).toBe(200);
+    expect((await hook(ecoOrder(3000010, 'Encaissée', { updated_at: '2026-11-26 11:00:00' }))).status).toBe(200);
+    expect(await metaOf(id)).toMatchObject({ order_state_name: 'Encaissée', order_state_group: 'delivered', delivered_at: new Date('2026-11-21T07:00:00.000Z') });
+  });
+
+  it('an order returned after delivery loses its delivery date; a late retry of « Livrée » does not bring it back', async () => {
+    fake.orders.set(3000011, ecoOrder(3000011, 'En livraison'));
+    const { id, res } = saveInitial('TOU3000011');
+    expect((await res).status).toBe(200);
+    expect((await hook(ecoOrder(3000011, 'Livrée', { updated_at: '2026-11-21 08:00:00', delivered_at: '2026-11-21 08:00:00' }))).status).toBe(200);
+    expect(await metaOf(id)).toMatchObject({ order_state_group: 'delivered', delivered_at: new Date('2026-11-21T07:00:00.000Z') });
+    expect((await hook(ecoOrder(3000011, 'Retournée', { updated_at: '2026-11-24 15:00:00', delivered_at: null }))).status).toBe(200);
+    expect(await metaOf(id)).toMatchObject({ order_state_group: 'failed', order_state_name: 'Retournée', delivered_at: null });
+    expect((await hook(ecoOrder(3000011, 'Livrée', { updated_at: '2026-11-21 08:00:00', delivered_at: '2026-11-21 08:00:00' }))).status).toBe(200);
+    expect(await metaOf(id)).toMatchObject({ order_state_group: 'failed', delivered_at: null });
+  });
+
   it('an unknown order is acknowledged', async () => {
     expect((await hook(ecoOrder(3999999, 'Livrée'))).status).toBe(200);
     expect((await hook({ event: 'ping' })).status).toBe(200);
@@ -337,7 +372,7 @@ describe('catch-up of recorded calls (order sync)', () => {
   it('final orders are not refreshed, others are after 24 h', async () => {
     const twoDays = new Date(Date.now() - 2 * 86_400_000);
     const delivered = await past('TOU4000005');
-    await setMeta(delivered, { order_check: 'verified', ecomanager_order_id: '4000005', order_state_group: 'delivered', order_state_name: 'Livrée', order_synced_at: twoDays });
+    await setMeta(delivered, { order_check: 'verified', ecomanager_order_id: '4000005', order_state_group: 'delivered', order_state_name: 'Livrée', delivered_at: twoDays, order_synced_at: twoDays });
     const stale = await past('TOU4000006');
     await setMeta(stale, { order_check: 'verified', ecomanager_order_id: '4000006', order_state_group: 'shipping', order_state_name: 'En livraison', order_synced_at: twoDays });
     const fresh = await past('TOU4000007');
@@ -401,6 +436,68 @@ describe('catch-up of recorded calls (order sync)', () => {
     await sync().runOnce();
     expect((await deskGet(syncCtx, '?action=order-sync', admin)).body).toEqual({ total: 3, known: 1, pending: 0, notFound: 1, unrecognized: 1 });
     expect((await deskGet(off, '?action=order-sync', await loginCookie(off, 'direction', PASSWORD))).status).toBe(404);
+  });
+});
+
+describe('delivery date in the catch-up (migration 0009 backfill)', () => {
+  // Its own app, for the same reason as the catch-up above: a fresh half of EcoManager's quota.
+  let syncCtx: TestContext;
+  beforeAll(async () => {
+    syncCtx = await createTestApp(ecomanager(fake.url));
+  });
+  afterAll(() => syncCtx.close());
+  const sync = () => syncCtx.app.get(OrderSyncService);
+  const past = (order_ref: string) => insertCall(on.db, { user_id: linaUser.id, created_at: new Date(Date.now() - 3 * 86_400_000), order_ref });
+  const setMeta = (id: string, values: Partial<typeof tcCallMeta.$inferInsert>) => on.db.update(tcCallMeta).set(values).where(eq(tcCallMeta.call_id, id));
+
+  it('the catch-up writes the delivery date, and clears it when the order leaves delivered', async () => {
+    fake.orders.set(4000030, ecoOrder(4000030, 'Encaissée', { updated_at: '2026-11-20 10:00:00', delivered_at: '2026-11-17 16:00:00' }));
+    const paid = await past('TOU4000030');
+    const returned = await past('TOU4000031');
+    await setMeta(returned, { order_check: 'verified', ecomanager_order_id: '4000031', order_state_group: 'shipping', order_state_name: 'En retour', order_state_at: new Date('2026-11-10T09:00:00Z'), delivered_at: new Date('2026-11-09T09:00:00Z'), order_synced_at: new Date(Date.now() - 2 * 86_400_000) });
+    fake.orders.set(4000031, ecoOrder(4000031, 'Retournée'));
+    await sync().runOnce();
+    expect(await metaOf(paid)).toMatchObject({ order_state_group: 'delivered', delivered_at: new Date('2026-11-17T15:00:00.000Z') });
+    expect(await metaOf(returned)).toMatchObject({ order_state_group: 'failed', delivered_at: null });
+  });
+
+  it('backfill: a delivered call without a delivery date is checked again, once, and gets EcoManager’s date', async () => {
+    const id = await past('TOU4000032');
+    await setMeta(id, { order_check: 'verified', ecomanager_order_id: '4000032', order_state_group: 'delivered', order_state_name: 'Livrée', order_state_at: new Date('2026-11-20T09:00:00Z'), order_synced_at: new Date() });
+    fake.orders.set(4000032, ecoOrder(4000032, 'Livrée', { delivered_at: '2026-11-19 22:15:00' }));
+    expect(await sync().runOnce()).toEqual({ checked: 1, updated: 1, remaining: 0 });
+    expect(await metaOf(id)).toMatchObject({ order_state_name: 'Livrée', delivered_at: new Date('2026-11-19T21:15:00.000Z') });
+    expect(await sync().runOnce()).toEqual({ checked: 0, updated: 0, remaining: 0 });
+    expect(fake.calls.filter((c) => c.endsWith('/4000032'))).toHaveLength(1);
+  });
+
+  it('backfill: without a date from EcoManager the call keeps its state date, and is not checked again', async () => {
+    const stateAt = new Date('2026-11-25T09:00:00Z');
+    const unchanged = await past('TOU4000033');
+    const newer = await past('TOU4000034');
+    const gone = await past('TOU4000035');
+    const failing = await past('TOU4000036');
+    for (const [id, n] of [[unchanged, 4000033], [newer, 4000034], [gone, 4000035], [failing, 4000036]] as const) {
+      await setMeta(id, { order_check: 'verified', ecomanager_order_id: String(n), order_state_group: 'delivered', order_state_name: 'Livrée', order_state_at: stateAt, order_synced_at: new Date() });
+    }
+    fake.orders.set(4000033, ecoOrder(4000033, 'Livrée', { updated_at: '2026-11-25 10:00:00' }));
+    // EcoManager answers an older state than the one stored: the stored state stays, with its date.
+    fake.orders.set(4000034, ecoOrder(4000034, 'Livrée', { updated_at: '2026-11-20 10:00:00' }));
+    fake.orders.set(4000036, { __status: 500 });
+    await sync().runOnce();
+    for (const id of [unchanged, newer, gone, failing]) expect(await metaOf(id)).toMatchObject({ order_state_group: 'delivered', delivered_at: stateAt });
+    expect(await sync().runOnce()).toEqual({ checked: 0, updated: 0, remaining: 0 });
+    expect(fake.calls).toHaveLength(4);
+  });
+
+  it('backfill leaves voided calls and calls that already have a delivery date alone', async () => {
+    const voided = await past('TOU4000037');
+    const dated = await past('TOU4000038');
+    await setMeta(voided, { order_check: 'verified', ecomanager_order_id: '4000037', order_state_group: 'delivered', order_state_name: 'Livrée', order_state_at: new Date(), order_synced_at: new Date() });
+    await on.db.update(tcCalls).set({ voided_at: new Date() }).where(eq(tcCalls.id, voided));
+    await setMeta(dated, { order_check: 'verified', ecomanager_order_id: '4000038', order_state_group: 'delivered', order_state_name: 'Livrée', order_state_at: new Date(), delivered_at: new Date(), order_synced_at: new Date() });
+    expect(await sync().runOnce()).toEqual({ checked: 0, updated: 0, remaining: 0 });
+    expect(fake.calls).toEqual([]);
   });
 });
 
@@ -496,6 +593,13 @@ describe('BEL.NCO store', () => {
     expect((await signedWebhook(bel, belOrder(6000006, 'Livrée'))).status).toBe(200);
     const rows = await bel.db.select({ id: tcCallMeta.call_id, group: tcCallMeta.order_state_group }).from(tcCallMeta).where(inArray(tcCallMeta.call_id, [t, b]));
     expect(Object.fromEntries(rows.map((r) => [r.id, r.group]))).toEqual({ [t]: null, [b]: 'delivered' });
+  });
+  it('a BEL.NCO order’s delivery date is written by its webhook', async () => {
+    const b = await insertCall(bel.db, { user_id: linaUser.id, created_at: new Date(), order_ref: 'BEL6000020', brand: 'belnco' });
+    await bel.db.update(tcCallMeta).set({ ecomanager_order_id: '6000020', order_check: 'verified' }).where(eq(tcCallMeta.call_id, b));
+    expect((await signedWebhook(bel, { ...belOrder(6000020, 'Livrée'), delivered_at: '2026-11-20 09:30:00' })).status).toBe(200);
+    const [m] = await bel.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, b));
+    expect(m).toMatchObject({ order_state_group: 'delivered', delivered_at: new Date('2026-11-20T08:30:00.000Z') });
   });
   it('the catch-up checks BEL references with the BEL token and leaves them waiting without it', async () => {
     const id = await insertCall(on.db, { user_id: linaUser.id, created_at: new Date(), order_ref: 'BEL6000007', brand: 'belnco' });

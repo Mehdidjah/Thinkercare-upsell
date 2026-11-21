@@ -562,6 +562,8 @@ export class CallsService {
             order_state_group: order.found?.stateGroup ?? null,
             order_state_name: order.found?.stateName ?? null,
             order_state_at: order.found ? new Date(order.found.updatedAt ?? now) : null,
+            // A delivered order's delivery date (the state's date when EcoManager gives none); null otherwise.
+            delivered_at: order.found?.stateGroup === 'delivered' ? new Date(order.found.deliveredAt ?? order.found.updatedAt ?? now) : null,
             order_synced_at: order.found ? now : null,
           });
         }

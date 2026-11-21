@@ -167,13 +167,13 @@ describe('migrations', () => {
     const journal = JSON.parse(readFileSync(resolve(import.meta.dirname, '../drizzle/meta/_journal.json'), 'utf8'));
     const entry = journal.entries.find((e: { tag: string }) => e.tag === '0008_belnco_launch');
     expect(entry.when).toBeGreaterThan(1795209817154);
-    await db.execute(sql`DELETE FROM drizzle.__drizzle_migrations WHERE created_at = ${entry.when}`);
     // Copies added by hand in Gestion, filed as Touché; the second one is named by a saved call.
     await db.execute(sql`INSERT INTO tc_products (id, data) VALUES ('produit-aaaa1111', ${JSON.stringify({ ...fixture[0], id: 'produit-aaaa1111', name: '100% Pure Prickly Pear Oil' })}::jsonb), ('produit-bbbb2222', ${JSON.stringify({ ...fixture[0], id: 'produit-bbbb2222', name: 'DOUBLE cleansing ritual ' })}::jsonb)`);
     await db.execute(sql`INSERT INTO tc_users (id, username, label, role, salt, password_hash) VALUES ('u1', 'lina', 'Lina', 'advisor', 's', 'h')`);
     await db.execute(sql`INSERT INTO tc_calls (id, user_id, operator, created_at, outcome, base_id, products, catalogue_total, base_total, offered_total, extra, tier)
       VALUES ('c1', 'u1', 'Lina', now(), 'duo', 'antiacne', ${JSON.stringify([{ id: 'antiacne', name: 'x', price: 1800 }, { id: 'produit-bbbb2222', name: 'y', price: 3100 }])}::jsonb, 4900, 1800, 4500, 2700, 'duo')`);
-    await runMigrations(testDatabaseUrl());
+    // 0008 alone: the migrator only applies files newer than the last one recorded (0009 since 2026-11-21).
+    await applyFile('0008_belnco_launch.sql');
     const rows = (await db.execute(sql`SELECT id, data FROM tc_products ORDER BY position`)).rows as Array<{ id: string; data: { enabled: boolean } }>;
     const ids = rows.map((r) => r.id), on = rows.filter((r) => r.data.enabled).map((r) => r.id);
     for (const gone of ['bel-pear', 'bel-ritual', 'produit-aaaa1111']) expect(ids, gone).not.toContain(gone);
@@ -182,6 +182,23 @@ describe('migrations', () => {
     expect(rows.find((r) => r.id === 'bel-tinted')?.data.enabled).toBe(false);
     // Touché is untouched.
     expect(on.filter((id) => !id.startsWith('bel-'))).toEqual(fixture.filter((p) => p.enabled).map((p) => p.id));
+  });
+
+  it('0009 adds the delivery date to call meta, after 0008, and keeps existing rows without one', async () => {
+    const journal = JSON.parse(readFileSync(resolve(import.meta.dirname, '../drizzle/meta/_journal.json'), 'utf8'));
+    const entry = journal.entries.find((e: { tag: string }) => e.tag === '0009_delivered_at');
+    expect(entry.when).toBeGreaterThan(1795219200000);
+    await db.execute(sql`ALTER TABLE tc_call_meta DROP COLUMN delivered_at`);
+    await db.execute(sql`INSERT INTO tc_users (id, username, label, role, salt, password_hash) VALUES ('u1', 'lina', 'Lina', 'advisor', 's', 'h')`);
+    await db.execute(sql`INSERT INTO tc_calls (id, user_id, operator, created_at, outcome, base_id, products, catalogue_total, base_total, offered_total, extra, tier)
+      VALUES ('c1', 'u1', 'Lina', now(), 'duo', 'antiacne', '[]', 3300, 1800, 3000, 1200, 'duo')`);
+    await db.execute(sql`INSERT INTO tc_call_meta (call_id, data, order_ref, order_check, order_state_group, order_state_name, order_state_at)
+      VALUES ('c1', '{}', 'TOU1763816', 'verified', 'delivered', 'Livrée', '2026-11-20T09:00:00Z')`);
+    await applyFile('0009_delivered_at.sql');
+    const row = (await db.execute(sql`SELECT * FROM tc_call_meta WHERE call_id = 'c1'`)).rows[0] as Record<string, unknown>;
+    expect(row).toMatchObject({ order_state_group: 'delivered', order_state_name: 'Livrée', delivered_at: null });
+    const column = (await db.execute(sql`SELECT data_type FROM information_schema.columns WHERE table_name = 'tc_call_meta' AND column_name = 'delivered_at'`)).rows;
+    expect(column).toEqual([{ data_type: 'timestamp with time zone' }]);
   });
 
   it('jsonb keeps French typography', async () => {

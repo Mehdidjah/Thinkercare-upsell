@@ -33,10 +33,22 @@ describe('EcoManagerClient', () => {
     const r = await client.lookup('tou1763816');
     expect(r).toEqual({ status: 'found', order: {
       id: 1763816, reference: 'TOU1763816', stateId: 1, stateName: 'En confirmation', stateGroup: 'pending',
-      confirmationStateName: 'Ne répond pas', updatedAt: '2026-11-20T14:59:32+01:00',
+      confirmationStateName: 'Ne répond pas', updatedAt: '2026-11-20T14:59:32+01:00', deliveredAt: null,
     } });
     expect(JSON.stringify(r)).not.toMatch(/Amel|0666|Appartement|a@b/);
     expect(calls[0].url).toBe('https://shop.test/api/shop/v2/orders/1763816');
+  });
+
+  it('keeps the delivery date, in Algiers time, also once the order is « Encaissée »', async () => {
+    const { client } = setup(() => reply({ data: { ...ORDER, order_state_id: 7, order_state_name: 'Encaissée', updated_at: '2026-11-03 09:12:00', delivered_at: '2026-10-27 20:46:25' } }));
+    const r = await client.lookup('TOU1763816');
+    expect(r.status === 'found' && r.order).toMatchObject({ stateGroup: 'delivered', updatedAt: '2026-11-03T09:12:00+01:00', deliveredAt: '2026-10-27T20:46:25+01:00' });
+  });
+
+  it('an order never delivered has no delivery date', () => {
+    const { client } = setup(() => reply({}));
+    expect(client.toEcoOrder({ ...ORDER, order_state_name: 'En retour', delivered_at: null })?.deliveredAt).toBeNull();
+    expect(client.toEcoOrder(ORDER)?.deliveredAt).toBeNull();
   });
 
   it('sends the bearer token and never puts it in errors', async () => {
@@ -75,7 +87,7 @@ describe('EcoManagerClient', () => {
     c.t += 599_000;
     await client.lookup('TOU1763816');
     expect(calls).toHaveLength(1);
-    client.remember({ id: 1763816, reference: 'TOU1763816', stateId: 5, stateName: 'Livrée', stateGroup: 'delivered', confirmationStateName: null, updatedAt: null });
+    client.remember({ id: 1763816, reference: 'TOU1763816', stateId: 5, stateName: 'Livrée', stateGroup: 'delivered', confirmationStateName: null, updatedAt: null, deliveredAt: null });
     const r = await client.lookup('TOU1763816');
     expect(r.status === 'found' && r.order.stateGroup).toBe('delivered');
     expect(calls).toHaveLength(1);

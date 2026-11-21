@@ -119,6 +119,9 @@ export const tcCallMeta = pgTable(
     order_state_name: text('order_state_name'),
     order_state_at: timestamptz('order_state_at'),
     order_synced_at: timestamptz('order_synced_at'),
+    /** When the order was delivered (migration 0009): kept while it stays delivered (« Livrée », then « Encaissée »),
+     *  cleared when it leaves delivered. The prime counts a delivered upsell in the month of this date. */
+    delivered_at: timestamptz('delivered_at'),
   },
   (t) => [
     index('tc_meta_callback').on(t.callback_at, t.callback_done),
