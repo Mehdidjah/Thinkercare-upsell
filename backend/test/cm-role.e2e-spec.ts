@@ -62,6 +62,24 @@ describe('cm role', () => {
     expect((await post({ action: 'user', username: 'x.y', label: 'X', password: PASSWORD, role: 'advisor' }, cm)).status).toBe(403);
   });
 
+  it('a CM’s « Ma progression » is hers only: no other account can be targeted, her figures by brand and her list leave out the others’ calls', async () => {
+    await createCm();
+    const cmId = (await ctx.db.select().from(tcUsers).where(eq(tcUsers.username, 'cm.lina')))[0]!.id;
+    const cm = await loginCookie(ctx, 'cm.lina', PASSWORD);
+    for (const key of ['operator', 'user_id', 'team']) {
+      const res = await deskGet(ctx, `?action=my-progress&${key}=${advisorId}`, cm);
+      expect(res.status, key).toBe(403);
+      expect(res.body).toEqual({ error: 'La progression personnelle ne permet pas de cibler un autre compte.' });
+    }
+    const own = await insertCall(ctx.db, { user_id: cmId, created_at: new Date(), order_ref: 'BEL8900001', brand: 'belnco', base_id: 'bel-retinol' });
+    await insertCall(ctx.db, { user_id: advisorId, created_at: new Date(), order_ref: 'TOU8900002' });
+    await insertCall(ctx.db, { user_id: advisorId, created_at: new Date(), order_ref: 'BEL8900003', brand: 'belnco', base_id: 'bel-retinol' });
+    const body = (await deskGet(ctx, '?action=my-progress', cm)).body;
+    expect(body).toMatchObject({ sold: 1, soldByBrand: { touche: 0, belnco: 1 }, upsellsTotal: 1 });
+    expect(body.stateCountsByBrand).toEqual({ touche: { delivered: 0, shipping: 0, pending: 0, failed: 0, unknown: 0 }, belnco: { delivered: 0, shipping: 0, pending: 0, failed: 0, unknown: 1 } });
+    expect(body.upsells.map((u: { id: string }) => u.id)).toEqual([own]);
+  });
+
   it("a CM's upsells count toward the bonus like an advisor's", async () => {
     await createCm();
     const cmId = (await ctx.db.select().from(tcUsers).where(eq(tcUsers.username, 'cm.lina')))[0]!.id;

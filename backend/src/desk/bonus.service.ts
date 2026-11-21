@@ -38,6 +38,12 @@ const stateOf = (u: UpsellSale): OrderStateGroup =>
     : u.order_state_group && STATE_GROUPS.includes(u.order_state_group)
       ? u.order_state_group
       : 'unknown';
+/** Units by state group of their order (« à vérifier », `unknown`, includes an order delivered before the call). */
+const byState = (sales: UpsellSale[]) => {
+  const counts = Object.fromEntries(STATE_GROUPS.map((g) => [g, 0])) as Record<OrderStateGroup, number>;
+  for (const u of sales) counts[stateOf(u)] += u.units;
+  return counts;
+};
 
 @Injectable()
 export class BonusService {
@@ -98,8 +104,8 @@ export class BonusService {
       const byDay = new Map<string, number>();
       if (basis === 'delivered') for (const u of delivered) byDay.set(u.delivered_day!, (byDay.get(u.delivered_day!) ?? 0) + u.units);
       else for (const r of rows) byDay.set(r.day, (byDay.get(r.day) ?? 0) + Number(r.upsells));
-      const stateCounts = Object.fromEntries(STATE_GROUPS.map((g) => [g, 0])) as Record<OrderStateGroup, number>;
-      for (const u of sold) stateCounts[stateOf(u)] += u.units;
+      const stateCounts = byState(sold);
+      const stateCountsByBrand = Object.fromEntries(BRANDS.map((br) => [br, byState(sold.filter((u) => u.brand === br))])) as Record<Brand, typeof stateCounts>;
       // « Mes upsells »: sold this month or delivered this month; `counts` when the month's prime counts it.
       const counted = new Set((basis === 'delivered' ? delivered : sold).map((u) => u.id));
       const listed = [...new Map([...sold, ...delivered].map((u) => [u.id, u])).values()].sort(
@@ -128,6 +134,8 @@ export class BonusService {
         soldByBrand: total.upsellsByBrand,
         deliveredByBrand: basis === 'delivered' ? unitsByBrand(delivered) : null,
         stateCounts,
+        // `stateCounts` for each brand's sales (« Par marque » on « Ma progression »): the brands sum to it.
+        stateCountsByBrand,
         upsells: listed.slice(0, MAX_LISTED).map((u) => ({
           id: u.id,
           created_at: u.created_at,
