@@ -36,7 +36,8 @@ test('Apports & primes CSV export gives the month’s sold and delivered upsells
   const start = commission.indexOf('function exportTable()');
   const exportTable = commission.slice(start, commission.indexOf('\n', start));
   assert.ok(exportTable.includes("'Upsells vendus période','Upsells vendus mois','Upsells livrés mois','Prime estimée DA'"), 'CSV header names sold and delivered');
-  assert.ok(exportTable.includes('p.period.upsells,p.monthly.upsells,p.monthly.delivered??0,'), 'each row writes sold then delivered');
+  // A month paid on sales (before November 2026) has no delivered count: the cell stays empty rather than 0.
+  assert.ok(exportTable.includes("p.period.upsells,p.monthly.upsells,p.monthly.delivered??'',"), 'each row writes sold then delivered');
 });
 test('Closing the call offers a way back to the answers, and going back keeps the routine', () => {
   // The call-close section lives in call/CallClose.tsx since the call screen was split into components.

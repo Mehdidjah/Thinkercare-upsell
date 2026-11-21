@@ -93,6 +93,13 @@ GROUP BY user_id, day ORDER BY day, user_id`);
   return result.rows as unknown as ContributionRow[];
 }
 
+/**
+ * The first month whose prime counts delivered upsells. Before it, the prime counted the upsells sold in the month (call
+ * date), and those months stay as they were paid. A sale made before it was paid on the sale, so its delivery never
+ * counts again.
+ */
+export const DELIVERED_FROM = '2026-11';
+
 /** One upsell sale (a dossier's sale with added units) and the state of its order. */
 export type UpsellSale = {
   id: string;
@@ -107,6 +114,7 @@ export type UpsellSale = {
   order_state_name: string | null;
   /** The Algiers day the order was delivered (its delivery date, else its state date until the backfill), or null. */
   delivered_day: string | null;
+  /** Can be before the call (a mistyped reference to an order already delivered): such a sale never counts. */
   delivered_at: string | null;
 };
 
@@ -114,7 +122,8 @@ export type UpsellSale = {
  * Upsell sales, with the unit rule of `contributions`, in the Algiers days `from`..`to`:
  * - `sold`: sold in the window (by call date), ranked within the window, as `contributions` counts `upsells`;
  * - `delivered`: delivered in the window (Algiers day of `delivered_at`, else `order_state_at`), whatever the call date.
- *   Their dossiers are ranked over all their calls, so an order delivered once is one sale, paid once.
+ *   Their dossiers are ranked over all their calls, so an order delivered once is one sale, paid once. Only a delivery
+ *   after the call counts (the add-on was in it), and only a sale from `DELIVERED_FROM` on (an earlier one was paid sold).
  */
 export async function upsellSales(
   db: Db,
@@ -124,6 +133,7 @@ export async function upsellSales(
   userId?: string,
 ): Promise<UpsellSale[]> {
   const { start, end } = window(from, to);
+  const cutover = window(DELIVERED_FROM + '-01', DELIVERED_FROM + '-01').start;
   const deliveredIn = (meta: string) =>
     sql`${sql.raw(meta)}.order_state_group = 'delivered'
       AND COALESCE(${sql.raw(meta)}.delivered_at, ${sql.raw(meta)}.order_state_at) >= ${start}::timestamptz
@@ -140,7 +150,10 @@ SELECT id, user_id, created_at, order_ref, brand, outcome, upsell::int AS units,
  to_char(delivered_on AT TIME ZONE 'Africa/Algiers', 'YYYY-MM-DD') AS delivered_day
 FROM tagged
 WHERE upsell > 0
- ${by === 'delivered' ? sql`AND delivered_on >= ${start}::timestamptz AND delivered_on < ${end}::timestamptz` : sql``}
+ ${by === 'delivered'
+   ? sql`AND delivered_on >= ${start}::timestamptz AND delivered_on < ${end}::timestamptz
+      AND delivered_on >= created_at AND created_at >= ${cutover}::timestamptz`
+   : sql``}
  ${userId === undefined ? sql`` : sql`AND user_id = ${userId}`}
 ORDER BY created_at DESC, id`);
   const iso = (value: unknown) => (value === null || value === undefined ? null : new Date(value as string).toISOString());

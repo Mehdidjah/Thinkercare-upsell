@@ -31,7 +31,7 @@ const text = (html: string) => html.replace(/<[^>]+>/g, '');
 test('each upsell’s state tag: delivered this month counts, another month names its prime, the rest say why not (yet)', () => {
   expect(upsellTag(upsell(), '2026-11')).toEqual({ label: 'Livrée le 08/11 · compte pour la prime', tone: 'success' });
   expect(upsellTag(upsell({ delivered_at: '2026-12-01T09:00:00.000Z', counts: false }), '2026-11')).toEqual({ label: 'Livrée le 01/12 · prime de décembre', tone: 'neutral' });
-  expect(upsellTag(upsell({ delivered_at: '2026-10-30T09:00:00.000Z', counts: false }), '2026-11').label).toBe('Livrée le 30/10 · prime d’octobre');
+  expect(upsellTag(upsell({ created_at: '2027-03-30T10:00:00.000Z', delivered_at: '2027-04-02T09:00:00.000Z', counts: false }), '2027-03').label).toBe('Livrée le 02/04 · prime d’avril');
   // Algiers time: 23:30 UTC on 30 November is 1 December.
   expect(upsellTag(upsell({ delivered_at: '2026-11-30T23:30:00.000Z', counts: false }), '2026-11').label).toBe('Livrée le 01/12 · prime de décembre');
   expect(upsellTag(upsell({ counts: false }), '2026-11')).toEqual({ label: 'Livrée le 08/11 · comptée sur un autre appel du dossier', tone: 'neutral' });
@@ -41,6 +41,32 @@ test('each upsell’s state tag: delivered this month counts, another month name
   for (const group of ['unknown', null] as const) {
     expect(upsellTag(upsell({ order_state_group: group, order_state_name: null, delivered_at: null, counts: false }), '2026-11')).toEqual({ label: 'État inconnu · à vérifier', tone: 'warning' });
   }
+  // An order delivered before the call (often a mistyped reference): the add-on was not in it.
+  expect(upsellTag(upsell({ created_at: '2026-11-21T10:00:00.000Z', delivered_at: '2026-11-10T10:00:00.000Z', counts: false }), '2026-11')).toEqual({ label: 'Livrée le 10/11, avant l’appel · à vérifier', tone: 'warning' });
+});
+
+test('a month paid on sales (before November 2026): every sale counted, the tags only give the order’s state', () => {
+  const sold = (over: Partial<MyUpsell>) => upsellTag(upsell({ created_at: '2026-10-10T10:00:00.000Z', ...over }), '2026-10', true);
+  expect(sold({ delivered_at: '2026-10-15T10:00:00.000Z' })).toEqual({ label: 'Livrée le 15/10', tone: 'success' });
+  expect(sold({ delivered_at: '2026-11-02T10:00:00.000Z' })).toEqual({ label: 'Livrée le 02/11', tone: 'success' });
+  expect(sold({ order_state_group: 'shipping', delivered_at: null })).toEqual({ label: 'En cours de livraison', tone: 'neutral' });
+  expect(sold({ order_state_group: 'failed', delivered_at: null })).toEqual({ label: 'Non livrée', tone: 'danger' });
+  expect(sold({ order_state_group: null, delivered_at: null })).toEqual({ label: 'État inconnu · à vérifier', tone: 'warning' });
+  const october = progress({ month: '2026-10', basis: 'sold', upsells: [upsell({ created_at: '2026-10-10T10:00:00.000Z', delivered_at: '2026-10-15T10:00:00.000Z' })] });
+  const card = text(renderToStaticMarkup(<ProgressCard data={october} />));
+  expect(card).toContain('Upsells vendus dans le mois : 12 / 60');
+  expect(card).toContain(`${money(45)} par upsell vendu`);
+  expect(card).toContain('Mois clôturé : 12 upsells vendus pour un seuil de 60.');
+  expect(card).toContain('Tous les upsells vendus du mois dès 60 atteints');
+  expect(card).toContain('Pour ce mois, la prime compte les upsells vendus, dans le mois de l’appel : la règle des upsells livrés n’était pas encore en vigueur.');
+  expect(card).not.toContain('livrés, dans le mois de leur livraison');
+  expect(card).not.toContain('Une commande retournée ou annulée ne compte pas');
+  const list = renderToStaticMarkup(<MyUpsells data={october} />);
+  expect(text(list)).toContain('Vos ventes du mois, du plus récent au plus ancien. Pour ce mois, la prime compte les upsells vendus');
+  expect(list).toContain('<span class="tag tag--success">Livrée le 15/10</span>');
+  reports.set('my-progress', october);
+  reports.set('reminders', { reminders: [] });
+  expect(renderToStaticMarkup(<PersonalProgress />)).toContain('>Mes upsells vendus au fil du mois</h2>');
 });
 
 test('« Mes upsells »: one row per sale, with its date, dossier, brand, supplement and state', () => {
@@ -89,15 +115,15 @@ test('the progress card counts delivered upsells and gives the month’s sales b
   expect(text(renderToStaticMarkup(<ProgressCard data={progress({ sold: undefined, stateCounts: undefined })} />))).not.toContain('vendus');
 });
 
-test('« Ma progression » shows « Mes upsells » under the progress card, before the reminders', () => {
+test('« Ma progression » keeps « Mes rappels » right under the progress card (« Voir mes rappels » lands there); « Mes upsells » comes last', () => {
   reports.set('my-progress', progress());
   reports.set('reminders', { reminders: [] });
   const html = renderToStaticMarkup(<PersonalProgress />);
-  const card = html.indexOf('pilot-progress__count'), list = html.indexOf('>Mes upsells</h2>'), reminders = html.indexOf('>Mes rappels</h2>');
+  const card = html.indexOf('pilot-progress__count'), reminders = html.indexOf('>Mes rappels</h2>'), chart = html.indexOf('>Mes upsells livrés au fil du mois</h2>'), list = html.indexOf('>Mes upsells</h2>');
   expect(card).toBeGreaterThan(-1);
-  expect(list).toBeGreaterThan(card);
-  expect(reminders).toBeGreaterThan(list);
-  expect(html).toContain('>Mes upsells livrés au fil du mois</h2>');
+  expect(reminders).toBeGreaterThan(card);
+  expect(chart).toBeGreaterThan(reminders);
+  expect(list).toBeGreaterThan(chart);
   expect(renderToStaticMarkup(<PersonalProgress compact />)).not.toContain('Mes upsells');
 });
 
@@ -115,6 +141,19 @@ test('« Apports & primes » shows sold and delivered per adviser, the prime on 
   expect(html).toContain('<p>La prime compte les upsells livrés, dans le mois de leur livraison.</p>');
   expect(text(html)).toContain('60 upsells livrés par mois, ' + money(45) + ' par upsell livré. Tous les upsells livrés du mois dès 60 atteints.');
   expect(html).toContain('>DA par upsell livré<');
+});
+
+test('« Apports & primes » for a month paid on sales: the sold count carries the threshold, no delivered count', () => {
+  const totals = { calls: 4, confirmations: 3, upsells: 3, initialDzd: 5400, confirmedDzd: 9000, upliftDzd: 3600, withoutRef: 0, duplicates: 0 };
+  reports.set('contributions', {
+    month: '2026-10', from: '2026-10-01', to: '2026-10-31', today: '2026-11-21', basis: 'sold', rule: { ...rule, effectiveMonth: '2026-10' }, monthRuleVersion: 1, updatedAt: '2026-11-21T09:00:00Z',
+    people: [{ id: 'u1', label: 'Lina', role: 'advisor', active: 1, team: '', period: totals, monthly: { ...totals, delivered: null, bonus: bonusEstimate(3, rule) }, daily: [] }],
+  });
+  const html = renderToStaticMarkup(<ContributionDashboard openOperator={() => {}} />);
+  const row = text(html.slice(html.indexOf('1. Lina')));
+  expect(row).toContain('3 / 6057 restant(s)—');
+  expect(html).toContain('<p>Pour ce mois, la prime compte les upsells vendus, dans le mois de l’appel : la règle des upsells livrés n’était pas encore en vigueur.</p>');
+  expect(text(html)).toContain('60 upsells vendus par mois, ' + money(45) + ' par upsell vendu. Tous les upsells vendus du mois dès 60 atteints.');
 });
 
 test('the sales line reads like the motivation, stays off the call strip, and long state tags wrap', async () => {

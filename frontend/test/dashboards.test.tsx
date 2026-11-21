@@ -67,7 +67,7 @@ test('Apports: silent refresh, kept data, rule copy from the saved rule, one byt
   const commission = ui('Commission.tsx');
   expect(commission).not.toContain("'\\uFEFF'");
   expect(commission).not.toMatch(/60 × 45|Seuil demandé : 60|45 DA au 60/);
-  expect(commission).toContain('Règle enregistrée pour {monthLabel(month)} : {data.rule.threshold} upsells livrés par mois');
+  expect(commission).toContain('Règle enregistrée pour {monthLabel(month)} : {data.rule.threshold} upsells {done}s par mois');
   expect(commission).toContain('<Button variant="primary" busy={saving}');
   expect(commission).not.toContain('{data&&!error&&');
   expect(commission).toContain('{report.stale&&<StaleNotice');

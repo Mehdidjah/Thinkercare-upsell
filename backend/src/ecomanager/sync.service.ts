@@ -69,7 +69,8 @@ export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** The calls still waiting for an order state: not checked, « à vérifier », a non-final state older than a day, or a
-   *  delivered order without its delivery date (backfill of the calls delivered before migration 0009). */
+   *  delivered order without its delivery date (backfill of the calls delivered before migration 0009). The backfill
+   *  waits an hour after a run that EcoManager answered with an error, so that order is not asked on every run. */
   private due() {
     const finals = sql.join(FINAL_ORDER_STATES.map((name) => sql`${name}`), sql`, `);
     return sql`${tcCallMeta.order_ref} <> '' AND ${this.active()} AND (
@@ -77,7 +78,8 @@ export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
       OR (${tcCallMeta.order_check} = 'verified'
         AND (${tcCallMeta.order_state_name} IS NULL OR ${tcCallMeta.order_state_name} NOT IN (${finals}))
         AND (${tcCallMeta.order_synced_at} IS NULL OR ${tcCallMeta.order_synced_at} < now() - interval '24 hours'))
-      OR (${tcCallMeta.order_state_group} = 'delivered' AND ${tcCallMeta.delivered_at} IS NULL))`;
+      OR (${tcCallMeta.order_state_group} = 'delivered' AND ${tcCallMeta.delivered_at} IS NULL
+        AND (${tcCallMeta.order_synced_at} IS NULL OR ${tcCallMeta.order_synced_at} < now() - interval '1 hour')))`;
   }
 
   /** Checks up to `limit` references (one EcoManager request per order, shared by every call on it). */
@@ -126,14 +128,16 @@ export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
           const result = await client.lookup(parsed.reference, 'background');
           if (result.status === 'unavailable') {
             // EcoManager down or out of quota: stop this store and resume later. One order answering an error: move on.
+            // EcoManager did not answer, so a delivered call keeps no date yet: it is asked again later (see `due`).
             if (result.reason !== 'server') {
               stopped.add(brand);
               continue;
             }
             await this.mark(all, { order_synced_at: new Date() });
-            await this.settleDelivered(all);
             continue;
           }
+          // The delivery date EcoManager gave, kept even when its state is older than the stored one.
+          let deliveredAt: string | null = null;
           if (result.status === 'not-found') {
             updated += await this.mark(unchecked, { order_check: 'not-found', order_synced_at: new Date() });
             // A call verified earlier keeps its last known state; it is checked again in a day, not on every run.
@@ -152,8 +156,9 @@ export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
               delivered_at: deliveredAtFor(order, stateAt),
               order_synced_at: new Date(),
             });
+            deliveredAt = order.deliveredAt;
           }
-          await this.settleDelivered(all);
+          await this.settleDelivered(all, deliveredAt);
           checked++;
         }
       } finally {
@@ -180,12 +185,14 @@ export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Backfill end: a call still delivered without a delivery date once its order was asked (EcoManager gave none, kept
-   *  a newer stored state, no longer finds the order or answered an error) takes its state's date, so it is never due
-   *  again. That is the date the prime already counts it on. */
-  private async settleDelivered(where: ReturnType<typeof and>): Promise<void> {
+  /** Backfill end, once EcoManager answered for the order (found without a date, kept a newer stored state, or no
+   *  longer finds it) or its reference no longer reads: a call still delivered without a delivery date takes
+   *  `deliveredAt` (EcoManager's date) when given, else its state's date, the date the prime already counts it on. It is
+   *  then never due again. Never after an error: EcoManager may still give the real date. */
+  private async settleDelivered(where: ReturnType<typeof and>, deliveredAt: string | null = null): Promise<void> {
+    const given = deliveredAt ? new Date(deliveredAt).toISOString() : null;
     await this.mark(and(where, eq(tcCallMeta.order_state_group, 'delivered'), isNull(tcCallMeta.delivered_at)), {
-      delivered_at: sql`COALESCE(${tcCallMeta.order_state_at}, now())`,
+      delivered_at: sql`COALESCE(${given}::timestamptz, ${tcCallMeta.order_state_at}, now())`,
     });
   }
 

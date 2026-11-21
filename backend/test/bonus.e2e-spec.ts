@@ -796,9 +796,56 @@ describe('prime on delivered upsells', () => {
   });
 
   it('a delivered upsell counts in the month of its delivery, not the month of the call', async () => {
+    await deliver(await sale({ created_at: at('2026-11-28T10:00:00Z') }), at('2026-12-02T10:00:00Z'));
+    expect(await progress('&month=2026-11')).toMatchObject({ basis: 'delivered', sold: 1, progress: { count: 0 }, daily: [] });
+    expect(await progress('&month=2026-12')).toMatchObject({ basis: 'delivered', sold: 0, progress: { count: 1 }, daily: [{ day: '2026-12-02', upsells: 1 }] });
+  });
+
+  it('before November 2026 the prime counted sales: a closed month still reads what it paid', async () => {
+    const delivered = await sale({ created_at: at('2026-10-10T10:00:00Z') });
+    await deliver(delivered, at('2026-10-15T10:00:00Z'));
+    const returned = await sale({ created_at: at('2026-10-12T10:00:00Z'), outcome: 'trio', tier: 'trio', offered_total: 4400, extra: 2600 });
+    await setOrder(returned, { order_state_group: 'failed', order_state_name: 'Retournée', order_state_at: at('2026-10-20T10:00:00Z') });
+    const body = await progress('&month=2026-10');
+    expect(body).toMatchObject({ basis: 'sold', sold: 3, progress: { count: 3 }, daily: [{ day: '2026-10-10', upsells: 1 }, { day: '2026-10-12', upsells: 2 }] });
+    expect(body.upsells.map((u: { id: string; counts: boolean }) => [u.id, u.counts])).toEqual([[returned, true], [delivered, true]]);
+    const c = (await deskGet(ctx, '?action=contributions&month=2026-10', admin)).body;
+    expect(c.basis).toBe('sold');
+    expect(c.people.find((x: { id: string }) => x.id === linaUser.id).monthly).toMatchObject({ upsells: 3, delivered: null, bonus: { count: 3 } });
+    expect((await progress('&month=2026-11')).basis).toBe('delivered');
+    expect((await deskGet(ctx, '?action=contributions&month=2026-11', admin)).body.basis).toBe('delivered');
+  });
+
+  it('a sale made before November 2026 was paid on the sale: delivered in November, it does not count again', async () => {
+    const s = await sara();
     await deliver(await sale({ created_at: at('2026-10-28T10:00:00Z') }), at('2026-11-02T10:00:00Z'));
-    expect(await progress('&month=2026-10')).toMatchObject({ sold: 1, progress: { count: 0 }, daily: [] });
-    expect(await progress('&month=2026-11')).toMatchObject({ sold: 0, progress: { count: 1 }, daily: [{ day: '2026-11-02', upsells: 1 }] });
+    // Late October in Algiers (23:30 UTC on 31 October is 1 November): Sara's sale is November's.
+    await deliver(await sale({ user_id: s.id, created_at: at('2026-10-31T23:30:00Z') }), at('2026-11-03T10:00:00Z'));
+    expect(await progress('&month=2026-10')).toMatchObject({ basis: 'sold', sold: 1, progress: { count: 1 } });
+    expect(await progress('&month=2026-11')).toMatchObject({ sold: 0, progress: { count: 0 }, daily: [], upsells: [], upsellsTotal: 0 });
+    expect(await progress('&month=2026-11', s.cookie)).toMatchObject({ sold: 1, progress: { count: 1 }, daily: [{ day: '2026-11-03', upsells: 1 }] });
+    const c = (await deskGet(ctx, '?action=contributions&month=2026-11', admin)).body;
+    expect(c.people.find((x: { id: string }) => x.id === linaUser.id).monthly).toMatchObject({ upsells: 0, delivered: 0, bonus: { count: 0 } });
+    expect(c.people.find((x: { id: string }) => x.id === s.id).monthly).toMatchObject({ upsells: 1, delivered: 1, bonus: { count: 1 } });
+  });
+
+  it('an order delivered before the call never counts: the add-on was not in that delivery', async () => {
+    // Mistyped references: orders already delivered (with their date, or only a state date until the backfill).
+    const dated = await sale({ created_at: at('2026-11-21T10:00:00Z') });
+    await setOrder(dated, { order_state_group: 'delivered', order_state_name: 'Encaissée', order_state_at: at('2026-11-12T10:00:00Z'), delivered_at: at('2026-11-10T10:00:00Z') });
+    const undated = await sale({ created_at: at('2026-11-21T11:00:00Z') });
+    await setOrder(undated, { order_state_group: 'delivered', order_state_name: 'Livrée', order_state_at: at('2026-11-15T10:00:00Z') });
+    // Saved in December on an order delivered in November: November does not move.
+    await deliver(await sale({ created_at: at('2026-12-05T10:00:00Z') }), at('2026-11-20T10:00:00Z'));
+    const body = await progress('&month=2026-11');
+    expect(body).toMatchObject({ sold: 2, progress: { count: 0 }, daily: [], stateCounts: { delivered: 0, unknown: 2 } });
+    expect(body.upsells.map((u: { id: string; counts: boolean; delivered_at: string }) => [u.id, u.counts, u.delivered_at])).toEqual([
+      [undated, false, '2026-11-15T10:00:00.000Z'],
+      [dated, false, '2026-11-10T10:00:00.000Z'],
+    ]);
+    expect((await progress('&month=2026-12')).progress.count).toBe(0);
+    const c = (await deskGet(ctx, '?action=contributions&month=2026-11', admin)).body;
+    expect(c.people.find((x: { id: string }) => x.id === linaUser.id).monthly).toMatchObject({ upsells: 2, delivered: 0, bonus: { count: 0 } });
   });
 
   it('Algiers midnight: delivered at 23:30 UTC on 30 November counts on 1 December, at 22:59 UTC on 30 November', async () => {
@@ -809,10 +856,10 @@ describe('prime on delivered upsells', () => {
   });
 
   it('« Encaissée » keeps the delivery date: the upsell stays in the month it was delivered', async () => {
-    const id = await sale({ created_at: at('2026-10-20T10:00:00Z') });
-    await setOrder(id, { order_state_group: 'delivered', order_state_name: 'Encaissée', order_state_at: at('2026-11-03T09:00:00Z'), delivered_at: at('2026-10-27T19:46:25Z') });
-    expect((await progress('&month=2026-10')).progress.count).toBe(1);
-    expect((await progress('&month=2026-11')).progress.count).toBe(0);
+    const id = await sale({ created_at: at('2026-11-20T10:00:00Z') });
+    await setOrder(id, { order_state_group: 'delivered', order_state_name: 'Encaissée', order_state_at: at('2026-12-03T09:00:00Z'), delivered_at: at('2026-11-27T19:46:25Z') });
+    expect((await progress('&month=2026-11')).progress.count).toBe(1);
+    expect((await progress('&month=2026-12')).progress.count).toBe(0);
   });
 
   it('until the backfill, a delivered call without a delivery date counts on its state date', async () => {
@@ -844,49 +891,49 @@ describe('prime on delivered upsells', () => {
 
   it('one sale per dossier: an order delivered once pays once, to the dossier’s first accepted add-on, across months and advisers', async () => {
     const s = await sara();
-    // Two accepted add-ons on one order (possible before the save refused the second): Sara's in October comes first.
-    await deliver(await sale({ user_id: s.id, order_ref: 'TOU8200001', created_at: at('2026-10-30T10:00:00Z') }), at('2026-11-10T10:00:00Z'));
-    const later = await sale({ order_ref: 'tou8200001 ', created_at: at('2026-11-02T10:00:00Z') });
-    await deliver(later, at('2026-11-10T10:00:00Z'));
+    // Two accepted add-ons on one order (possible before the save refused the second): Sara's in November comes first.
+    await deliver(await sale({ user_id: s.id, order_ref: 'TOU8200001', created_at: at('2026-11-30T10:00:00Z') }), at('2026-12-10T10:00:00Z'));
+    const later = await sale({ order_ref: 'tou8200001 ', created_at: at('2026-12-02T10:00:00Z') });
+    await deliver(later, at('2026-12-10T10:00:00Z'));
     // Lina's own duplicate within the month: the earlier call is the sale.
-    const first = await sale({ order_ref: 'TOU8200002', created_at: at('2026-11-03T10:00:00Z'), outcome: 'trio', tier: 'trio', offered_total: 4400, extra: 2600 });
-    const second = await sale({ order_ref: 'TOU8200002', created_at: at('2026-11-04T10:00:00Z') });
-    for (const id of [first, second]) await deliver(id, at('2026-11-11T10:00:00Z'));
-    expect((await progress('&month=2026-11', s.cookie)).progress.count).toBe(1);
-    const lina = await progress('&month=2026-11');
+    const first = await sale({ order_ref: 'TOU8200002', created_at: at('2026-12-03T10:00:00Z'), outcome: 'trio', tier: 'trio', offered_total: 4400, extra: 2600 });
+    const second = await sale({ order_ref: 'TOU8200002', created_at: at('2026-12-04T10:00:00Z') });
+    for (const id of [first, second]) await deliver(id, at('2026-12-11T10:00:00Z'));
+    expect((await progress('&month=2026-12', s.cookie)).progress.count).toBe(1);
+    const lina = await progress('&month=2026-12');
     expect(lina.progress.count).toBe(2);
     expect(lina.upsells.map((u: { id: string; counts: boolean }) => [u.id, u.counts])).toEqual([[first, true], [later, false]]);
   });
 
   it('« Mes upsells »: her sales of the month and her upsells delivered this month, newest first, with their state; never another adviser’s', async () => {
     const s = await sara();
-    const a = await sale({ created_at: at('2026-11-05T10:00:00Z') });
-    await deliver(a, at('2026-11-08T10:00:00Z'));
-    const b = await sale({ created_at: at('2026-10-29T10:00:00Z'), brand: 'belnco', order_ref: 'BEL8300001', base_id: 'bel-retinol', extra: 1500 });
-    await deliver(b, at('2026-11-02T10:00:00Z'), 'Encaissée');
-    const c = await sale({ created_at: at('2026-11-18T10:00:00Z') });
-    await setOrder(c, { order_state_group: 'shipping', order_state_name: 'En livraison', order_state_at: at('2026-11-19T10:00:00Z') });
-    const d = await sale({ created_at: at('2026-11-12T10:00:00Z') });
-    await setOrder(d, { order_state_group: 'failed', order_state_name: 'Retournée', order_state_at: at('2026-11-15T10:00:00Z') });
-    const h = await sale({ created_at: at('2026-11-03T10:00:00Z') });
-    await deliver(h, at('2026-12-01T09:00:00Z'));
-    await deliver(await sale({ created_at: at('2026-10-10T10:00:00Z') }), at('2026-10-15T10:00:00Z'));
-    await sale({ created_at: at('2026-11-19T10:00:00Z'), outcome: 'initial', offered_total: 1800, extra: 0 });
-    await voidCall(await sale({ created_at: at('2026-11-20T10:00:00Z') }));
-    await deliver(await sale({ user_id: s.id, created_at: at('2026-11-06T10:00:00Z') }), at('2026-11-09T10:00:00Z'));
-    const body = await progress('&month=2026-11');
+    const a = await sale({ created_at: at('2026-12-05T10:00:00Z') });
+    await deliver(a, at('2026-12-08T10:00:00Z'));
+    const b = await sale({ created_at: at('2026-11-29T10:00:00Z'), brand: 'belnco', order_ref: 'BEL8300001', base_id: 'bel-retinol', extra: 1500 });
+    await deliver(b, at('2026-12-02T10:00:00Z'), 'Encaissée');
+    const c = await sale({ created_at: at('2026-12-18T10:00:00Z') });
+    await setOrder(c, { order_state_group: 'shipping', order_state_name: 'En livraison', order_state_at: at('2026-12-19T10:00:00Z') });
+    const d = await sale({ created_at: at('2026-12-12T10:00:00Z') });
+    await setOrder(d, { order_state_group: 'failed', order_state_name: 'Retournée', order_state_at: at('2026-12-15T10:00:00Z') });
+    const h = await sale({ created_at: at('2026-12-03T10:00:00Z') });
+    await deliver(h, at('2027-01-01T09:00:00Z'));
+    await deliver(await sale({ created_at: at('2026-11-10T10:00:00Z') }), at('2026-11-15T10:00:00Z'));
+    await sale({ created_at: at('2026-12-19T10:00:00Z'), outcome: 'initial', offered_total: 1800, extra: 0 });
+    await voidCall(await sale({ created_at: at('2026-12-20T10:00:00Z') }));
+    await deliver(await sale({ user_id: s.id, created_at: at('2026-12-06T10:00:00Z') }), at('2026-12-09T10:00:00Z'));
+    const body = await progress('&month=2026-12');
     expect(body.upsells.map((u: { id: string }) => u.id)).toEqual([c, d, a, h, b]);
     expect(body.upsellsTotal).toBe(5);
     expect(body.progress.count).toBe(2);
     expect(body.upsells.find((u: { id: string }) => u.id === a)).toEqual({
-      id: a, created_at: '2026-11-05T10:00:00.000Z', order_ref: expect.stringMatching(/^TOU8/), brand: 'touche', outcome: 'duo', units: 1, extra: 1200,
-      order_state_group: 'delivered', order_state_name: 'Livrée', delivered_at: '2026-11-08T10:00:00.000Z', counts: true,
+      id: a, created_at: '2026-12-05T10:00:00.000Z', order_ref: expect.stringMatching(/^TOU8/), brand: 'touche', outcome: 'duo', units: 1, extra: 1200,
+      order_state_group: 'delivered', order_state_name: 'Livrée', delivered_at: '2026-12-08T10:00:00.000Z', counts: true,
     });
     expect(body.upsells.find((u: { id: string }) => u.id === b)).toMatchObject({ brand: 'belnco', order_ref: 'BEL8300001', extra: 1500, order_state_name: 'Encaissée', counts: true });
-    expect(body.upsells.find((u: { id: string }) => u.id === h)).toMatchObject({ order_state_group: 'delivered', delivered_at: '2026-12-01T09:00:00.000Z', counts: false });
+    expect(body.upsells.find((u: { id: string }) => u.id === h)).toMatchObject({ order_state_group: 'delivered', delivered_at: '2027-01-01T09:00:00.000Z', counts: false });
     expect(body.upsells.find((u: { id: string }) => u.id === c)).toMatchObject({ order_state_group: 'shipping', order_state_name: 'En livraison', delivered_at: null, counts: false });
     expect(body.upsells.find((u: { id: string }) => u.id === d)).toMatchObject({ order_state_group: 'failed', delivered_at: null, counts: false });
-    expect((await progress('&month=2026-11', s.cookie)).upsells).toHaveLength(1);
+    expect((await progress('&month=2026-12', s.cookie)).upsells).toHaveLength(1);
   });
 
   it('« Mes upsells » lists the 300 most recent and gives the total', async () => {
@@ -900,13 +947,13 @@ describe('prime on delivered upsells', () => {
   it('« Apports & primes » shows sold and delivered per adviser; the prime is computed on delivered, Touché and BEL.NCO alike', async () => {
     const s = await sara();
     await ctx.db.execute(sql`INSERT INTO tc_bonus_rules (month, threshold, rate_dzd, mode, version, updated_by, updated_at)
-      VALUES ('2026-11', 2, 45, 'all_month', 1, '', now()) ON CONFLICT (month) DO UPDATE SET mode = 'all_month', threshold = 2, rate_dzd = 45`);
-    await deliver(await sale({ created_at: at('2026-11-03T10:00:00Z') }), at('2026-11-06T10:00:00Z'));
-    await setOrder(await sale({ created_at: at('2026-11-04T10:00:00Z') }), { order_state_group: 'shipping', order_state_name: 'En livraison', order_state_at: at('2026-11-05T10:00:00Z') });
-    await deliver(await sale({ created_at: at('2026-11-07T10:00:00Z'), brand: 'belnco', order_ref: 'BEL8400001', base_id: 'bel-retinol' }), at('2026-11-09T10:00:00Z'));
-    await deliver(await sale({ created_at: at('2026-10-30T10:00:00Z') }), at('2026-11-02T10:00:00Z'));
-    await sale({ user_id: s.id, created_at: at('2026-11-08T10:00:00Z') });
-    for (const query of ['&month=2026-11', '&month=2026-11&from=2026-11-01&to=2026-11-05']) {
+      VALUES ('2026-12', 2, 45, 'all_month', 1, '', now()) ON CONFLICT (month) DO UPDATE SET mode = 'all_month', threshold = 2, rate_dzd = 45`);
+    await deliver(await sale({ created_at: at('2026-12-03T10:00:00Z') }), at('2026-12-06T10:00:00Z'));
+    await setOrder(await sale({ created_at: at('2026-12-04T10:00:00Z') }), { order_state_group: 'shipping', order_state_name: 'En livraison', order_state_at: at('2026-12-05T10:00:00Z') });
+    await deliver(await sale({ created_at: at('2026-12-07T10:00:00Z'), brand: 'belnco', order_ref: 'BEL8400001', base_id: 'bel-retinol' }), at('2026-12-09T10:00:00Z'));
+    await deliver(await sale({ created_at: at('2026-11-30T10:00:00Z') }), at('2026-12-02T10:00:00Z'));
+    await sale({ user_id: s.id, created_at: at('2026-12-08T10:00:00Z') });
+    for (const query of ['&month=2026-12', '&month=2026-12&from=2026-12-01&to=2026-12-05']) {
       const c = (await deskGet(ctx, '?action=contributions' + query, admin)).body;
       const person = (id: string) => c.people.find((x: { id: string }) => x.id === id);
       expect(person(linaUser.id).monthly, query).toMatchObject({ upsells: 3, delivered: 3, bonus: { count: 3, reached: true, payableCount: 3, estimatedDzd: 135 } });
