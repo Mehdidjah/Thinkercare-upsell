@@ -1010,4 +1010,38 @@ describe('prime on delivered upsells', () => {
     expect(sum(body.deliveredByBrand)).toBe(body.progress.count);
     expect(await progress('&month=2026-12', s.cookie)).toMatchObject({ sold: 1, soldByBrand: { touche: 0, belnco: 1 }, deliveredByBrand: { touche: 0, belnco: 0 } });
   });
+
+  it('« Ma progression » per brand and state: her month’s sales by state of their order, per brand, summing to « stateCounts »; the existing fields are unchanged', async () => {
+    const s = await sara();
+    const bel = (over: Partial<Parameters<typeof insertCall>[1]> = {}) => sale({ brand: 'belnco', order_ref: `BEL${8700000 + ++n}`, base_id: 'bel-retinol', ...over });
+    await deliver(await sale({ outcome: 'trio', tier: 'trio', offered_total: 4400, extra: 2600 }), at('2026-11-12T09:00:00Z'));
+    await setOrder(await sale(), { order_state_group: 'shipping', order_state_name: 'En livraison', order_state_at: at('2026-11-11T09:00:00Z') });
+    await sale({ order_ref: null });
+    await deliver(await bel({ outcome: 'trio', tier: 'trio', offered_total: 4400, extra: 2600 }), at('2026-11-14T09:00:00Z'));
+    await setOrder(await bel(), { order_state_group: 'pending', order_state_name: 'En confirmation', order_state_at: at('2026-11-10T11:00:00Z') });
+    await setOrder(await bel(), { order_state_group: 'failed', order_state_name: 'Retournée', order_state_at: at('2026-11-13T09:00:00Z') });
+    // Delivered before the call (a mistyped reference): « à vérifier », in its brand.
+    await deliver(await bel({ created_at: at('2026-11-20T10:00:00Z') }), at('2026-11-15T10:00:00Z'));
+    await bel({ user_id: s.id });
+    const body = await progress('&month=2026-11');
+    expect(body).toMatchObject({ sold: 9, soldByBrand: { touche: 4, belnco: 5 }, progress: { count: 4 }, deliveredByBrand: { touche: 2, belnco: 2 } });
+    expect(body.stateCounts).toEqual({ delivered: 4, shipping: 1, pending: 1, failed: 1, unknown: 2 });
+    expect(body.stateCountsByBrand).toEqual({
+      touche: { delivered: 2, shipping: 1, pending: 0, failed: 0, unknown: 1 },
+      belnco: { delivered: 2, shipping: 0, pending: 1, failed: 1, unknown: 1 },
+    });
+    for (const g of Object.keys(body.stateCounts)) expect(body.stateCountsByBrand.touche[g] + body.stateCountsByBrand.belnco[g], g).toBe(body.stateCounts[g]);
+    for (const b of ['touche', 'belnco']) expect(sum(body.stateCountsByBrand[b]), b).toBe(body.soldByBrand[b]);
+    // Sara sees her own sale only.
+    expect((await progress('&month=2026-11', s.cookie)).stateCountsByBrand).toEqual({
+      touche: { delivered: 0, shipping: 0, pending: 0, failed: 0, unknown: 0 },
+      belnco: { delivered: 0, shipping: 0, pending: 0, failed: 0, unknown: 1 },
+    });
+    // A month paid on sales has it too: its sales by state, per brand.
+    await setOrder(await bel({ created_at: at('2026-10-10T10:00:00Z') }), { order_state_group: 'shipping', order_state_name: 'En livraison', order_state_at: at('2026-10-11T09:00:00Z') });
+    expect(await progress('&month=2026-10')).toMatchObject({
+      basis: 'sold', sold: 1, stateCounts: { shipping: 1 },
+      stateCountsByBrand: { touche: { delivered: 0, shipping: 0, pending: 0, failed: 0, unknown: 0 }, belnco: { delivered: 0, shipping: 1, pending: 0, failed: 0, unknown: 0 } },
+    });
+  });
 });
