@@ -37,7 +37,7 @@ function model(extra: Partial<CallModel>): CallModel {
     domain: 'face', profile: face, changeProfile: noop, toggleConcern: noop, blocked: null, stop: null, notes: [], missing: [],
     upgrades: [], heldPacks: [], upgrade: undefined, upgradeId: '', chooseUpgrade: noop, clearUpgrade: noop, adds: [], requestedIds: [], verifiedProducts: [], toggleVerified: noop, setDetail: noop,
     candidates: [], requests: [], requestApproximate: false, requestSearch: '', setRequestSearch: noop, confirmId: '', setConfirmId: noop, addComplement: noop, removeComplement: noop, changeQuantity: () => true,
-    basket: [{ ...base, quantity: 1 }], count: 1, total: base.price, altered: false, tier: 'duo', chooseTier: noop, offerIssue: null, delivery: '', changeDelivery: noop, copy: async () => {}, copyFallback: null, closeCopyFallback: noop,
+    basket: [{ ...base, quantity: 1 }], count: 1, total: base.price, altered: false, tier: 'duo', chosenTier: 'duo', chooseTier: noop, offerIssue: null, delivery: '', changeDelivery: noop, copy: async () => {}, copyFallback: null, closeCopyFallback: noop,
     presented: [], matchingOffer: undefined, presentOffer: async () => {}, handledObjections: [], toggleObjection: noop, consent: false, setConsent: noop, checked: false, setChecked: noop, setCallbackAt: noop, setRefusal: noop, record: async () => {},
     refusal: '', callbackAt: '', offer: 3600, fee: null, removal: null, dismissRemoval: noop, catalogueNotice: null, dismissCatalogueNotice: noop, ...extra } as unknown as CallModel;
 }
@@ -812,5 +812,23 @@ describe('packs: one price when the offer is packs only, the 2nd and 3rd offers 
     expect(app).toContain('callState.matchingOffer(d.presented,{initial,basket,tier,fee,offer},keepsPresentedPrice)');
     expect(app).toContain("upgradeId:now.upgradeId||undefined,tier,delivery:fee,agreedTotal:offer,");
     expect(app).toContain("outcome,tier:altered?tier:'catalogue',");
+  });
+
+  it('the coach prices the basket it shows: a pack-only order previewed with a separate product keeps the adviser’s level', () => {
+    const hairProfile: Profile = { ...EMPTY_PROFILE, concerns: ['fall'], skin: 'normal' };
+    const pitch = (base: Product, add: Product, extra: Partial<CallModel> = {}) => render(<StepRoutine base={base}/>, { step: 2, products: all, domain: 'hair', profile: hairProfile, base, initial: [{ ...base, quantity: 1 }], baseTotal: base.price, basket: [{ ...base, quantity: 1 }], altered: false,
+      // App: the call's level is the catalogue one for the pack-only order on screen, the adviser chose « Première offre ».
+      tier: 'catalogue', chosenTier: 'duo', candidates: [{ product: add, score: 100, reason: '' }], ...extra } as Partial<CallModel>);
+    // Once added, step 3 selects « Première offre » at 4 500 DA: the preview reads that price, not the catalogue one.
+    expect(pitch(b('packanti'), b('conditioner'))).toContain(`${money(4500)} au lieu de ${money(4650)}`);
+    expect(pitch(b('packpso'), b('conditioner'))).toContain(`${money(5000)} au lieu de ${money(5150)}`);
+    expect(pitch(b('bel-ritual'), b('bel-clarifying'), { brand: 'belnco', profile: { ...EMPTY_PROFILE, concerns: ['acne'], skin: 'mixed' }, domain: 'face' })).toContain(`${money(4900)} au lieu de ${money(5000)}`);
+    // Packs only in the preview too (a pack beside a pack): one price, the pack's.
+    expect(pitch(b('packanti'), b('packpousse'))).not.toContain('au lieu de');
+    // Once the product is in, the coach and the desk read the same level.
+    const added = pitch(b('packanti'), b('conditioner'), { altered: true, basket: [b('packanti'), b('conditioner')], tier: 'duo', candidates: [] });
+    expect(added).toContain(`${money(4500)} au lieu de ${money(4650)}`);
+    // App hands the coach the adviser's own level, the draft's.
+    expect(readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8')).toContain('chosenTier:d.tier,');
   });
 });

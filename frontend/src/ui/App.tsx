@@ -481,7 +481,7 @@ export default function Desk(){
   upgrades,heldPacks,upgrade,upgradeId:d.upgradeId,chooseUpgrade,clearUpgrade,adds:d.adds,requestedIds:d.requestedIds,
   verifiedProducts,toggleVerified,setDetail,
   candidates,requests,requestApproximate,requestSearch,setRequestSearch,confirmId,setConfirmId,addComplement,removeComplement,changeQuantity,addUnit,verifyAndAddUnit,
-  basket,count,total,altered,tier,chooseTier:(t:Tier)=>commit(callState.chooseTier(current(),t)),offer,offerIssue,delivery:d.delivery,changeDelivery:value=>commit(callState.changeDelivery(current(),value)),fee,copy,copyFallback,closeCopyFallback:()=>setCopyFallback(null),
+  basket,count,total,altered,tier,chosenTier:d.tier,chooseTier:(t:Tier)=>commit(callState.chooseTier(current(),t)),offer,offerIssue,delivery:d.delivery,changeDelivery:value=>commit(callState.changeDelivery(current(),value)),fee,copy,copyFallback,closeCopyFallback:()=>setCopyFallback(null),
   presented:d.presented,matchingOffer,keepsPresentedPrice,presentOffer,handledObjections:d.handledObjections,toggleObjection:key=>commit(callState.toggleObjection(current(),key)),
   consent:d.consent,setConsent:edit('consent'),checked:d.checked,setChecked:edit('checked'),callbackAt:d.callbackAt,setCallbackAt:edit('callbackAt'),refusal:d.refusal,setRefusal:edit('refusal'),record,
   removal,dismissRemoval:()=>setRemoval(null),catalogueNotice,dismissCatalogueNotice:()=>setCatalogueNotice(null)};

@@ -63,7 +63,9 @@ export type CallModel={
  /** « + Une unité » on a reference waiting for its check: the check is confirmed in the row, then one unit is added (UNIT-CHECK). */
  verifyAndAddUnit:(id:string)=>boolean;
  basket:OrderItem[];count:number;total:number;altered:boolean;
- tier:Tier;chooseTier:(tier:Tier)=>void;offer:number;
+ /** `tier` is the level presented and saved for the basket on screen (catalogue for packs only, callState.offerTier);
+  *  `chosenTier` is the adviser's own, the draft's, for a basket that is not on screen yet (the coach's preview). */
+ tier:Tier;chosenTier:Tier;chooseTier:(tier:Tier)=>void;offer:number;
  /** Why this price cannot be presented: the offer does not exceed the initial order (M5). */
  offerIssue:string|null;delivery:string;changeDelivery:(value:string)=>void;fee:number|null;
  /** Copies and confirms with its own label (« Argumentaire copié. »); on failure the text opens in a dialog (COPY). */

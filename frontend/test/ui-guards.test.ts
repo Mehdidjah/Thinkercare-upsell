@@ -82,8 +82,9 @@ test('Questionnaire says which answers still block "Construire la routine"', () 
 test('Step 3 combines suggested and requested products without bypassing compatibility checks', () => {
   assert.ok(callView.includes('{step===2&&base&&<StepRoutine base={base}/>}'), 'step 3 renders the routine step');
   const routine = ui('call/StepRoutine.tsx');
-  // Step 3 = the routine step plus every call component it imports (the rail is separate, as before).
-  const parts = [...routine.matchAll(/from '\.\/(\w+)'/g)].map((m) => m[1]).filter((name) => name !== 'callModel');
+  // Step 3 = the routine step plus every call component it imports (the rail is separate, as before); callModel and callState are not components.
+  const parts = [...routine.matchAll(/from '\.\/([A-Z]\w+)'/g)].map((m) => m[1]);
+  assert.ok(parts.includes('SalesCoach') && parts.includes('ProductPicker') && parts.includes('OfferTotals'), 'the step’s components are read');
   const step2 = [routine, ...parts.map((name) => ui('call/' + name + '.tsx'))].join('\n');
   assert.equal((step2.match(/<section className="card call-picker"/g) || []).length, 1);
   assert.equal((routine.match(/<ProductPicker\b/g) || []).length, 1);
