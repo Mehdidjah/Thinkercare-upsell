@@ -57,9 +57,9 @@ test('« Par marque » on « Ma progression »: Touché, BEL.NCO and Total for h
   // The prime's count is the table's footer, apart from the sales and their states.
   expect(table).toMatch(/<tfoot><tr><th scope="row">Livrés ce mois \(prime\)<\/th>/);
   expect(text(table)).toContain('La dernière ligne compte les upsells livrés ce mois, quel que soit le mois de la vente : c’est le compte de la prime.');
-  // Under the progress figures, before the card's foot: the card still reads as before.
+  // Under the progress figures, before the card's closing line about pay.
   expect(html.indexOf('pilot-progress__brands')).toBeGreaterThan(html.indexOf('pilot-progress__estimate'));
-  expect(html.indexOf('pilot-progress__brands')).toBeLessThan(html.indexOf('pilot-progress__foot'));
+  expect(html.indexOf('pilot-progress__brands')).toBeLessThan(html.indexOf('pilot-progress__note'));
   expect(text(html)).toContain('Upsells livrés ce mois : 25 / 60 (Touché 18 · BEL.NCO 7)');
   expect(text(html)).toContain('30 vendus ce mois (Touché 21 · BEL.NCO 9) · dont 12 déjà livrés · 9 en cours · 3 non livrés · 6 à vérifier');
 });

@@ -53,7 +53,8 @@ test('a past month reads as closed: no « Encore N », no « aujourd’hui » (X
   expect(past).toContain('Seuil non atteint : pas de prime pour ce mois.');
   const current = renderToStaticMarkup(<ProgressCard data={progress('2026-11', 12)} />);
   expect(current).toContain('Encore 48 upsells');
-  expect(current).toContain('2 upsell(s) livré(s) aujourd’hui');
+  // Since 2026-11-21 the card ends on one line about pay (owner): no daily count, no rule paragraph.
+  expect(current).toContain('La prime est calculée uniquement sur vos upsells livrés.');
 });
 
 test('the call strip says how many reminders are due, with a link to them (X7)', () => {
