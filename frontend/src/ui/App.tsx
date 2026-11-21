@@ -493,7 +493,7 @@ export default function Desk(){
  {view==='catalogue'&&<Catalogue search={catalogueSearch} setSearch={setCatalogueSearch} scope={catalogueScope} setScope={setCatalogueScope} products={products} inScope={scopeFilter(catalogueScope)} setDetail={setDetail} canManage={canManageWorkspace(state.user)} brand={browseBrand} setBrand={setBrowseBrand}/>}
  {view==='coverage'&&<Coverage search={coverageSearch} setSearch={setCoverageSearch} products={products} setDetail={setDetail} brand={browseBrand} setBrand={setBrowseBrand}/>}
  {view==='results'&&canManageWorkspace(state.user)&&<Analytics user={state.user} users={state.users} products={products} resume={resume} initialOperator={focusOperator} initialTab={pilotageTab||undefined} onOperatorUsed={()=>setFocusOperator('')} features={state.features}/>}
- {view==='progress'&&!canManageWorkspace(state.user)&&<PersonalProgress refreshKey={progressEpoch} resume={resume} features={state.features}/>}
+ {view==='progress'&&!canManageWorkspace(state.user)&&<PersonalProgress refreshKey={progressEpoch} resume={resume} features={state.features} brands={brands}/>}
  {view==='contributions'&&canManageWorkspace(state.user)&&<ContributionDashboard openOperator={id=>{setFocusOperator(id);setPilotageTab('journal');go('results');}}/>}
  {view==='protocol'&&<Protocol clinical={state.clinical}/>}
  {view==='admin'&&canManageWorkspace(state.user)&&<Admin state={state} reload={load} notify={notify}/>}
