@@ -1,5 +1,5 @@
-import type { ActivityCall } from './analytics.js';
-import { BRANDS, BRAND_LABELS, BRAND_PREFIXES, type Brand } from './brands.js';
+import { countedCalls, summary, type ActivityCall } from './analytics.js';
+import { BRANDS, BRAND_LABELS, BRAND_PREFIXES, brandOf, type Brand } from './brands.js';
 
 /** EcoManager order rules shared by the desk and the API: references, state groups, upsell delivery. */
 
@@ -147,4 +147,44 @@ export function upsellDelivery(calls: ActivityCall[]) {
     valueRate: settledExtra > 0 ? extra.delivered / settledExtra : null,
     unknownWhy,
   };
+}
+
+/** One column of Pilotage's « Par marque »: the overview's figures (`summary`) and the delivery card's
+ *  (`upsellDelivery`), with the same definitions. Rates are null when nothing is measured. */
+export type BrandFigures = {
+  closed: number;
+  orders: number;
+  won: number;
+  extra: number;
+  acceptRate: number | null;
+  delivered: number;
+  deliveredExtra: number;
+  failed: number;
+  failedExtra: number;
+  deliveryRate: number | null;
+};
+
+function brandFigures(calls: ActivityCall[], orders?: number): BrandFigures {
+  const s = summary(calls), d = upsellDelivery(calls);
+  return {
+    closed: s.closed,
+    orders: orders ?? s.refs,
+    won: s.won,
+    extra: s.extra,
+    acceptRate: s.acceptRate,
+    delivered: d.delivered,
+    deliveredExtra: d.extra.delivered,
+    failed: d.failed,
+    failedExtra: d.extra.failed,
+    deliveryRate: d.rate,
+  };
+}
+
+/** Each brand's figures side by side, and their total (voided calls left out; a call without a brand is Touché).
+ *  Every count of a brand column sums to the total. A dossier is an order of its brand's store, so the total of
+ *  orders is the sum of each brand's distinct references. */
+export function byBrand(calls: ActivityCall[]): Record<Brand | 'total', BrandFigures> {
+  const counted = countedCalls(calls);
+  const columns = Object.fromEntries(BRANDS.map((b) => [b, brandFigures(counted.filter((c) => brandOf(c) === b))])) as Record<Brand, BrandFigures>;
+  return { ...columns, total: brandFigures(counted, BRANDS.reduce((sum, b) => sum + columns[b].orders, 0)) };
 }
