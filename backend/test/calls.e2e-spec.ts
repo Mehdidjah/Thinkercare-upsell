@@ -494,7 +494,7 @@ describe('save-call', () => {
     expect(report.status).toBe(200);
     expect(report.body.calls.find((c: { id: string }) => c.id === old[0]!.id)).toMatchObject({ meta: {}, proposals: [] });
     const progress = await deskGet(ctx, '?action=my-progress', lina);
-    expect(progress.body).toMatchObject({ progress: { count: 1 }, withoutReference: 1 });
+    expect(progress.body).toMatchObject({ sold: 1, withoutReference: 1 });
   });
 
   it('a retry of a recorded call is a duplicate even after the catalogue changed', async () => {
@@ -1245,7 +1245,7 @@ describe('accepted routines above three physical products', () => {
     const rows = await contributions(ctx.db, localDay(new Date()), localDay(new Date()));
     expect(rows[0]).toMatchObject({ confirmations: 1, upsells: expectedUnits, initial_dzd: expectedBase, confirmed_dzd: expectedOffer, uplift_dzd: expectedOffer - expectedBase });
     const progress = await deskGet(ctx, '?action=my-progress', lina);
-    expect(progress.body.progress.count).toBe(expectedUnits);
+    expect(progress.body.sold).toBe(expectedUnits);
     const duplicate = await presented(lina, { ...selection, agreedTotal: expectedOffer });
     expect((await post(save({ ...body, id: duplicate.callId, meta: { acceptedProposalId: duplicate.id } }))).status).toBe(409);
   });
@@ -1316,7 +1316,7 @@ describe('quantities in original orders and accepted offers', () => {
     const { body: report } = await deskGet(ctx, `?action=analytics&from=${localDay(new Date())}&to=${localDay(new Date())}`, admin);
     expect(productStats(report.calls).reduce((sum, p) => sum + p.units, 0)).toBe(units);
     const { body: progress } = await deskGet(ctx, '?action=my-progress', lina);
-    expect(progress.progress.count).toBe(units);
+    expect(progress.sold).toBe(units);
     const { body: dashboard } = await deskGet(ctx, '?action=contributions', admin);
     expect(dashboard.people.find((p: { id: string }) => p.id === linaUser.id).period).toMatchObject({ upsells: units, initialDzd: baseTotal, confirmedDzd: selection.agreedTotal });
   });
@@ -1333,8 +1333,8 @@ describe('quantities in original orders and accepted offers', () => {
     expect(shown.body.proposal.products).toEqual([expect.objectContaining({ id: 'antiacne', quantity: 2 })]);
     const result = await post(save({ ...selection, id: offer.callId, outcome: 'duo', meta: { acceptedProposalId: offer.id } }));
     expect(result.status).toBe(200);
-    expect((await deskGet(ctx, '?action=my-progress', lina)).body.progress.count).toBe(1);
-    expect((await deskGet(ctx, '?action=my-progress', sara)).body.progress.count).toBe(0);
+    expect((await deskGet(ctx, '?action=my-progress', lina)).body.sold).toBe(1);
+    expect((await deskGet(ctx, '?action=my-progress', sara)).body.sold).toBe(0);
     const { body: dashboard } = await deskGet(ctx, '?action=contributions', admin);
     expect(dashboard.people.find((p: { id: string }) => p.id === linaUser.id).period).toMatchObject({ upsells: 1, initialDzd: 1800, confirmedDzd: 3300 });
   });
@@ -1377,7 +1377,7 @@ describe('quantities in original orders and accepted offers', () => {
     expect(call).toMatchObject({ base_total: 5400, offered_total: 5400, extra: 0 });
     const [meta] = await ctx.db.select().from(tcCallMeta).where(eq(tcCallMeta.call_id, body.id));
     expect(meta.data).toMatchObject({ originals: [{ id: 'antiacne', quantity: 3 }] });
-    expect((await deskGet(ctx, '?action=my-progress', lina)).body.progress.count).toBe(0);
+    expect((await deskGet(ctx, '?action=my-progress', lina)).body.sold).toBe(0);
   });
 });
 

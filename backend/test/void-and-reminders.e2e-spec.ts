@@ -71,7 +71,7 @@ async function callback(cookie = lina): Promise<string> {
 
 const reminderIds = async (cookie: string) =>
   (await deskGet(ctx, '?action=reminders', cookie)).body.reminders.map((r: { id: string }) => r.id);
-const progress = async () => (await deskGet(ctx, '?action=my-progress', lina)).body.progress.count;
+const progress = async () => (await deskGet(ctx, '?action=my-progress', lina)).body.sold;
 
 describe('void-call (H5)', () => {
   it('the adviser voids her own sale: nothing is deleted, nothing counts, the dossier is free again', async () => {
@@ -191,7 +191,7 @@ describe('void-call (H5)', () => {
     ] as const) {
       expect((await deskGet(ctx, query, cookie)).status, query).toBe(200);
     }
-    expect((await deskGet(ctx, '?action=my-progress&voided=1', lina)).body.progress.count).toBe(1);
+    expect((await deskGet(ctx, '?action=my-progress&voided=1', lina)).body.sold).toBe(1);
     expect((await deskGet(ctx, '?action=my-progress&operator=x', lina)).status).toBe(403);
   });
 
