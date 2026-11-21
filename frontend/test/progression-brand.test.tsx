@@ -121,12 +121,12 @@ const list = () => [
 test('« Mes upsells » filtered by brand: the brand’s rows only, a count line and an empty state of that brand; all brands by default, as before', () => {
   const data = { upsells: list(), upsellsTotal: 3 };
   expect(myUpsellsView(data, '')).toEqual({ list: data.upsells, count: '', empty: 'Aucun upsell vendu ou livré sur ce mois.' });
-  expect(myUpsellsView(data, 'touche')).toEqual({ list: [data.upsells[0], data.upsells[2]], count: '2 upsells Touché, sur 3 au total.', empty: 'Aucun upsell Touché vendu ou livré sur ce mois.' });
-  expect(myUpsellsView(data, 'belnco')).toMatchObject({ list: [data.upsells[1]], count: '1 upsell BEL.NCO, sur 3 au total.' });
+  expect(myUpsellsView(data, 'touche')).toEqual({ list: [data.upsells[0], data.upsells[2]], count: '2 ventes Touché, sur 3 au total.', empty: 'Aucun upsell Touché vendu ou livré sur ce mois.' });
+  expect(myUpsellsView(data, 'belnco')).toMatchObject({ list: [data.upsells[1]], count: '1 vente BEL.NCO, sur 3 au total.' });
   expect(myUpsellsView({ upsells: [data.upsells[0]], upsellsTotal: 1 }, 'belnco')).toEqual({ list: [], count: '', empty: 'Aucun upsell BEL.NCO vendu ou livré sur ce mois.' });
   // Beyond the 300 listed, the line says so; a brand absent from them is absent « parmi les plus récents ».
   expect(myUpsellsView({ upsells: list(), upsellsTotal: 301 }, '').count).toBe('Les 3 upsells les plus récents sont affichés, sur 301.');
-  expect(myUpsellsView({ upsells: list(), upsellsTotal: 301 }, 'belnco')).toMatchObject({ count: '1 upsell BEL.NCO parmi les 3 plus récents, sur 301 au total.' });
+  expect(myUpsellsView({ upsells: list(), upsellsTotal: 301 }, 'belnco')).toMatchObject({ count: '1 vente BEL.NCO parmi les 3 plus récentes, sur 301 au total.' });
   expect(myUpsellsView({ upsells: [data.upsells[0]], upsellsTotal: 301 }, 'belnco').empty).toBe('Aucun upsell BEL.NCO parmi les 1 plus récents.');
   // An older API without the list.
   expect(myUpsellsView({}, 'touche')).toMatchObject({ list: [], empty: 'Aucun upsell Touché vendu ou livré sur ce mois.' });
@@ -146,4 +146,11 @@ test('« Mes upsells » has the « Marque » switch of Pilotage, « Toutes les m
   // No DOM library here: the source shows each button filters the list on the client.
   expect(ui('Commission.tsx')).toContain('onClick={()=>setBrand(b)}');
   expect(ui('Commission.tsx')).toContain('v=myUpsellsView(data,split?brand:\'\')');
+});
+
+test('« Voir mes rappels » on the call opens « Ma progression » straight on « Mes rappels », after the view change', () => {
+  const src = readFileSync(new URL('../src/ui/Commission.tsx', import.meta.url), 'utf8');
+  expect(src).toContain('onClick={openReminders}>Voir mes rappels</button>');
+  // App scrolls to the top and focuses the page title one frame after a view change: reveal the reminders after that.
+  expect(src).toMatch(/function openReminders\(\)\{openView\('progress'\);[^}]*getElementById\('my-reminders-title'\)[^}]*n>=3[^}]*reveal\(h,'start'\)/);
 });
