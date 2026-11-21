@@ -2,7 +2,8 @@ import {readFileSync} from 'node:fs';
 import {describe,expect,it} from 'vitest';
 import {EMPTY_PROFILE,canCombine,manualAddCheck,recommend,type Product,type Profile} from '../src/index.js';
 const load=(f:string)=>JSON.parse(readFileSync(new URL('./fixtures/'+f,import.meta.url),'utf8')) as Product[];
-// The live BEL.NCO catalogue since 0008: no ritual, no prickly pear oil, the seven others on.
+// The BEL.NCO catalogue between 0008 and 0010: no pack, no prickly pear oil, the seven others on. Since 0010 the pack is back
+// (belnco-pack-cleansing.test.ts); the oil and the gel chosen separately still go together, as here.
 const touche=load('catalogue.json'),bel=load('belnco.json').filter(p=>!['bel-ritual','bel-pear'].includes(p.id)),all=[...touche,...bel];
 const get=(id:string)=>all.find(p=>p.id===id)!;
 const profile:Profile={...EMPTY_PROFILE,concerns:['dehydration'],skin:'mixed',sensitive:'no',routineKnown:true,routine:[],safety:['none'],makeup:'daily'};

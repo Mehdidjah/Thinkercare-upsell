@@ -13,6 +13,14 @@ const belnco: Array<{ id: string } & Record<string, unknown>> = JSON.parse(
 );
 // 0007 seeds BEL.NCO switched off: the code running when it applies offers every enabled row, whatever its brand.
 const seeded = [...fixture, ...belnco.map((p) => ({ ...p, enabled: false }))];
+/** 0007 seeded the BEL.NCO pack as the « DOUBLE cleansing ritual »; 0010 made it the fixture's « Pack Cleansing ». Its copy
+ *  aside, the 0007 row is the fixture's. */
+const PACK_COPY = ['name', 'short', 'description', 'priceSource', 'pitch', 'cautions', 'checkedAt'];
+const seedView = (p: unknown) => {
+  const row = p as { id: string } & Record<string, unknown>;
+  return row.id === 'bel-ritual' ? Object.fromEntries(Object.entries(row).filter(([k]) => !PACK_COPY.includes(k))) : row;
+};
+const ritualName = async () => (await db.execute(sql`SELECT data->>'name' AS name FROM tc_products WHERE id = 'bel-ritual'`)).rows;
 
 const handle = openDb(testDatabaseUrl());
 const { db } = handle;
@@ -43,7 +51,8 @@ describe('migrations', () => {
     const result = await db.execute(sql`SELECT id, data FROM tc_products ORDER BY position`);
     const rows = result.rows as Array<{ id: string; data: unknown }>;
     expect(rows.map((r) => r.id)).toEqual(seeded.map((p) => p.id));
-    rows.forEach((row, i) => expect(row.data).toEqual(seeded[i]));
+    rows.forEach((row, i) => expect(seedView(row.data)).toEqual(seedView(seeded[i])));
+    expect(await ritualName()).toEqual([{ name: 'DOUBLE cleansing ritual' }]);
   });
 
   it('no accounts, sessions or calls after migration', async () => {
@@ -160,7 +169,8 @@ describe('migrations', () => {
     // The API and desk from before BEL.NCO read every row and offer the enabled ones: grid, suggestions, picker, server.
     const rows = (await db.execute(sql`SELECT id, data FROM tc_products ORDER BY position`)).rows as Array<{ id: string; data: { enabled: boolean } }>;
     expect(rows.filter((r) => r.data.enabled).map((r) => r.id)).toEqual(fixture.filter((p) => p.enabled).map((p) => p.id));
-    expect(rows.filter((r) => r.id.startsWith('bel-')).map((r) => r.data)).toEqual(belnco.map((p) => ({ ...p, enabled: false })));
+    expect(rows.filter((r) => r.id.startsWith('bel-')).map((r) => seedView(r.data))).toEqual(belnco.map((p) => seedView({ ...p, enabled: false })));
+    expect(await ritualName()).toEqual([{ name: 'DOUBLE cleansing ritual' }]);
   });
 
   it('0008 removes the prickly pear oil and the ritual (hand-made copies too), keeps a row a call names switched off, and launches the 7 other BEL.NCO products', async () => {
@@ -199,6 +209,44 @@ describe('migrations', () => {
     expect(row).toMatchObject({ order_state_group: 'delivered', order_state_name: 'Livrée', delivered_at: null });
     const column = (await db.execute(sql`SELECT data_type FROM information_schema.columns WHERE table_name = 'tc_call_meta' AND column_name = 'delivered_at'`)).rows;
     expect(column).toEqual([{ data_type: 'timestamp with time zone' }]);
+  });
+
+  it('0010 brings the BEL.NCO pack back as the « Pack Cleansing » once 0008 removed the ritual: on, the oil and the gel at 3 100 DA, after 0009', async () => {
+    const journal = JSON.parse(readFileSync(resolve(import.meta.dirname, '../drizzle/meta/_journal.json'), 'utf8'));
+    const entry = journal.entries.find((e: { tag: string }) => e.tag === '0010_belnco_pack_cleansing');
+    expect(entry.when).toBeGreaterThan(1795219942460);
+    expect(journal.entries.at(-1).tag).toBe('0010_belnco_pack_cleansing');
+    // A database as 0008 left it (a fresh one too: 0007 seeds the ritual, nothing names it, 0008 deletes it).
+    await applyFile('0008_belnco_launch.sql');
+    expect(await ritualName()).toEqual([]);
+    await applyFile('0010_belnco_pack_cleansing.sql');
+    const rows = (await db.execute(sql`SELECT id, data FROM tc_products ORDER BY position`)).rows as Array<{ id: string; data: { enabled: boolean } }>;
+    const pack = rows.find((r) => r.id === 'bel-ritual')!;
+    expect(pack.data).toEqual(belnco.find((p) => p.id === 'bel-ritual'));
+    expect(pack.data).toMatchObject({
+      name: 'Pack Cleansing : Cleansing Oil + Cleansing Gel', short: 'Pack Cleansing', brand: 'belnco', category: 'Pack', components: ['bel-oil', 'bel-gel'],
+      price: 3100, size: '2 × 250 ml', image: '/assets/products/bel-ritual.webp', enabled: true, recommendable: true,
+    });
+    // The seven others stay on, the pack comes after them; the prickly pear oil stays out, the tinted serum off, Touché untouched.
+    const on = rows.filter((r) => r.data.enabled).map((r) => r.id);
+    expect(on.filter((id) => id.startsWith('bel-'))).toEqual(['bel-oil', 'bel-gel', 'bel-spf30', 'bel-clarifying', 'bel-retinol', 'bel-moist', 'bel-uv50', 'bel-ritual']);
+    expect(rows.map((r) => r.id)).not.toContain('bel-pear');
+    expect(rows.find((r) => r.id === 'bel-tinted')?.data.enabled).toBe(false);
+    expect(on.filter((id) => !id.startsWith('bel-'))).toEqual(fixture.filter((p) => p.enabled).map((p) => p.id));
+  });
+
+  it('0010 turns a ritual 0008 kept switched off (a call names it) into the « Pack Cleansing » in place; a second run changes nothing; the call keeps the name it recorded', async () => {
+    await db.execute(sql`INSERT INTO tc_users (id, username, label, role, salt, password_hash) VALUES ('u1', 'lina', 'Lina', 'advisor', 's', 'h')`);
+    await db.execute(sql`INSERT INTO tc_calls (id, user_id, operator, created_at, outcome, base_id, products, catalogue_total, base_total, offered_total, extra, tier, brand)
+      VALUES ('c1', 'u1', 'Lina', now(), 'duo', 'bel-oil', ${JSON.stringify([{ id: 'bel-ritual', name: 'DOUBLE cleansing ritual', price: 3100 }])}::jsonb, 3100, 1700, 3100, 1400, 'catalogue', 'belnco')`);
+    await applyFile('0008_belnco_launch.sql');
+    const kept = (await db.execute(sql`SELECT position, data FROM tc_products WHERE id = 'bel-ritual'`)).rows as Array<{ position: number; data: { enabled: boolean; name: string } }>;
+    expect(kept.map((r) => [r.data.name, r.data.enabled])).toEqual([['DOUBLE cleansing ritual', false]]);
+    await applyFile('0010_belnco_pack_cleansing.sql');
+    await applyFile('0010_belnco_pack_cleansing.sql');
+    const rows = (await db.execute(sql`SELECT position, data FROM tc_products WHERE id = 'bel-ritual'`)).rows as Array<{ position: number; data: unknown }>;
+    expect(rows).toEqual([{ position: kept[0]!.position, data: belnco.find((p) => p.id === 'bel-ritual') }]);
+    expect((await db.execute(sql`SELECT products->0->>'name' AS name FROM tc_calls WHERE id = 'c1'`)).rows).toEqual([{ name: 'DOUBLE cleansing ritual' }]);
   });
 
   it('jsonb keeps French typography', async () => {
