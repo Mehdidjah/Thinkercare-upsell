@@ -1,4 +1,4 @@
-import { type Brand, type ContributionRow, type OrderStateGroup, shiftDay } from '@touche/domain';
+import { BRANDS, type Brand, type ContributionRow, type OrderStateGroup, shiftDay } from '@touche/domain';
 import { type SQL, sql } from 'drizzle-orm';
 import type { Db } from '../db/schema.js';
 
@@ -69,7 +69,8 @@ function rankedSales(scope: SQL) {
  * of 2 or two separate initial products completed into a trio add 1. Only the dossier's rank-1 call counts, and only when it is
  * an accepted routine with a positive extra and an offer above the initial order. `without_ref` and
  * `duplicates` are expressed in the same unit (added products). A voided call counts nowhere:
- * it neither earns nor blocks the dossier's rank.
+ * it neither earns nor blocks the dossier's rank. `upsells_touche` and `upsells_belnco` split `upsells` by the call's
+ * brand (`tc_calls.brand`, always one of them), so they sum to it.
  */
 export async function contributions(
   db: Db,
@@ -82,6 +83,7 @@ export async function contributions(
   const result = await db.execute(sql`
 WITH ${rankedSales(sql`c.created_at >= ${start}::timestamptz AND c.created_at < ${end}::timestamptz`)}
 SELECT user_id, day, COUNT(*)::int AS calls, SUM(confirmed)::int AS confirmations, SUM(upsell)::int AS upsells,
+ ${sql.raw(BRANDS.map((b) => `SUM(CASE WHEN brand = '${b}' THEN upsell ELSE 0 END)::int AS upsells_${b}`).join(', '))},
  SUM(CASE WHEN confirmed = 1 THEN base_total ELSE 0 END)::int AS initial_dzd,
  SUM(CASE WHEN confirmed = 1 THEN offered_total ELSE 0 END)::int AS confirmed_dzd,
  SUM(CASE WHEN confirmed = 1 THEN offered_total - base_total ELSE 0 END)::int AS uplift_dzd,

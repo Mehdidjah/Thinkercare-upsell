@@ -960,4 +960,54 @@ describe('prime on delivered upsells', () => {
       expect(person(s.id).monthly, query).toMatchObject({ upsells: 1, delivered: 0, bonus: { count: 0, reached: false, estimatedDzd: 0 } });
     }
   });
+
+  /** Lina's December: Touché 3 sold (2 delivered), BEL.NCO 1 sold, 3 delivered (one sold in November); Sara 1 BEL.NCO sold. */
+  const brandMonth = async () => {
+    const s = await sara();
+    await deliver(await sale({ created_at: at('2026-12-03T10:00:00Z'), outcome: 'trio', tier: 'trio', offered_total: 4400, extra: 2600 }), at('2026-12-06T10:00:00Z'));
+    await setOrder(await sale({ created_at: at('2026-12-04T10:00:00Z') }), { order_state_group: 'shipping', order_state_name: 'En livraison', order_state_at: at('2026-12-05T10:00:00Z') });
+    await deliver(await sale({ created_at: at('2026-12-07T10:00:00Z'), brand: 'belnco', order_ref: 'BEL8500001', base_id: 'bel-retinol' }), at('2026-12-09T10:00:00Z'));
+    await deliver(await sale({ created_at: at('2026-11-30T10:00:00Z'), brand: 'belnco', order_ref: 'BEL8500002', base_id: 'bel-retinol', outcome: 'trio', tier: 'trio', offered_total: 4400, extra: 2600 }), at('2026-12-02T10:00:00Z'));
+    await sale({ user_id: s.id, created_at: at('2026-12-08T10:00:00Z'), brand: 'belnco', order_ref: 'BEL8500003', base_id: 'bel-retinol' });
+    return s;
+  };
+  const sum = (byBrand: Record<string, number>) => Object.values(byBrand).reduce((a, b) => a + b, 0);
+
+  it('« Apports & primes » per brand: each adviser’s sold and delivered units by brand sum to her totals; the existing fields are unchanged', async () => {
+    const s = await brandMonth();
+    for (const query of ['&month=2026-12', '&month=2026-12&from=2026-12-01&to=2026-12-05']) {
+      const c = (await deskGet(ctx, '?action=contributions' + query, admin)).body;
+      const person = (id: string) => c.people.find((x: { id: string }) => x.id === id);
+      expect(person(linaUser.id).monthly, query).toMatchObject({ upsells: 4, upsellsByBrand: { touche: 3, belnco: 1 }, delivered: 5, deliveredByBrand: { touche: 2, belnco: 3 }, bonus: { count: 5 } });
+      expect(person(s.id).monthly, query).toMatchObject({ upsells: 1, upsellsByBrand: { touche: 0, belnco: 1 }, delivered: 0, deliveredByBrand: { touche: 0, belnco: 0 } });
+      for (const p of c.people) {
+        expect(sum(p.monthly.upsellsByBrand)).toBe(p.monthly.upsells);
+        expect(sum(p.monthly.deliveredByBrand)).toBe(p.monthly.delivered);
+        expect(sum(p.period.upsellsByBrand)).toBe(p.period.upsells);
+      }
+    }
+    const period = (await deskGet(ctx, '?action=contributions&month=2026-12&from=2026-12-01&to=2026-12-05', admin)).body.people.find((x: { id: string }) => x.id === linaUser.id);
+    expect(period.period).toMatchObject({ upsells: 3, upsellsByBrand: { touche: 3, belnco: 0 } });
+    expect(period.daily.map((d: { day: string; upsells: number; upsells_touche: number; upsells_belnco: number }) => [d.day, d.upsells, d.upsells_touche, d.upsells_belnco])).toEqual([
+      ['2026-12-03', 2, 2, 0],
+      ['2026-12-04', 1, 1, 0],
+    ]);
+  });
+
+  it('« Apports & primes » per brand for a month paid on sales: the sold split only', async () => {
+    await sale({ created_at: at('2026-10-10T10:00:00Z') });
+    await sale({ created_at: at('2026-10-11T10:00:00Z'), brand: 'belnco', order_ref: 'BEL8600001', base_id: 'bel-retinol', outcome: 'trio', tier: 'trio', offered_total: 4400, extra: 2600 });
+    const c = (await deskGet(ctx, '?action=contributions&month=2026-10', admin)).body;
+    expect(c.people.find((x: { id: string }) => x.id === linaUser.id).monthly).toMatchObject({ upsells: 3, upsellsByBrand: { touche: 1, belnco: 2 }, delivered: null, deliveredByBrand: null });
+    expect(await progress('&month=2026-10')).toMatchObject({ basis: 'sold', sold: 3, soldByBrand: { touche: 1, belnco: 2 }, deliveredByBrand: null });
+  });
+
+  it('« Ma progression » per brand: her month’s sales and her delivered upsells by brand, summing to « sold » and the prime’s count', async () => {
+    const s = await brandMonth();
+    const body = await progress('&month=2026-12');
+    expect(body).toMatchObject({ sold: 4, soldByBrand: { touche: 3, belnco: 1 }, progress: { count: 5 }, deliveredByBrand: { touche: 2, belnco: 3 } });
+    expect(sum(body.soldByBrand)).toBe(body.sold);
+    expect(sum(body.deliveredByBrand)).toBe(body.progress.count);
+    expect(await progress('&month=2026-12', s.cookie)).toMatchObject({ sold: 1, soldByBrand: { touche: 0, belnco: 1 }, deliveredByBrand: { touche: 0, belnco: 0 } });
+  });
 });

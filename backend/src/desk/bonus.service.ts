@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import {
+  BRANDS,
   DEFAULT_BONUS,
   algerDay,
   bonusEstimate,
@@ -11,6 +12,7 @@ import {
   sumContributions,
   validMonth,
   type BonusRule,
+  type Brand,
   type OrderStateGroup,
 } from '@touche/domain';
 import { and, asc, desc, eq, lte, sql } from 'drizzle-orm';
@@ -26,6 +28,9 @@ const STATE_GROUPS: OrderStateGroup[] = ['delivered', 'shipping', 'pending', 'fa
 /** « Mes upsells » lists at most this many sales, the most recent first. */
 const MAX_LISTED = 300;
 const units = (sales: UpsellSale[]) => sales.reduce((sum, u) => sum + u.units, 0);
+/** `units` split by the brand of the call: the brands sum to it. */
+const unitsByBrand = (sales: UpsellSale[]) =>
+  Object.fromEntries(BRANDS.map((b) => [b, units(sales.filter((u) => u.brand === b))])) as Record<Brand, number>;
 /** A sale whose order was delivered before the call (often a mistyped reference): it never counts, so « à vérifier ». */
 const stateOf = (u: UpsellSale): OrderStateGroup =>
   u.order_state_group === 'delivered' && u.delivered_at !== null && u.delivered_at < u.created_at
@@ -119,6 +124,9 @@ export class BonusService {
           .sort(([x], [y]) => x.localeCompare(y))
           .map(([day, upsells]) => ({ day, upsells })),
         sold: total.upsells,
+        // `sold` and the delivered count of the prime split by brand (null on a month paid on sales: the count is `sold`).
+        soldByBrand: total.upsellsByBrand,
+        deliveredByBrand: basis === 'delivered' ? unitsByBrand(delivered) : null,
         stateCounts,
         upsells: listed.slice(0, MAX_LISTED).map((u) => ({
           id: u.id,
@@ -170,13 +178,16 @@ export class BonusService {
       const m = sumContributions(mr);
       // The prime is on the upsells delivered in the month; `upsells` stays the month's sales (the prime's count before
       // DELIVERED_FROM, when `delivered` is null).
-      const d = delivered ? units(delivered.filter((x) => x.user_id === u.id)) : null;
+      const mine = delivered?.filter((x) => x.user_id === u.id) ?? null;
+      const d = mine ? units(mine) : null;
       return {
         ...u,
+        // `upsellsByBrand` (period and month) and `deliveredByBrand` split `upsells` and `delivered` by brand.
         period: sumContributions(pr),
         monthly: {
           ...m,
           delivered: d,
+          deliveredByBrand: mine ? unitsByBrand(mine) : null,
           bonus: bonusEstimate(isFrontline(u.role) ? (d ?? m.upsells) : 0, rule),
         },
         daily: pr,
