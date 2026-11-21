@@ -47,13 +47,13 @@ const progress = (month: string, count: number) => ({ month, today: '2026-11-19'
 
 test('a past month reads as closed: no « Encore N », no « aujourd’hui » (X11)', () => {
   const past = renderToStaticMarkup(<ProgressCard data={progress('2026-10', 12)} />);
-  expect(past).toContain('Mois clôturé : 12 upsells pour un seuil de 60.');
+  expect(past).toContain('Mois clôturé : 12 upsells livrés pour un seuil de 60.');
   expect(past).not.toContain('Encore');
   expect(past).not.toContain('aujourd’hui');
   expect(past).toContain('Seuil non atteint : pas de prime pour ce mois.');
   const current = renderToStaticMarkup(<ProgressCard data={progress('2026-11', 12)} />);
   expect(current).toContain('Encore 48 upsells');
-  expect(current).toContain('2 upsell(s) aujourd’hui');
+  expect(current).toContain('2 upsell(s) livré(s) aujourd’hui');
 });
 
 test('the call strip says how many reminders are due, with a link to them (X7)', () => {
@@ -67,7 +67,7 @@ test('Apports: silent refresh, kept data, rule copy from the saved rule, one byt
   const commission = ui('Commission.tsx');
   expect(commission).not.toContain("'\\uFEFF'");
   expect(commission).not.toMatch(/60 × 45|Seuil demandé : 60|45 DA au 60/);
-  expect(commission).toContain('Règle enregistrée pour {monthLabel(month)} : {data.rule.threshold} upsells par mois');
+  expect(commission).toContain('Règle enregistrée pour {monthLabel(month)} : {data.rule.threshold} upsells livrés par mois');
   expect(commission).toContain('<Button variant="primary" busy={saving}');
   expect(commission).not.toContain('{data&&!error&&');
   expect(commission).toContain('{report.stale&&<StaleNotice');

@@ -32,6 +32,12 @@ test('Apports & primes CSV export names each account role so CM and Call center 
   assert.ok(exportTable.includes("'Compte','Rôle','Équipe'"), 'CSV header has a Rôle column right after Compte');
   assert.ok(exportTable.includes('p.label,accountRoleLabel(p.role),p.team'), 'each CSV row writes the role label (Call center, CM, Manager, Direction)');
 });
+test('Apports & primes CSV export gives the month’s sold and delivered upsells side by side', () => {
+  const start = commission.indexOf('function exportTable()');
+  const exportTable = commission.slice(start, commission.indexOf('\n', start));
+  assert.ok(exportTable.includes("'Upsells vendus période','Upsells vendus mois','Upsells livrés mois','Prime estimée DA'"), 'CSV header names sold and delivered');
+  assert.ok(exportTable.includes('p.period.upsells,p.monthly.upsells,p.monthly.delivered??0,'), 'each row writes sold then delivered');
+});
 test('Closing the call offers a way back to the answers, and going back keeps the routine', () => {
   // The call-close section lives in call/CallClose.tsx since the call screen was split into components.
   const callClose = ui('call/CallClose.tsx');
