@@ -2,6 +2,7 @@ import {useId} from 'react';
 import {cataloguePath,SKINS,HAIR_TYPES,type Product,concernLabel} from '@touche/domain';
 import {Icon} from '../shared/Icon';
 import {useCall} from './callModel';
+import {offerTier} from './callState';
 import {AdviceStatus} from './AdviceStatus';
 import {SalesCoach} from './SalesCoach';
 import {PackUpgrades} from './PackUpgrades';
@@ -15,8 +16,11 @@ import {SavedPanel} from './SavedPanel';
 
 /** Step 03 · Routine & offre: product path, targeted check or the routine builder, sales coach, offers and closing. The
  *  saved outcome shows right after the close-out here (not at the top of the call), where the button was pressed. */
-export function StepRoutine({base}:{base:Product}){const {toStep,saved,products,initial,domain,profile,changeProfile,blocked,notes,candidates,basket,altered,tier,copy}=useCall();
+export function StepRoutine({base}:{base:Product}){const {toStep,saved,products,initial,domain,profile,changeProfile,blocked,notes,candidates,basket,altered,chosenTier,copy}=useCall();
  const path=cataloguePath(base,products);
+ // The coach prices the basket it shows: before anything is added, the order with the top suggestion, at the level that basket
+ // would be presented at (a pack-only order previewed with another product keeps the adviser's discount).
+ const coachBasket=altered?basket:(candidates[0]?[...basket,candidates[0].product]:basket),coachTier=offerTier(chosenTier,coachBasket,products);
  return <>
  <section className="card call-path" aria-labelledby="call-path-title"><h2 id="call-path-title">Le parcours de {base.short}</h2><p>{path.purpose}</p>{path.checks.map(c=><p className="call-path__check" key={c}><Icon name="info"/>{c}</p>)}{domain==='hair'&&profile.concerns.includes('flakes')&&<label className="check-row"><input type="checkbox" checked={!!profile.scalpProtocol} disabled={saved} onChange={e=>changeProfile({scalpProtocol:e.target.checked})}/>Une routine spécifique a déjà été vérifiée par le référent de l’équipe, pour cette situation et cet âge.</label>}</section>
 
@@ -26,7 +30,7 @@ export function StepRoutine({base}:{base:Product}){const {toStep,saved,products,
   <PackUpgrades base={base}/>
   {!blocked&&<ProductPicker/>}
  <SpecificChecks/>
-  {(altered||candidates.length>0)&&<SalesCoach base={base} initial={initial} basket={altered?basket:(candidates[0]?[...basket,candidates[0].product]:basket)} profile={profile} tier={tier} catalogue={products} copy={copy} preview={!altered&&!!candidates.length}/>}
+  {(altered||candidates.length>0)&&<SalesCoach base={base} initial={initial} basket={coachBasket} profile={profile} tier={coachTier} catalogue={products} copy={copy} preview={!altered&&!!candidates.length}/>}
   {/* Under 1024px the rail drops below the call: price, total and copy come here, before the presentation (C1). */}
   <section className="card call-offer" aria-labelledby="call-offer-title"><h2 id="call-offer-title">Prix et récapitulatif</h2><OfferTotals/></section>
  <OfferPresentation/>

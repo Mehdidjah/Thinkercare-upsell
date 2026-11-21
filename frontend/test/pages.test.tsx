@@ -64,7 +64,11 @@ test('Protocole: the BEL.NCO section and its official source; the catalogue name
   expect(catalogue('')).toContain('les références Touché et BEL.NCO, avec leurs photos officielles');
 });
 
-test('Protocol: BEL.NCO double cleansing is the oil then the gel, chosen separately (the ritual left the catalogue)', () => {
-  expect(protocol).toContain('Le double nettoyage associe la Centella Cleansing Oil, sur peau sèche, puis le Centella Cleansing Gel, sur peau mouillée.');
+test('Protocol: the pricing rule says an offer of packs only has one price, and the 2nd and 3rd offers discount only the products beside a pack', () => {
+  expect(protocol).toContain('Pas de double remise. Le tarif d’un pack précomposé est conservé ; seuls les compléments hors pack bénéficient de la réduction, avant un arrondi final unique. Une offre faite uniquement de packs n’a qu’un prix, déjà promotionnel : pas de 2e ni de 3e offre.');
+});
+
+test('Protocol: BEL.NCO double cleansing is the oil then the gel, which make the « Pack Cleansing » at 3 100 DA (0010), the ritual’s name gone', () => {
+  expect(protocol).toContain('Le double nettoyage associe la Centella Cleansing Oil, sur peau sèche, puis le Centella Cleansing Gel, sur peau mouillée. Ensemble, c’est le Pack Cleansing à 3 100 DA, en pack ou choisis séparément.');
   expect(protocol).not.toContain('DOUBLE cleansing ritual');
 });

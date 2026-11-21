@@ -31,7 +31,7 @@ describe('BEL.NCO rows never change a Touché call',()=>{
  it('brandProblem names the first reference of another brand, a pack before its components',()=>{
   expect(brandProblem([get('antiacne'),get('wcgel')],'touche',all)).toBeNull();
   expect(brandProblem([get('antiacne'),get('bel-moist')],'touche',all)).toBe('« RICH MOISTURIZER » est une référence BEL.NCO : un appel Touché ne propose que des références Touché.');
-  expect(brandProblem([get('bel-ritual')],'touche',all)).toBe('« DOUBLE cleansing ritual » est une référence BEL.NCO : un appel Touché ne propose que des références Touché.');
+  expect(brandProblem([get('bel-ritual')],'touche',all)).toBe('« Pack Cleansing : Cleansing Oil + Cleansing Gel » est une référence BEL.NCO : un appel Touché ne propose que des références Touché.');
   expect(brandProblem([get('antiacne')],'belnco',all)).toBe('« Sérum Anti-Acné » est une référence Touché : un appel BEL.NCO ne propose que des références BEL.NCO.');
  });
 });

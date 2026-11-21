@@ -85,6 +85,15 @@ export function hairPackSets<T extends PricedLine>(items:T[],catalogue:Product[]
  return{sets,rest};
 }
 const setsTotal=(sets:HairPackSet[])=>sets.reduce((s,x)=>s+x.count*x.pack.price,0);
+/**
+ * What packs make of an offer, its pricing unchanged: 'pack' when every line is priced as a pack (pack lines, or a set-priced
+ * pack's products chosen one by one), so the three price levels are one amount and a pack's price is already its promotion;
+ * 'mixed' when a pack sits beside other products, which alone take the 2nd and 3rd offers' discount; null without a pack.
+ */
+export function packPricing(items:PricedLine[],catalogue:Product[]):'pack'|'mixed'|null{
+ const{sets,rest}=hairPackSets(items,catalogue);
+ return !sets.length&&!rest.some(isPack)?null:rest.every(isPack)?'pack':'mixed';
+}
 /** Catalogue value with complete hair-pack sets at the pack price: pack lines, sets, then the remaining singles. */
 export function pricedTotal(items:PricedLine[],catalogue:Product[]):number{const{sets,rest}=hairPackSets(items,catalogue);return setsTotal(sets)+itemsTotal(rest);}
 export function basketOffer(basket:OrderItem[],tier:Tier,catalogue:Product[]):number{
@@ -336,11 +345,11 @@ export function packUpgrades(catalogue:Product[],base:Product,profile:Profile):C
  }).map(p=>({product:p,score:100,reason:p.pitch||p.description}));
 }
 export function summaryText(base:Product,basket:OrderItem[],tier:Tier,delivery:number|null,catalogue:Product[],initial:OrderItem[]=[base]){
- const total=itemsTotal(basket),offer=orderOffer(initial,basket,tier,catalogue),{sets}=hairPackSets(basket,catalogue),pack=basket.some(isPack)||sets.length>0,baseTotal=pricedTotal(initial,catalogue);
+ const total=itemsTotal(basket),offer=orderOffer(initial,basket,tier,catalogue),{sets}=hairPackSets(basket,catalogue),packs=packPricing(basket,catalogue),baseTotal=pricedTotal(initial,catalogue);
  const packRates=sets.map(({pack,count})=>`\nTarif pack appliqué : ${expand(pack,catalogue).map(p=>p.name).join(' + ')} = ${money(pack.price)}${count>1?` × ${count} = ${money(pack.price*count)}`:''}.`).join('');
  const fee=delivery===null?'Frais de livraison à confirmer.':`Livraison : ${money(delivery)}. Total avec livraison : ${money(offer+delivery)}.`;
  const replacement=`Commande initiale : ${initial.map(quantityLabel).join(' + ')} (${money(baseTotal)}).${basket[0]?.id!==base.id?' Remplacement par le pack ci-dessous, sans double facturation.':''}\n`;
- return `${BRAND_LABELS[brandOf(base)].toUpperCase()} | Récapitulatif de l’offre\n${replacement}${basket.map(p=>`• ${quantityLabel(p)} : ${money(lineTotal(p))}${quantityOf(p)>1?` (${money(p.price)} / unité)`:""}`).join('\n')}${packRates}\n\nTotal catalogue : ${money(total)}\nOffre produits : ${money(offer)}\nÉconomie : ${money(total-offer)}\nÉcart avec la commande initiale : ${money(offer-baseTotal)}\n${fee}\n${pack?'Tarif pack conservé, réduction uniquement sur les compléments éligibles. ':''}Offre liée à la commande en cours, sans cumul de remises. À valider avec la cliente. Aucun système de commande externe modifié.`;
+ return `${BRAND_LABELS[brandOf(base)].toUpperCase()} | Récapitulatif de l’offre\n${replacement}${basket.map(p=>`• ${quantityLabel(p)} : ${money(lineTotal(p))}${quantityOf(p)>1?` (${money(p.price)} / unité)`:""}`).join('\n')}${packRates}\n\nTotal catalogue : ${money(total)}\nOffre produits : ${money(offer)}\nÉconomie : ${money(total-offer)}\nÉcart avec la commande initiale : ${money(offer-baseTotal)}\n${fee}\n${packs==='pack'?'Prix du pack déjà promotionnel, sans autre remise. ':packs?'Tarif pack conservé, réduction uniquement sur les compléments éligibles. ':''}Offre liée à la commande en cours, sans cumul de remises. À valider avec la cliente. Aucun système de commande externe modifié.`;
 }
 export function goalPhrase(p:Profile):string{
  const goals:Record<string,string>={acne:'mieux prendre soin de vos petites imperfections',blackheads:'cibler les points noirs sans surcharger votre routine',oil:'limiter l’apparence de la brillance',marks:'améliorer l’apparence des marques brunes',red:'retrouver davantage de confort',dry:'réduire les sensations de tiraillement',dehydration:'mieux hydrater votre peau',dull:'retrouver un teint plus lumineux',aging:'prendre soin des ridules et de la fermeté de votre peau',scars:'améliorer l’aspect de votre peau sans promesse sur le relief des cicatrices',growth:'prendre soin de vos longueurs',breakage:'faciliter le démêlage et limiter la casse',fall:'mieux accompagner votre routine capillaire',hairdry:'retrouver des longueurs plus souples',scalpoil:'adapter le lavage à vos racines grasses',flakes:'adapter votre routine aux pellicules',scalpcomfort:'préserver le confort de votre cuir chevelu',bodyspots:'prendre soin des imperfections de votre corps',bodydry:'retrouver davantage de confort sur votre corps'};

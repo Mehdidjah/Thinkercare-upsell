@@ -1,4 +1,4 @@
-import {BRANDS,EMPTY_PROFILE,MAX_ITEM_QUANTITY,OUTCOMES,asksRetinol,basketProblem,brandOf,domainOf,expand,isPack,itemsTotal,manualAddCheck,offerProblem,orderOffer,orderSignature,packUpgrades,pricedTotal,proposalOriginals,questionsReady,quantityOf,recommend,referenceBrand,reviewReason,type Brand,type ItemSnapshot,type OrderItem,type Product,type Profile,type Proposal,type Tier} from '@touche/domain';
+import {BRANDS,EMPTY_PROFILE,MAX_ITEM_QUANTITY,OUTCOMES,asksRetinol,basketProblem,brandOf,domainOf,expand,isPack,itemsTotal,manualAddCheck,offerProblem,orderOffer,orderSignature,packPricing,packUpgrades,pricedTotal,proposalOriginals,questionsReady,quantityOf,recommend,referenceBrand,reviewReason,type Brand,type ItemSnapshot,type OrderItem,type Product,type Profile,type Proposal,type Tier} from '@touche/domain';
 
 /**
  * The guided call as plain data, and every change to it as a pure function (plain objects in, plain objects out).
@@ -395,6 +395,10 @@ export function reopenAfterVoid(d:CallDraft,id:string=uuid()):CallDraft{
 export function callAmounts(initial:OrderItem[],basket:OrderItem[],tier:Tier,products:Product[]){
  return {total:itemsTotal(basket),baseTotal:pricedTotal(initial,products),offer:orderOffer(initial,basket,tier,products),offerIssue:offerProblem(initial,basket,tier,products)};
 }
+/** The price level the call presents and saves: an offer made of packs only (packPricing 'pack') has one price, the pack's, which
+ *  is already its promotion, so it goes at the catalogue level, the same amount as the others. The draft keeps the adviser's
+ *  level for when another product joins (owner, 2026-11-21). */
+export function offerTier(tier:Tier,basket:OrderItem[],products:Product[]):Tier{return packPricing(basket,products)==='pack'?'catalogue':tier;}
 /** The price to announce for this call with these catalogue prices. */
 export function offerOf(d:CallDraft,products:Product[]):number|null{
  const {initial,basket}=basketOf(d,products);

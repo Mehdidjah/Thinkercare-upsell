@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { EMPTY_PROFILE, FACE_CONCERNS, HAIR_CONCERNS, MAX_ITEM_QUANTITY, money, manualAddCheck, missingAnswers, offerProblem, reviewStop, searchIds, type Product, type Profile } from '@touche/domain';
+import { EMPTY_PROFILE, FACE_CONCERNS, HAIR_CONCERNS, MAX_ITEM_QUANTITY, money, manualAddCheck, missingAnswers, offerProblem, reviewStop, searchIds, summaryText, type Product, type Profile } from '@touche/domain';
 import { CallModelContext, type CallModel, type CallRequest } from '../src/ui/call/callModel';
 import { SavedPanel } from '../src/ui/call/SavedPanel';
 import { CallNotices } from '../src/ui/call/CallNotices';
@@ -37,7 +37,7 @@ function model(extra: Partial<CallModel>): CallModel {
     domain: 'face', profile: face, changeProfile: noop, toggleConcern: noop, blocked: null, stop: null, notes: [], missing: [],
     upgrades: [], heldPacks: [], upgrade: undefined, upgradeId: '', chooseUpgrade: noop, clearUpgrade: noop, adds: [], requestedIds: [], verifiedProducts: [], toggleVerified: noop, setDetail: noop,
     candidates: [], requests: [], requestApproximate: false, requestSearch: '', setRequestSearch: noop, confirmId: '', setConfirmId: noop, addComplement: noop, removeComplement: noop, changeQuantity: () => true,
-    basket: [{ ...base, quantity: 1 }], count: 1, total: base.price, altered: false, tier: 'duo', chooseTier: noop, offerIssue: null, delivery: '', changeDelivery: noop, copy: async () => {}, copyFallback: null, closeCopyFallback: noop,
+    basket: [{ ...base, quantity: 1 }], count: 1, total: base.price, altered: false, tier: 'duo', chosenTier: 'duo', chooseTier: noop, offerIssue: null, delivery: '', changeDelivery: noop, copy: async () => {}, copyFallback: null, closeCopyFallback: noop,
     presented: [], matchingOffer: undefined, presentOffer: async () => {}, handledObjections: [], toggleObjection: noop, consent: false, setConsent: noop, checked: false, setChecked: noop, setCallbackAt: noop, setRefusal: noop, record: async () => {},
     refusal: '', callbackAt: '', offer: 3600, fee: null, removal: null, dismissRemoval: noop, catalogueNotice: null, dismissCatalogueNotice: noop, ...extra } as unknown as CallModel;
 }
@@ -154,17 +154,17 @@ describe('step 3 offer (STEP3, C1, M5, RAIL)', () => {
     expect(html).toMatch(/<div class="call-total-bar"><div class="call-readout">[\s\S]*Copier le récapitulatif<\/button><\/div>$/);
   });
 
-  it('the catalogue price of a hair pair chosen separately shows the pack saving; otherwise « Sans remise » stays', () => {
+  it('a hair pair chosen separately costs its pack: one price, « Prix du pack », with the pack saving; otherwise « Sans remise » stays', () => {
     const plain = render(<OfferTotals/>, low);
     expect(plain).toContain('<span class="option__title">Prix catalogue</span><span class="option__desc">Sans remise</span>');
     const pair = [{ ...p('shpousse'), quantity: 1 }, { ...p('conditioner'), quantity: 1 }];
     const html = render(<OfferTotals/>, { altered: true, base: p('shpousse'), initial: [pair[0]!], baseTotal: 1900, basket: pair, total: 3600, tier: 'catalogue', offer: 3250, count: 2, offerIssue: null });
-    expect(html).toContain(`<span class="option__title">Prix catalogue</span><span class="option__desc">Économie <span class="num">${money(350)}</span></span></span><span class="option__price num">${money(3250)}</span>`);
+    expect(html).toContain(`<span class="option__title">Prix du pack</span><span class="option__desc">Économie <span class="num">${money(350)}</span></span></span><span class="option__price num">${money(3250)}</span>`);
     expect(html).not.toContain('Sans remise');
-    for (const title of ['Première offre', 'Offre finale autorisée']) expect(html).toContain(`<span class="option__title">${title}</span><span class="option__desc">Économie <span class="num">${money(350)}</span></span></span><span class="option__price num">${money(3250)}</span>`);
+    // 2026-11-21, the owner: the pack price is already a promotion, so its three levels (all 3 250 DA) are one price.
+    for (const title of ['Prix catalogue', 'Première offre', 'Offre finale autorisée']) expect(html).not.toContain(title);
     expect(html).toContain('+ ' + money(1350));
-    expect(html).toContain('Tarif pack appliqué aux produits d’un même pack, sans autre remise.');
-    expect(render(<OfferTotals/>, { altered: true, base: p('shpousse'), initial: [pair[0]!], baseTotal: 1900, basket: pair, total: 3600, tier: 'duo', offer: 3250, count: 2, offerIssue: null })).toContain('Tarif pack conservé. Remise sur les compléments seulement');
+    expect(html).toContain('Prix du pack déjà promotionnel : pas de 2e ni de 3e offre.');
     // An initial order that already holds the pair: its total is read at the pack price.
     const kept = render(<OfferTotals/>, { altered: false, base: p('shpousse'), initial: pair, baseTotal: 3250, basket: pair, total: 3600, tier: 'duo', offer: 3250, count: 2, offerIssue: null });
     expect(kept).toContain('Total de la commande initiale au tarif pack, sans remise additionnelle.');
@@ -738,5 +738,97 @@ describe('call brand on screen', () => {
     expect(app).toContain('setOrderRef:changeOrderRef,');
     expect(app).toContain('brand:d.brand,brands,changeBrand:next=>void switchBrand(next),');
     expect(app).toContain('version:3,brand:now.brand};');
+  });
+});
+
+describe('packs: one price when the offer is packs only, the 2nd and 3rd offers on the other products otherwise (owner, 2026-11-21)', () => {
+  const all = [...catalogue, ...belnco.filter(x => x.id !== 'bel-pear')];
+  const b = (id: string, quantity = 1) => ({ ...all.find(x => x.id === id)!, quantity });
+  const PACK_ONLY = 'Prix du pack déjà promotionnel : pas de 2e ni de 3e offre.';
+  const MIXED = 'Le pack garde son prix promotionnel : la remise des 2e et 3e offres ne porte que sur les autres produits.';
+  const titles = (html: string) => [...html.matchAll(/<span class="option__title">([^<]+)<\/span>/g)].map(m => m[1]);
+  const bel = { products: all, brand: 'belnco' as const, base: b('bel-oil'), initial: [b('bel-oil')], baseTotal: 1700, altered: true, offerIssue: null };
+  const upgrade = { ...bel, basket: [b('bel-ritual')], total: 3100, tier: 'catalogue' as const, offer: 3100, count: 2 };
+  const mixed = { ...bel, basket: [b('bel-ritual'), b('bel-moist')], total: 4750, tier: 'duo' as const, offer: 4600, count: 3 };
+
+  it('the oil replaced by the Pack Cleansing: one price, « Prix du pack », and why there is no 2nd or 3rd offer', () => {
+    const html = render(<OfferTotals/>, upgrade);
+    expect(titles(html)).toEqual(['Prix du pack']);
+    expect(html).toMatch(/<div class="call-price" role="group" aria-label="Prix proposé à la cliente" aria-describedby="([^"]+)"><div class="call-price__pack"><span class="option__body"><span class="option__title">Prix du pack<\/span><\/span><span class="option__price num">3[^<]*100 DA<\/span><\/div><\/div>/);
+    // It reads like the chosen price option, in tokens.
+    expect(readFileSync(new URL('../src/styles/call.css', import.meta.url), 'utf8')).toMatch(/\.call-price__pack \{[^}]*border: 1px solid var\(--color-accent-solid\);[^}]*background: var\(--color-accent-tint\);/);
+    // The note is the price's description, and nothing on it can be pressed.
+    const note = html.match(/aria-describedby="([^"]+)"/)![1];
+    expect(html).toContain(`<p id="${note}" class="call-rail__note">${PACK_ONLY}</p>`);
+    expect(html).not.toMatch(/aria-pressed|option__indicator/);
+    expect(html).not.toContain(MIXED);
+    expect(html).toContain('+ ' + money(1400));
+  });
+
+  it('the oil and the gel chosen one by one cost the pack: one price, with the saving', () => {
+    const html = render(<OfferTotals/>, { ...bel, basket: [b('bel-oil'), b('bel-gel')], total: 3400, tier: 'catalogue', offer: 3100, count: 2 });
+    expect(titles(html)).toEqual(['Prix du pack']);
+    expect(html).toContain(`<span class="option__desc">Économie <span class="num">${money(300)}</span></span>`);
+    expect(html).toContain(PACK_ONLY);
+  });
+
+  it('the pack beside another product: the three offers stay, and the 2nd and 3rd discount only the other product', () => {
+    const html = render(<OfferTotals/>, mixed);
+    expect(titles(html)).toEqual(['Prix catalogue', 'Première offre', 'Offre finale autorisée']);
+    for (const amount of [4750, 4600, 4500]) expect(html).toContain(`<span class="option__price num">${money(amount)}</span>`);
+    expect(html).toContain(MIXED);
+    expect(html).not.toContain(PACK_ONLY);
+    // At the catalogue level too, as the advisor picks a level.
+    expect(render(<OfferTotals/>, { ...mixed, tier: 'catalogue', offer: 4750 })).toContain(MIXED);
+  });
+
+  it('without a pack: the three offers, and no pack note', () => {
+    const html = render(<OfferTotals/>, { ...bel, basket: [b('bel-oil'), b('bel-moist')], total: 3350, tier: 'duo', offer: 3100, count: 2 });
+    expect(titles(html)).toEqual(['Prix catalogue', 'Première offre', 'Offre finale autorisée']);
+    expect(html).not.toContain(PACK_ONLY);
+    expect(html).not.toContain(MIXED);
+  });
+
+  it('the action bar names the pack price, not a level; the recap copied names no 2nd or 3rd offer', () => {
+    expect(render(<OfferBar/>, upgrade)).toContain('2 unités, prix du pack, livraison à confirmer.');
+    expect(render(<OfferBar/>, mixed)).toContain('3 unités, première offre, livraison à confirmer.');
+    // « Copier le récapitulatif » copies the shared summaryText of the offer as presented (shared/test/pack-offer.test.ts).
+    expect(render(<OfferTotals/>, upgrade)).toContain('Copier le récapitulatif');
+    expect(readFileSync(new URL('../src/ui/call/OfferTotals.tsx', import.meta.url), 'utf8')).toContain("copy(summaryText(base,basket,tier,fee,products,initial),'Récapitulatif copié.')");
+    expect(summaryText(upgrade.base, upgrade.basket, upgrade.tier, null, all, upgrade.initial)).toContain('Prix du pack déjà promotionnel, sans autre remise.');
+  });
+
+  it('the pack upgrade says it before the pack is chosen', () => {
+    const html = render(<PackUpgrades base={b('bel-oil')}/>, { ...bel, upgrades: [{ product: b('bel-ritual'), score: 100, reason: b('bel-ritual').pitch! }] });
+    expect(html).toContain('Passer au pack officiel');
+    expect(html).toContain(`<p class="footnote">${PACK_ONLY} Vous pouvez aussi comparer avec un duo de produits séparés bénéficiant de l’offre autorisée.</p>`);
+  });
+
+  it('App presents and saves a pack-only offer at its one level (catalogue), the same amount the server checks', () => {
+    const app = readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8');
+    expect(app).toContain('tier=callState.offerTier(d.tier,basket,products);');
+    // Present, match and save all read that `tier`.
+    expect(app).toContain('callState.callAmounts(initial,basket,tier,products)');
+    expect(app).toContain('callState.matchingOffer(d.presented,{initial,basket,tier,fee,offer},keepsPresentedPrice)');
+    expect(app).toContain("upgradeId:now.upgradeId||undefined,tier,delivery:fee,agreedTotal:offer,");
+    expect(app).toContain("outcome,tier:altered?tier:'catalogue',");
+  });
+
+  it('the coach prices the basket it shows: a pack-only order previewed with a separate product keeps the adviser’s level', () => {
+    const hairProfile: Profile = { ...EMPTY_PROFILE, concerns: ['fall'], skin: 'normal' };
+    const pitch = (base: Product, add: Product, extra: Partial<CallModel> = {}) => render(<StepRoutine base={base}/>, { step: 2, products: all, domain: 'hair', profile: hairProfile, base, initial: [{ ...base, quantity: 1 }], baseTotal: base.price, basket: [{ ...base, quantity: 1 }], altered: false,
+      // App: the call's level is the catalogue one for the pack-only order on screen, the adviser chose « Première offre ».
+      tier: 'catalogue', chosenTier: 'duo', candidates: [{ product: add, score: 100, reason: '' }], ...extra } as Partial<CallModel>);
+    // Once added, step 3 selects « Première offre » at 4 500 DA: the preview reads that price, not the catalogue one.
+    expect(pitch(b('packanti'), b('conditioner'))).toContain(`${money(4500)} au lieu de ${money(4650)}`);
+    expect(pitch(b('packpso'), b('conditioner'))).toContain(`${money(5000)} au lieu de ${money(5150)}`);
+    expect(pitch(b('bel-ritual'), b('bel-clarifying'), { brand: 'belnco', profile: { ...EMPTY_PROFILE, concerns: ['acne'], skin: 'mixed' }, domain: 'face' })).toContain(`${money(4900)} au lieu de ${money(5000)}`);
+    // Packs only in the preview too (a pack beside a pack): one price, the pack's.
+    expect(pitch(b('packanti'), b('packpousse'))).not.toContain('au lieu de');
+    // Once the product is in, the coach and the desk read the same level.
+    const added = pitch(b('packanti'), b('conditioner'), { altered: true, basket: [b('packanti'), b('conditioner')], tier: 'duo', candidates: [] });
+    expect(added).toContain(`${money(4500)} au lieu de ${money(4650)}`);
+    // App hands the coach the adviser's own level, the draft's.
+    expect(readFileSync(new URL('../src/ui/App.tsx', import.meta.url), 'utf8')).toContain('chosenTier:d.tier,');
   });
 });

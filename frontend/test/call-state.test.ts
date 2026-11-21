@@ -599,3 +599,26 @@ describe('hair-pack products chosen separately (screen amounts = server amounts)
     expect(cs.afterCatalogueChange(d, catalogue, cheaper)).toMatchObject({ consent: false, checked: true });
   });
 });
+
+describe('a pack-only offer has one price level (owner, 2026-11-21)', () => {
+  const pair = (extra: Partial<cs.CallDraft> = {}) => liveCall({ baseIds: ['shpousse'], baseQuantities: { shpousse: 1 }, profile: hair, profileDomain: 'hair', adds: ['conditioner'], ...extra });
+  const level = (d: cs.CallDraft) => { const { basket } = cs.basketOf(d, catalogue); return cs.offerTier(d.tier, basket, catalogue); };
+  it('a pack upgrade, a pack added or a pack’s products one by one: presented and saved at the catalogue level, the amount unchanged', () => {
+    for (const tier of ['catalogue', 'duo', 'final'] as const) {
+      const upgrade = pair({ adds: [], upgradeId: 'packpousse', tier }), added = liveCall({ baseIds: ['packanti'], baseQuantities: { packanti: 1 }, profile: hair, profileDomain: 'hair', adds: ['packpousse'], tier });
+      for (const d of [upgrade, added, pair({ tier })]) {
+        expect(level(d), tier).toBe('catalogue');
+        const { initial, basket } = cs.basketOf(d, catalogue);
+        expect(cs.callAmounts(initial, basket, level(d), catalogue)).toEqual(cs.callAmounts(initial, basket, tier, catalogue));
+      }
+    }
+  });
+  it('the adviser’s level holds beside another product, and without a pack; the draft keeps it', () => {
+    const mixed = pair({ adds: ['conditioner', 'serumhair'], tier: 'final' });
+    expect(level(mixed)).toBe('final');
+    expect(level(liveCall({ tier: 'duo' }))).toBe('duo');
+    const d = pair({ tier: 'final' });
+    expect(level(d)).toBe('catalogue');
+    expect(d.tier).toBe('final');
+  });
+});

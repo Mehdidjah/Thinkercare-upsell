@@ -120,6 +120,23 @@ describe('one brand per call on the server', () => {
   });
 });
 
+describe('an offer of packs only has one price level (owner, 2026-11-21)', () => {
+  beforeEach(() => launchBelnco(ctx.db));
+  it('the oil replaced by the pack, or the oil and the gel one by one: 3 100 DA at every level, so today’s desk presents and sells it at the catalogue level; an older desk’s level still goes through', async () => {
+    const lines = [{ baseId: 'bel-oil', upgradeId: 'bel-ritual', productIds: ['bel-ritual'] }, { baseId: 'bel-oil', productIds: ['bel-oil', 'bel-gel'] }];
+    for (const o of lines) for (const tier of ['catalogue', 'duo', 'final']) {
+      const shown = await deskPost(ctx, offer({ brand: 'belnco', ...o, tier, agreedTotal: 3100 }), { cookie: lina });
+      expect(shown.status, `${o.productIds.join('+')} ${tier}`).toBe(200);
+      expect(shown.body.proposal).toMatchObject({ offerTotal: 3100, extra: 1400, tier });
+    }
+    const shown = await deskPost(ctx, offer({ brand: 'belnco', ...lines[0], tier: 'catalogue', agreedTotal: 3100 }), { cookie: lina });
+    const callId = shown.body.proposal.call_id;
+    const saved = await deskPost(ctx, { action: 'save-call', id: callId, brand: 'belnco', ...lines[0], outcome: 'duo', tier: 'catalogue', delivery: null, agreedTotal: 3100, consent: true, checked: true, refusal: '', expectedUserId: linaUser.id, meta: meta({ eligible: true, acceptedProposalId: shown.body.proposal.id }) }, { cookie: lina });
+    expect(saved.status).toBe(200);
+    expect((await ctx.db.select({ tier: tcCalls.tier, offered: tcCalls.offered_total, extra: tcCalls.extra, outcome: tcCalls.outcome }).from(tcCalls).where(eq(tcCalls.id, callId)))[0]).toEqual({ tier: 'catalogue', offered: 3100, extra: 1400, outcome: 'duo' });
+  });
+});
+
 describe('recorded brand', () => {
   beforeEach(() => launchBelnco(ctx.db));
   it('a saved call keeps its brand and rule version; an older tab’s call is Touché', async () => {

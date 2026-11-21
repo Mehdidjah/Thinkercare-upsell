@@ -300,6 +300,8 @@
   .call-rail__note { font-size: var(--text-caption); color: var(--color-text-secondary); line-height: var(--leading-body); }
   .call-price { display: flex; flex-direction: column; gap: var(--space-2); }
   .call-price .option { min-block-size: 56px; padding-block: var(--space-2); }
+  /* An offer of packs only has one price (OfferTotals): it reads like the chosen option, with nothing to choose. */
+  .call-price__pack { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; min-block-size: 56px; padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3); border: 1px solid var(--color-accent-solid); border-radius: var(--radius-option); background: var(--color-accent-tint); }
   .call-readout { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3) var(--space-4); border-radius: var(--radius-option); background: var(--color-bg-sunken); }
   .call-readout__label { font-size: var(--text-label); font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); }
   .call-readout__value { font-size: var(--text-price-lg); font-weight: var(--font-weight-semibold); line-height: var(--leading-price); }
