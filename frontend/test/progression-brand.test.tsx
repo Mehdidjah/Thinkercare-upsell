@@ -41,7 +41,7 @@ const upsell = (over: Partial<MyUpsell> = {}): MyUpsell => ({
 });
 
 test('« Par marque » on « Ma progression »: Touché, BEL.NCO and Total for her month’s sales by state of their order, then the prime’s count; the totals are the card’s', () => {
-  const html = renderToStaticMarkup(<ProgressCard data={progress()} brands={[...both]} />);
+  const html = renderToStaticMarkup(<ProgressCard data={progress()} />);
   const table = brandTable(html);
   expect(table).toContain('<h3 id="pilot-progress-brands">Par marque</h3>');
   expect(table).toContain('<thead><tr><th scope="col">Upsells</th><th scope="col" class="num">Touché</th><th scope="col" class="num">BEL.NCO</th><th scope="col" class="num">Total</th></tr></thead>');
@@ -65,30 +65,37 @@ test('« Par marque » on « Ma progression »: Touché, BEL.NCO and Total for h
 });
 
 test('« Par marque »: « dans le mois » for a closed month; a month paid on sales counts its sales for the prime, in its first row', () => {
-  const closed = rows(brandTable(renderToStaticMarkup(<ProgressCard data={progress({ today: '2026-12-05' })} brands={[...both]} />)));
+  const closed = rows(brandTable(renderToStaticMarkup(<ProgressCard data={progress({ today: '2026-12-05' })} />)));
   expect(closed[0]).toEqual(['Vendus dans le mois', '21', '9', '30']);
   expect(closed[6]).toEqual(['Livrés dans le mois (prime)', '18', '7', '25']);
-  const sold = renderToStaticMarkup(<ProgressCard data={progress({ month: '2026-10', basis: 'sold', progress: bonusEstimate(30, rule), deliveredByBrand: null })} brands={[...both]} />);
+  const sold = renderToStaticMarkup(<ProgressCard data={progress({ month: '2026-10', basis: 'sold', progress: bonusEstimate(30, rule), deliveredByBrand: null })} />);
   expect(rows(brandTable(sold)).map(r => r[0])).toEqual(['Vendus dans le mois (prime)', 'dont déjà livrés', 'En cours de livraison', 'Pas encore expédiés', 'Non livrés', 'À vérifier']);
   expect(rows(brandTable(sold))[0]).toEqual(['Vendus dans le mois (prime)', '21', '9', '30']);
   expect(brandTable(sold)).not.toContain('<tfoot>');
   expect(text(brandTable(sold))).toContain('Pour ce mois, la prime comptait les ventes.');
 });
 
-test('« Par marque » shows when the desk sells both brands, a brand at 0 included, or when the month has figures in both; never on the call strip, nor without the split', () => {
+test('« Par marque » always shows on « Ma progression » when the API sends the split, a brand at 0 included, whatever the desk sells; never on the call strip, nor without the split', () => {
   const none = { touche: { delivered: 9, shipping: 6, pending: 0, failed: 2, unknown: 4 }, belnco: { delivered: 0, shipping: 0, pending: 0, failed: 0, unknown: 0 } };
   const touche = { sold: 21, stateCounts: none.touche, soldByBrand: { touche: 21, belnco: 0 }, progress: bonusEstimate(18, rule), deliveredByBrand: { touche: 18, belnco: 0 }, stateCountsByBrand: none };
-  const card = (data: ReturnType<typeof progress>, brands?: ('touche' | 'belnco')[], compact = false) => brandTable(renderToStaticMarkup(<ProgressCard data={data} brands={brands} compact={compact} />));
-  expect(rows(card(progress(touche), [...both]))).toEqual([['Vendus ce mois', '21', '0', '21'], ['dont déjà livrés', '9', '0', '9'], ['En cours de livraison', '6', '0', '6'], ['Pas encore expédiés', '0', '0', '0'], ['Non livrés', '2', '0', '2'], ['À vérifier', '4', '0', '4'], ['Livrés ce mois (prime)', '18', '0', '18']]);
-  // Touché only on the desk, but a BEL.NCO sale or delivery this month: shown.
-  expect(card(progress(), ['touche'])).toContain('Par marque');
-  expect(card(progress({ ...touche, deliveredByBrand: { touche: 18, belnco: 1 } }), ['touche'])).toContain('Par marque');
-  // One brand only: nothing to split.
-  expect(card(progress(touche), ['touche'])).toBe('');
-  expect(card(progress(touche))).toBe('');
+  const card = (data: ReturnType<typeof progress>, compact = false) => brandTable(renderToStaticMarkup(<ProgressCard data={data} compact={compact} />));
+  // 2026-11-21, the owner: her figures by brand always show, BEL.NCO at 0 when she sold Touché only.
+  expect(rows(card(progress(touche)))).toEqual([['Vendus ce mois', '21', '0', '21'], ['dont déjà livrés', '9', '0', '9'], ['En cours de livraison', '6', '0', '6'], ['Pas encore expédiés', '0', '0', '0'], ['Non livrés', '2', '0', '2'], ['À vérifier', '4', '0', '4'], ['Livrés ce mois (prime)', '18', '0', '18']]);
+  expect(card(progress())).toContain('Par marque');
+  // Nothing sold or delivered this month: every row shows, at 0.
+  const zero = { delivered: 0, shipping: 0, pending: 0, failed: 0, unknown: 0 };
+  expect(rows(card(progress({ sold: 0, stateCounts: zero, stateCountsByBrand: { touche: zero, belnco: zero }, soldByBrand: { touche: 0, belnco: 0 }, deliveredByBrand: { touche: 0, belnco: 0 }, progress: bonusEstimate(0, rule) }))).map(r => r.slice(1))).toEqual(Array(7).fill(['0', '0', '0']));
+  // The full page as App renders it, for a desk selling Touché only or both brands, or naming none.
+  reports.set('my-progress', progress({ ...touche, upsells: [upsell()], upsellsTotal: 1 }));
+  reports.set('reminders', { reminders: [] });
+  for (const brands of [['touche'], [...both], undefined] as ('touche' | 'belnco')[][]) {
+    expect(renderToStaticMarkup(<PersonalProgress brands={brands} />), String(brands)).toContain('<h3 id="pilot-progress-brands">Par marque</h3>');
+    expect(renderToStaticMarkup(<PersonalProgress compact brands={brands} />), String(brands)).not.toContain('Par marque');
+  }
   // The call strip, or an API without the split by state: none.
-  expect(card(progress(), [...both], true)).toBe('');
-  expect(card(progress({ stateCountsByBrand: undefined }), [...both])).toBe('');
+  expect(card(progress(), true)).toBe('');
+  expect(card(progress({ stateCountsByBrand: undefined }))).toBe('');
+  expect(card(progress({ soldByBrand: undefined }))).toBe('');
 });
 
 test('« Ma progression »: « Par marque » sits in the progress card, so « Mes rappels » still comes right after it; the call strip has none; App gives the desk’s brands', () => {
