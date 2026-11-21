@@ -26,18 +26,22 @@ test('Apports & primes treats CM accounts like call-center accounts', () => {
   assert.ok(!/role\s*!==\s*'advisor'\s*\?\s*'Non concerné'/.test(dashboard), "prime column and cell must not mark CMs 'Non concerné' (p.role!=='advisor'?'Non concerné'…)");
   assert.ok(!/role\s*!==\s*'advisor'\s*\?\s*'Compte '/.test(dashboard), "account caption must not hide a CM's bonus progress (p.role!=='advisor'?'Compte '…)");
 });
+/** The CSV's cells (`apportsCells`, one line), and the export that writes them for the accounts shown. */
+const csvCells = () => {
+  const start = commission.indexOf('export function apportsCells(');
+  assert.ok(commission.includes('csv(apportsCells(selected,{from,to,month,rule:data!.rule,done}))'), 'the export writes the accounts shown');
+  return commission.slice(start, commission.indexOf('\n', start)); // the whole one-line function
+};
 test('Apports & primes CSV export names each account role so CM and Call center rows can be told apart', () => {
-  const start = commission.indexOf('function exportTable()');
-  const exportTable = commission.slice(start, commission.indexOf('\n', start)); // the whole one-line function
+  const exportTable = csvCells();
   assert.ok(exportTable.includes("'Compte','Rôle','Équipe'"), 'CSV header has a Rôle column right after Compte');
   assert.ok(exportTable.includes('p.label,accountRoleLabel(p.role),p.team'), 'each CSV row writes the role label (Call center, CM, Manager, Direction)');
 });
-test('Apports & primes CSV export gives the month’s sold and delivered upsells side by side', () => {
-  const start = commission.indexOf('function exportTable()');
-  const exportTable = commission.slice(start, commission.indexOf('\n', start));
-  assert.ok(exportTable.includes("'Upsells vendus période','Upsells vendus mois','Upsells livrés mois','Prime estimée DA'"), 'CSV header names sold and delivered');
+test('Apports & primes CSV export gives the month’s sold and delivered upsells side by side, each with its split by brand', () => {
+  const exportTable = csvCells();
+  assert.ok(exportTable.includes("'Upsells vendus période','Upsells vendus mois',...BRANDS.map(b=>'Upsells vendus mois '+BRAND_LABELS[b]),'Upsells livrés mois',...BRANDS.map(b=>'Upsells livrés mois '+BRAND_LABELS[b]),'Prime estimée DA'"), 'CSV header names sold and delivered');
   // A month paid on sales (before November 2026) has no delivered count: the cell stays empty rather than 0.
-  assert.ok(exportTable.includes("p.period.upsells,p.monthly.upsells,p.monthly.delivered??'',"), 'each row writes sold then delivered');
+  assert.ok(exportTable.includes("p.period.upsells,p.monthly.upsells,...brands(p.monthly.upsellsByBrand),p.monthly.delivered??'',...brands(p.monthly.deliveredByBrand),"), 'each row writes sold then delivered');
 });
 test('Closing the call offers a way back to the answers, and going back keeps the routine', () => {
   // The call-close section lives in call/CallClose.tsx since the call screen was split into components.

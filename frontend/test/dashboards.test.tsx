@@ -237,7 +237,8 @@ test('the brand filter shows its three options and is in the reset, the chips, t
 
 test('the « Marque » filter narrows the calls and the product lists, resets the page and counts as an active filter', () => {
   const src = ui('Analytics.tsx');
-  expect(src).toMatch(/const keep=[^\n]*&&brandMatch\(c,brand\);/);
+  // Every figure but « Par marque », which compares the brands (keep(c,'brand')).
+  expect(src).toMatch(/const keep=[^\n]*&&\(skip==='brand'\|\|brandMatch\(c,brand\)\);/);
   expect(src).toMatch(/useEffect\(\(\)=>\{setPage\(0\)\},\[[^\]]*\bbrand\b/);
   expect(src).toMatch(/const activeFilters=\[[^\]]*\bbrand\b/);
   for (const memo of ['const filtered=useMemo', 'const calendar=useMemo', 'const objectionPool=useMemo']) expect(src).toMatch(new RegExp(memo + '[^\\n]*,\\[[^\\]]*\\bbrand\\b[^\\]]*\\]\\);'));
