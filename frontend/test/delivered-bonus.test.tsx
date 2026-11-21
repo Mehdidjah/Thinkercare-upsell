@@ -57,8 +57,7 @@ test('a month paid on sales (before November 2026): every sale counted, the tags
   expect(card).toContain('Upsells vendus dans le mois : 12 / 60');
   expect(card).toContain(`${money(45)} par upsell vendu`);
   expect(card).toContain('Mois clôturé : 12 upsells vendus pour un seuil de 60.');
-  expect(card).toContain('Tous les upsells vendus du mois dès 60 atteints');
-  expect(card).toContain('Pour ce mois, la prime compte les upsells vendus, dans le mois de l’appel : la règle des upsells livrés n’était pas encore en vigueur.');
+  expect(card).toContain('Pour ce mois, la prime était calculée sur vos upsells vendus.');
   expect(card).not.toContain('livrés, dans le mois de leur livraison');
   expect(card).not.toContain('Une commande retournée ou annulée ne compte pas');
   const list = renderToStaticMarkup(<MyUpsells data={october} />);
@@ -103,9 +102,8 @@ test('the progress card counts delivered upsells and gives the month’s sales b
   expect(card).toContain('30 vendus ce mois · dont 12 déjà livrés · 9 en cours · 3 non livrés');
   expect(card).not.toContain('pas encore expédié');
   expect(card).toContain('Encore 48 upsells livrés pour atteindre votre objectif.');
-  expect(card).toContain('2 upsell(s) livré(s) aujourd’hui');
   expect(card).toContain(`${money(45)} par upsell livré`);
-  expect(card).toContain('La prime compte les upsells livrés, dans le mois de leur livraison');
+  expect(card).toContain('La prime est calculée uniquement sur vos upsells livrés.');
   const more = text(renderToStaticMarkup(<ProgressCard data={progress({ sold: 1, stateCounts: { delivered: 1, shipping: 0, pending: 2, failed: 0, unknown: 1 } })} />));
   expect(more).toContain('1 vendu ce mois · dont 1 déjà livré · 0 en cours · 0 non livré · 2 pas encore expédiés · 1 à vérifier');
   const closed = text(renderToStaticMarkup(<ProgressCard data={progress({ month: '2026-10' })} />));
@@ -162,4 +160,15 @@ test('the sales line reads like the motivation, stays off the call strip, and lo
   expect(css).toMatch(/\.pilot-progress__sold \{[^}]*font-size: var\(--text-ui\);[^}]*color: var\(--color-text-secondary\);/);
   expect(css).toMatch(/\.pilot-progress--compact :is\([^)]*\.pilot-progress__sold[^)]*\) \{ display: none; \}/);
   expect(css).toMatch(/\.upsell-table \.tag \{[^}]*white-space: normal;/);
+});
+
+test('the adviser’s card ends on one line about pay: the prime counts delivered upsells only (owner, 2026-11-21)', () => {
+  const card = text(renderToStaticMarkup(<ProgressCard data={progress()} />));
+  expect(card).toContain('La prime est calculée uniquement sur vos upsells livrés.');
+  for (const gone of ['aujourd’hui', 'Modalité de déclenchement', 'Tous les upsells livrés du mois dès', 'À partir du', 'Chaque produit ajouté à la commande initiale', 'La prime compte les upsells livrés, dans le mois de leur livraison']) expect(card, gone).not.toContain(gone);
+  const sold = text(renderToStaticMarkup(<ProgressCard data={progress({ month: '2026-10', basis: 'sold' })} />));
+  expect(sold).toContain('Pour ce mois, la prime était calculée sur vos upsells vendus.');
+  const strip = text(renderToStaticMarkup(<ProgressCard data={progress()} compact />));
+  expect(strip).not.toContain('aujourd’hui');
+  expect(strip).not.toContain('La prime est calculée');
 });

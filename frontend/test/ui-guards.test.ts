@@ -12,10 +12,11 @@ test('Own progress mounted on calls and dashboard', () => assert.equal((app.matc
 test('Both upsell-rule footnotes count added products and cover an initial pack of 2', () => {
   const card = commission.slice(commission.indexOf('export function ProgressCard'), commission.indexOf('export function PersonalProgress'));
   const dashboard = commission.slice(commission.indexOf('export function ContributionDashboard'));
-  for (const [name, part] of [['Ma progression', card], ['Apports & primes', dashboard]]) {
-    assert.ok(part.includes('Chaque produit ajouté à la commande initiale'), name);
-    assert.ok(part.includes('pack de 2'), name);
-  }
+  // The full rule stays for the direction; an adviser's card only says she is paid on delivered upsells (owner, 2026-11-21).
+  assert.ok(dashboard.includes('Chaque produit ajouté à la commande initiale'));
+  assert.ok(dashboard.includes('pack de 2'));
+  assert.ok(card.includes('La prime est calculée uniquement sur vos upsells livrés.'));
+  assert.ok(!card.includes('Chaque produit ajouté à la commande initiale'));
 });
 test('Apports & primes treats CM accounts like call-center accounts', () => {
   assert.ok(/import \{[^}]*\bisFrontline\b[^}]*\} from '@touche\/domain'/.test(commission), 'isFrontline imported from @touche/domain');
