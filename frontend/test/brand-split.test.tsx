@@ -101,12 +101,12 @@ const cell = (html: string, from: string) => text(html.slice(html.indexOf(from),
 test('« Apports & primes »: under each month’s count, its split by brand; a team row adds them up', () => {
   reports.set('contributions', november());
   const html = renderToStaticMarkup(<ContributionDashboard openOperator={() => {}} />);
-  expect(cell(html, '1. Lina')).toContain('12Touché 9 · BEL.NCO 3');
-  expect(cell(html, '1. Lina')).toContain('8 / 6052 restant(s)Touché 6 · BEL.NCO 2');
-  expect(cell(html, '3. Sara')).toContain('4Touché 0 · BEL.NCO 4');
-  expect(cell(html, '3. Sara')).toContain('1 / 6059 restant(s)Touché 0 · BEL.NCO 1');
+  expect(cell(html, '>Lina</button>')).toContain('12Touché 9 · BEL.NCO 3');
+  expect(cell(html, '>Lina</button>')).toContain('8 / 6052 restant(s)Touché 6 · BEL.NCO 2');
+  expect(cell(html, '>Sara</button>')).toContain('4Touché 0 · BEL.NCO 4');
+  expect(cell(html, '>Sara</button>')).toContain('1 / 6059 restant(s)Touché 0 · BEL.NCO 1');
   // Nothing sold or delivered: no split under the zeros.
-  expect(cell(html, '2. Nour')).not.toContain('Touché');
+  expect(cell(html, '>Nour</button>')).not.toContain('Touché');
   expect(html).toContain('<tfoot>');
   const team = cell(html, 'Total de la sélection');
   expect(team).toContain('Total de la sélection3 comptes');
@@ -117,12 +117,48 @@ test('« Apports & primes »: under each month’s count, its split by brand; a 
 test('« Apports & primes » for a month paid on sales: the sold split only; an API without the split shows none', () => {
   reports.set('contributions', { ...november(), month: '2026-10', basis: 'sold', people: [person('u1', 'Lina', [9, 3], null)] });
   const html = renderToStaticMarkup(<ContributionDashboard openOperator={() => {}} />);
-  expect(cell(html, '1. Lina')).toContain('12 / 6048 restant(s)Touché 9 · BEL.NCO 3—');
+  expect(cell(html, '>Lina</button>')).toContain('12 / 6048 restant(s)Touché 9 · BEL.NCO 3—');
   expect(cell(html, 'Total de la sélection')).toContain('12Touché 9 · BEL.NCO 3—');
   const old = november();
   for (const p of old.people as Array<{ monthly: Record<string, unknown> }>) { delete p.monthly.upsellsByBrand; delete p.monthly.deliveredByBrand; }
   reports.set('contributions', old);
   expect(text(renderToStaticMarkup(<ContributionDashboard openOperator={() => {}} />))).not.toContain('Touché');
+});
+
+test('« Apports & primes » fits 1366px without scrolling sideways: the adviser’s name opens her calls (no action column), long headers wrap on two lines at most', () => {
+  reports.set('contributions', november());
+  const html = renderToStaticMarkup(<ContributionDashboard openOperator={() => {}} />);
+  const ranking = html.slice(html.indexOf('>Classement des apports</h2>'), html.indexOf('>Apports jour par jour</h2>'));
+  expect(ranking).toContain('<div class="data-table apports-table"><table>');
+  // A no-break space holds each header's phrase together: « Upsells vendus / période », « Vendus / du mois », « Prime estimée / du mois ».
+  expect(ranking).toContain('<thead><tr><th scope="col">Conseillère</th><th scope="col">Confirmations</th><th scope="col">Initial confirmé</th><th scope="col">Supplément obtenu</th><th scope="col">Total confirmé</th><th scope="col">Upsells\u00a0vendus période</th><th scope="col">Vendus du\u00a0mois</th><th scope="col">Livrés du\u00a0mois</th><th scope="col">Prime\u00a0estimée du\u00a0mois</th></tr></thead>');
+  expect(ranking).not.toContain('data-table__action');
+  expect(ranking).not.toContain('>Voir les appels<');
+  expect(ranking).toContain('<td><b class="apports-table__name">1. <button type="button" class="link-btn" aria-label="Voir les appels de Lina">Lina</button></b><small>Sans équipe</small></td>');
+  expect(text(ranking)).toContain('Le nom d’une conseillère ouvre ses appels dans le journal de Pilotage.');
+  // No DOM library here: the source shows the name is the button that opens her calls.
+  expect(ui('Commission.tsx')).toContain(`<b className="apports-table__name">{i+1}. <button type="button" className="link-btn" aria-label={'Voir les appels de '+p.label} onClick={()=>openOperator(p.id)}>{p.label}</button></b>`);
+});
+
+test('« Classement des apports »: tighter cells, amounts and counts on one line, headers, names and brand splits may wrap, « Total de la sélection » on one line', () => {
+  const css = readFileSync(new URL('../src/styles/pilotage.css', import.meta.url), 'utf8');
+  expect(css).toMatch(/\.apports-table :is\(th, td\) \{ padding-inline: var\(--space-3\); \}/);
+  expect(css).toMatch(/\.apports-table thead th \{ white-space: normal; \}/);
+  expect(css).toMatch(/\.apports-table :is\(td, tfoot th\) \{ white-space: nowrap; \}/);
+  expect(css).toMatch(/\.apports-table :is\(small, \.link-btn\) \{ white-space: normal; \}/);
+  expect(css).toMatch(/\.apports-table__name \{ display: flex; align-items: baseline; gap: var\(--space-1\); \}/);
+});
+
+test('« Apports & primes »: a rule still to confirm reads « À confirmer » in « Prime estimée du mois », on each adviser’s row as on the total row and the KPI tile', () => {
+  const pending: BonusRule = { ...rule, mode: 'pending' };
+  const data = november();
+  reports.set('contributions', { ...data, rule: pending, people: data.people.map(p => ({ ...p, monthly: { ...p.monthly, bonus: bonusEstimate(p.monthly.delivered ?? 0, pending) } })) });
+  const html = renderToStaticMarkup(<ContributionDashboard openOperator={() => {}} />);
+  const ranking = html.slice(html.indexOf('>Classement des apports</h2>'), html.indexOf('>Apports jour par jour</h2>'));
+  expect(ranking).not.toContain('En attente');
+  expect(ranking.slice(ranking.indexOf('<tbody>'), ranking.indexOf('</tbody>')).match(/<td>À confirmer<\/td>/g)).toHaveLength(3);
+  expect(ranking.slice(ranking.indexOf('<tfoot>'))).toContain('<td>À confirmer</td>');
+  expect(text(html)).toContain('Primes estimées du moisÀ confirmer');
 });
 
 test('« Apports & primes » CSV: sold and delivered per brand next to their totals, empty delivered cells on a month paid on sales', () => {
@@ -142,24 +178,49 @@ const progress = (over: Record<string, unknown> = {}) => ({
   withoutReference: 0, duplicateExcluded: 0, updatedAt: '2026-11-21T09:00:00Z', ...over,
 });
 
-test('« Ma progression »: with sales in both brands, the sales lines split the prime’s count and the month’s sales by brand', () => {
-  const html = renderToStaticMarkup(<ProgressCard data={progress()} />);
-  expect(html).toContain('<p class="pilot-progress__sold">12 livrés ce mois (Touché 9 · BEL.NCO 3) · 30 vendus (Touché 21 · BEL.NCO 9)</p>');
-  expect(text(renderToStaticMarkup(<ProgressCard data={progress({ month: '2026-10' })} />))).toContain('12 livrés dans le mois (Touché 9 · BEL.NCO 3) · 30 vendus (Touché 21 · BEL.NCO 9)');
-  // Her sales in one brand, a delivery of the other one (sold last month): still both brands.
-  expect(text(renderToStaticMarkup(<ProgressCard data={progress({ soldByBrand: { touche: 30, belnco: 0 } })} />))).toContain('12 livrés ce mois (Touché 9 · BEL.NCO 3) · 30 vendus (Touché 30 · BEL.NCO 0)');
-  // A month paid on sales: the count is the sales.
-  const sold = text(renderToStaticMarkup(<ProgressCard data={progress({ month: '2026-10', basis: 'sold', progress: bonusEstimate(30, rule), deliveredByBrand: null })} />));
-  expect(sold).toContain('30 vendus dans le mois (Touché 21 · BEL.NCO 9)');
-  expect(sold).not.toContain('livrés dans le mois (');
+test('« Ma progression »: the delivered split sits next to the headline count, the sold split in the sales line, where this month’s sales already delivered read « dont N déjà livrés »', () => {
+  // The two counts differ: 25 delivered this month (some sold last month), 12 sold this month, 2 of them delivered.
+  const data = progress({ progress: bonusEstimate(25, rule), deliveredByBrand: { touche: 18, belnco: 7 }, sold: 12, soldByBrand: { touche: 9, belnco: 3 }, stateCounts: { delivered: 2, shipping: 9, pending: 0, failed: 1, unknown: 0 } });
+  const html = renderToStaticMarkup(<ProgressCard data={data} />);
+  expect(text(html)).toContain('Upsells livrés ce mois : 25 / 60 (Touché 18 · BEL.NCO 7)');
+  expect(html).toContain('<span>/ 60</span> <span class="pilot-progress__split">(Touché 18 · BEL.NCO 7)</span></p>');
+  // One sales line, no separate brand line.
+  expect(html.match(/class="pilot-progress__sold"/g)).toHaveLength(1);
+  expect(html).toContain('<p class="pilot-progress__sold">12 vendus ce mois (Touché 9 · BEL.NCO 3) · dont 2 déjà livrés · 9 en cours · 1 non livré</p>');
+  expect(text(html)).not.toContain('25 livrés');
+  const closed = text(renderToStaticMarkup(<ProgressCard data={{ ...data, today: '2026-12-05' }} />));
+  expect(closed).toContain('Upsells livrés dans le mois : 25 / 60 (Touché 18 · BEL.NCO 7)');
+  expect(closed).toContain('12 vendus dans le mois (Touché 9 · BEL.NCO 3) · dont 2 déjà livrés · 9 en cours · 1 non livré');
 });
 
-test('« Ma progression »: one brand only, or an API without the split, adds no line', () => {
+test('« Ma progression »: an adviser on both brands sees both splits, a zero brand included, none under a zero count; a month paid on sales gives its split once, by the headline', () => {
+  const html = renderToStaticMarkup(<ProgressCard data={progress()} />);
+  expect(text(html)).toContain('Upsells livrés ce mois : 12 / 60 (Touché 9 · BEL.NCO 3)');
+  expect(html).toContain('<p class="pilot-progress__sold">30 vendus ce mois (Touché 21 · BEL.NCO 9) · dont 12 déjà livrés · 9 en cours · 3 non livrés · 6 à vérifier</p>');
+  // Her sales in one brand, a delivery of the other one (sold last month): still both brands.
+  expect(text(renderToStaticMarkup(<ProgressCard data={progress({ soldByBrand: { touche: 30, belnco: 0 } })} />))).toContain('30 vendus ce mois (Touché 30 · BEL.NCO 0) · dont 12 déjà livrés');
+  // Nothing delivered yet: no split by the 0.
+  const none = text(renderToStaticMarkup(<ProgressCard data={progress({ progress: bonusEstimate(0, rule), deliveredByBrand: { touche: 0, belnco: 0 } })} />));
+  expect(none).toContain('Upsells livrés ce mois : 0 / 6030 vendus ce mois (Touché 21 · BEL.NCO 9)');
+  // A month paid on sales: the headline count is the sales, so the sales line does not repeat its split.
+  const sold = text(renderToStaticMarkup(<ProgressCard data={progress({ month: '2026-10', basis: 'sold', progress: bonusEstimate(30, rule), deliveredByBrand: null })} />));
+  expect(sold).toContain('Upsells vendus dans le mois : 30 / 60 (Touché 21 · BEL.NCO 9)');
+  expect(sold).toContain('30 vendus dans le mois · dont 12 déjà livrés · 9 en cours · 3 non livrés · 6 à vérifier');
+  expect(sold.match(/\(Touché/g)).toHaveLength(1);
+});
+
+test('« Ma progression »: one brand only, or an API without the split, adds no split', () => {
   for (const over of [{ soldByBrand: { touche: 30, belnco: 0 }, deliveredByBrand: { touche: 12, belnco: 0 } }, { soldByBrand: undefined, deliveredByBrand: undefined }]) {
     const card = text(renderToStaticMarkup(<ProgressCard data={progress(over)} />));
-    expect(card).toContain('30 vendus ce mois · 12 livrés');
+    expect(card).toContain('Upsells livrés ce mois : 12 / 60');
+    expect(card).toContain('30 vendus ce mois · dont 12 déjà livrés');
     expect(card).not.toContain('(Touché');
   }
+});
+
+test('the split by the headline count stays off the call strip, like the sales line', () => {
+  const css = readFileSync(new URL('../src/styles/pilotage.css', import.meta.url), 'utf8');
+  expect(css).toMatch(/\.pilot-progress--compact :is\([^)]*\.pilot-progress__sold[^)]*\.pilot-progress__split[^)]*\) \{ display: none; \}/);
 });
 
 test('a table’s total row (« Total de la sélection ») stands apart from the rows above it, sticky action cell included', () => {

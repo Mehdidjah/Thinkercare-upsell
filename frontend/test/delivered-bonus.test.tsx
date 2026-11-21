@@ -100,14 +100,14 @@ test('« Mes upsells » says when only the 300 most recent are shown, and has an
 test('the progress card counts delivered upsells and gives the month’s sales by state', () => {
   const card = text(renderToStaticMarkup(<ProgressCard data={progress()} />));
   expect(card).toContain('Upsells livrés ce mois : 12 / 60');
-  expect(card).toContain('30 vendus ce mois · 12 livrés · 9 en cours · 3 non livrés');
+  expect(card).toContain('30 vendus ce mois · dont 12 déjà livrés · 9 en cours · 3 non livrés');
   expect(card).not.toContain('pas encore expédié');
   expect(card).toContain('Encore 48 upsells livrés pour atteindre votre objectif.');
   expect(card).toContain('2 upsell(s) livré(s) aujourd’hui');
   expect(card).toContain(`${money(45)} par upsell livré`);
   expect(card).toContain('La prime compte les upsells livrés, dans le mois de leur livraison');
   const more = text(renderToStaticMarkup(<ProgressCard data={progress({ sold: 1, stateCounts: { delivered: 1, shipping: 0, pending: 2, failed: 0, unknown: 1 } })} />));
-  expect(more).toContain('1 vendu ce mois · 1 livré · 0 en cours · 0 non livré · 2 pas encore expédiés · 1 à vérifier');
+  expect(more).toContain('1 vendu ce mois · dont 1 déjà livré · 0 en cours · 0 non livré · 2 pas encore expédiés · 1 à vérifier');
   const closed = text(renderToStaticMarkup(<ProgressCard data={progress({ month: '2026-10' })} />));
   expect(closed).toContain('Upsells livrés dans le mois : 12 / 60');
   expect(closed).toContain('30 vendus dans le mois');
@@ -134,9 +134,9 @@ test('« Apports & primes » shows sold and delivered per adviser, the prime on 
     people: [{ id: 'u1', label: 'Lina', role: 'advisor', active: 1, team: '', period: totals, monthly: { ...totals, delivered: 2, bonus: bonusEstimate(2, rule) }, daily: [] }],
   });
   const html = renderToStaticMarkup(<ContributionDashboard openOperator={() => {}} />);
-  expect(html).toContain('>Vendus du mois</th>');
-  expect(html).toContain('>Livrés du mois</th>');
-  const row = text(html.slice(html.indexOf('1. Lina')));
+  expect(html).toContain('>Vendus du\u00a0mois</th>');
+  expect(html).toContain('>Livrés du\u00a0mois</th>');
+  const row = text(html.slice(html.indexOf('>Lina</button>')));
   expect(row).toContain('2 / 6058 restant(s)');
   expect(html).toContain('<p>La prime compte les upsells livrés, dans le mois de leur livraison.</p>');
   expect(text(html)).toContain('60 upsells livrés par mois, ' + money(45) + ' par upsell livré. Tous les upsells livrés du mois dès 60 atteints.');
@@ -150,7 +150,7 @@ test('« Apports & primes » for a month paid on sales: the sold count carries t
     people: [{ id: 'u1', label: 'Lina', role: 'advisor', active: 1, team: '', period: totals, monthly: { ...totals, delivered: null, bonus: bonusEstimate(3, rule) }, daily: [] }],
   });
   const html = renderToStaticMarkup(<ContributionDashboard openOperator={() => {}} />);
-  const row = text(html.slice(html.indexOf('1. Lina')));
+  const row = text(html.slice(html.indexOf('>Lina</button>')));
   expect(row).toContain('3 / 6057 restant(s)—');
   expect(html).toContain('<p>Pour ce mois, la prime compte les upsells vendus, dans le mois de l’appel : la règle des upsells livrés n’était pas encore en vigueur.</p>');
   expect(text(html)).toContain('60 upsells vendus par mois, ' + money(45) + ' par upsell vendu. Tous les upsells vendus du mois dès 60 atteints.');

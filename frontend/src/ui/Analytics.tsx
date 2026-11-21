@@ -9,7 +9,7 @@ import {ReminderTable,useCompleteReminder,type Reminder} from './pages/Reminders
 import {upsellDelivery,byBrand,type BrandFigures,ORDER_STATE_GROUP_LABELS,ORDER_CHECK_LABELS,type OrderStateGroup,type OrderCheckStatus,quantityLabel,canManageWorkspace,accountRoleLabel,money,type Product,summary,byDay,byOperator,productStats,initialProductStats,initialItems,combinationStats,tierStats,refusalStats,accepted,localDay,shiftDay,csv,extras,countedCalls,isVoided,OUTCOMES,STAGES,REASONS,TIERS,type ActivityCall,BRANDS,BRAND_LABELS,brandOf,type Brand} from '@touche/domain';
 type User={id:string;label:string;role:string;username?:string;team?:string;reporting_scope?:string;active?:number};
 type Props={user:User;users:User[];products:Product[];resume:(call:any)=>void;initialOperator?:string;
- /** Open on this view, e.g. 'journal' from « Voir les appels » (F3). */
+ /** Open on this view, e.g. 'journal' from an adviser's name in « Apports & primes » (F3). */
  initialTab?:string;
  /** Called once initialOperator is applied, so App can forget it and « Effacer les filtres » sticks (F3). */
  onOperatorUsed?:()=>void;
