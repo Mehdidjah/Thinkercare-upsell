@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import {
+  BRANDS,
   DEFAULT_BONUS,
   algerDay,
   bonusEstimate,
@@ -11,15 +12,32 @@ import {
   sumContributions,
   validMonth,
   type BonusRule,
+  type Brand,
+  type OrderStateGroup,
 } from '@touche/domain';
 import { and, asc, desc, eq, lte, sql } from 'drizzle-orm';
 import { DeskError } from '../common/http.js';
 import type { Db } from '../db/schema.js';
 import { tcAudit, tcBonusRules, tcUsers } from '../db/schema.js';
 import { auditRow } from './audit.js';
-import { contributions } from './contributions.js';
+import { contributions, DELIVERED_FROM, type UpsellSale, upsellSales } from './contributions.js';
 import type { DeskUser } from './desk.types.js';
 import { bonusRuleSchema } from './schemas.js';
+
+const STATE_GROUPS: OrderStateGroup[] = ['delivered', 'shipping', 'pending', 'failed', 'unknown'];
+/** « Mes upsells » lists at most this many sales, the most recent first. */
+const MAX_LISTED = 300;
+const units = (sales: UpsellSale[]) => sales.reduce((sum, u) => sum + u.units, 0);
+/** `units` split by the brand of the call: the brands sum to it. */
+const unitsByBrand = (sales: UpsellSale[]) =>
+  Object.fromEntries(BRANDS.map((b) => [b, units(sales.filter((u) => u.brand === b))])) as Record<Brand, number>;
+/** A sale whose order was delivered before the call (often a mistyped reference): it never counts, so « à vérifier ». */
+const stateOf = (u: UpsellSale): OrderStateGroup =>
+  u.order_state_group === 'delivered' && u.delivered_at !== null && u.delivered_at < u.created_at
+    ? 'unknown'
+    : u.order_state_group && STATE_GROUPS.includes(u.order_state_group)
+      ? u.order_state_group
+      : 'unknown';
 
 @Injectable()
 export class BonusService {
@@ -66,14 +84,33 @@ export class BonusService {
     const b = monthBounds(month);
     const rule = await this.ruleFor(month);
     const today = algerDay();
+    // From DELIVERED_FROM the prime counts the upsells delivered in the month; before, the month's sales, as they were paid.
+    const basis: 'sold' | 'delivered' = month < DELIVERED_FROM ? 'sold' : 'delivered';
     if (action === 'my-progress') {
-      const rows = await contributions(this.db, b.from, b.to, user.id);
+      // `sold` keeps the month's sales by call date, whatever the basis.
+      const [rows, sold, delivered] = await Promise.all([
+        contributions(this.db, b.from, b.to, user.id),
+        upsellSales(this.db, b.from, b.to, 'sold', user.id),
+        basis === 'delivered' ? upsellSales(this.db, b.from, b.to, 'delivered', user.id) : Promise.resolve([]),
+      ]);
       const total = sumContributions(rows);
+      // The days of the count: Algiers delivery days, or call days for a month paid on sales.
+      const byDay = new Map<string, number>();
+      if (basis === 'delivered') for (const u of delivered) byDay.set(u.delivered_day!, (byDay.get(u.delivered_day!) ?? 0) + u.units);
+      else for (const r of rows) byDay.set(r.day, (byDay.get(r.day) ?? 0) + Number(r.upsells));
+      const stateCounts = Object.fromEntries(STATE_GROUPS.map((g) => [g, 0])) as Record<OrderStateGroup, number>;
+      for (const u of sold) stateCounts[stateOf(u)] += u.units;
+      // « Mes upsells »: sold this month or delivered this month; `counts` when the month's prime counts it.
+      const counted = new Set((basis === 'delivered' ? delivered : sold).map((u) => u.id));
+      const listed = [...new Map([...sold, ...delivered].map((u) => [u.id, u])).values()].sort(
+        (x, y) => y.created_at.localeCompare(x.created_at) || x.id.localeCompare(y.id),
+      );
       return {
         month,
         today,
         timezone: 'Africa/Algiers',
         source: 'manual',
+        basis,
         user: { id: user.id, label: user.label },
         rule: {
           effectiveMonth: rule.effectiveMonth,
@@ -81,11 +118,30 @@ export class BonusService {
           rateDzd: rule.rateDzd,
           mode: rule.mode,
         },
-        progress: bonusEstimate(total.upsells, rule),
-        todayUpsells: rows
-          .filter((r) => r.day === today)
-          .reduce((s, r) => s + Number(r.upsells), 0),
-        daily: rows.map((r) => ({ day: r.day, upsells: Number(r.upsells) })),
+        progress: bonusEstimate(basis === 'delivered' ? units(delivered) : total.upsells, rule),
+        todayUpsells: byDay.get(today) ?? 0,
+        daily: [...byDay]
+          .sort(([x], [y]) => x.localeCompare(y))
+          .map(([day, upsells]) => ({ day, upsells })),
+        sold: total.upsells,
+        // `sold` and the delivered count of the prime split by brand (null on a month paid on sales: the count is `sold`).
+        soldByBrand: total.upsellsByBrand,
+        deliveredByBrand: basis === 'delivered' ? unitsByBrand(delivered) : null,
+        stateCounts,
+        upsells: listed.slice(0, MAX_LISTED).map((u) => ({
+          id: u.id,
+          created_at: u.created_at,
+          order_ref: u.order_ref,
+          brand: u.brand,
+          outcome: u.outcome,
+          units: u.units,
+          extra: u.extra,
+          order_state_group: u.order_state_group,
+          order_state_name: u.order_state_name,
+          delivered_at: u.delivered_at,
+          counts: counted.has(u.id),
+        })),
+        upsellsTotal: listed.length,
         withoutReference: total.withoutRef,
         duplicateExcluded: total.duplicates,
         updatedAt: new Date().toISOString(),
@@ -99,11 +155,12 @@ export class BonusService {
         'Choisissez une période valide de 366 jours maximum.',
       );
     const periodQuery = contributions(this.db, from, to);
-    const [period, monthly, users] = await Promise.all([
+    const [period, monthly, delivered, users] = await Promise.all([
       periodQuery,
       from === b.from && to === b.to
         ? periodQuery
         : contributions(this.db, b.from, b.to),
+      basis === 'delivered' ? upsellSales(this.db, b.from, b.to, 'delivered') : Promise.resolve(null),
       this.db
         .select({
           id: tcUsers.id,
@@ -119,12 +176,19 @@ export class BonusService {
       const pr = period.filter((r) => r.user_id === u.id);
       const mr = monthly.filter((r) => r.user_id === u.id);
       const m = sumContributions(mr);
+      // The prime is on the upsells delivered in the month; `upsells` stays the month's sales (the prime's count before
+      // DELIVERED_FROM, when `delivered` is null).
+      const mine = delivered?.filter((x) => x.user_id === u.id) ?? null;
+      const d = mine ? units(mine) : null;
       return {
         ...u,
+        // `upsellsByBrand` (period and month) and `deliveredByBrand` split `upsells` and `delivered` by brand.
         period: sumContributions(pr),
         monthly: {
           ...m,
-          bonus: bonusEstimate(isFrontline(u.role) ? m.upsells : 0, rule),
+          delivered: d,
+          deliveredByBrand: mine ? unitsByBrand(mine) : null,
+          bonus: bonusEstimate(isFrontline(u.role) ? (d ?? m.upsells) : 0, rule),
         },
         daily: pr,
       };
@@ -136,6 +200,7 @@ export class BonusService {
       today,
       timezone: 'Africa/Algiers',
       source: 'manual',
+      basis,
       rule,
       monthRuleVersion: rule.effectiveMonth === month ? rule.version : 0,
       people,

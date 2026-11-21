@@ -484,7 +484,7 @@ export default function Desk(){
   presented:d.presented,matchingOffer,keepsPresentedPrice,presentOffer,handledObjections:d.handledObjections,toggleObjection:key=>commit(callState.toggleObjection(current(),key)),
   consent:d.consent,setConsent:edit('consent'),checked:d.checked,setChecked:edit('checked'),callbackAt:d.callbackAt,setCallbackAt:edit('callbackAt'),refusal:d.refusal,setRefusal:edit('refusal'),record,
   removal,dismissRemoval:()=>setRemoval(null),catalogueNotice,dismissCatalogueNotice:()=>setCatalogueNotice(null)};
- // « Voir les appels » opens the journal filtered on the adviser; the filter is dropped once Pilotage has applied it (F3).
+ // An adviser's name in « Apports & primes » (« Voir les appels de <nom> ») opens the journal filtered on her; the filter is dropped once Pilotage has applied it (F3).
 
  return <AppShell state={state} view={view} setView={go} titles={titles} signingOut={signingOut} signOut={signOut} newCall={()=>void newCall()} fatal={fatal} offline={offline} load={load} modal={detail&&<ProductModal detail={detail} setDetail={setDetail} products={products}/>}>
  {/* The progress card has its own boundary: a failure there never hides the call. */}

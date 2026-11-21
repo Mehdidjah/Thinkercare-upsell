@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { algerDay } from '@touche/domain';
-import { tcAudit, tcUsers } from '../src/db/schema.js';
+import { tcAudit, tcCallMeta, tcUsers } from '../src/db/schema.js';
 import { createTestApp, type TestContext } from './support/context.js';
 import { resetDatabase } from './support/database.js';
 import { deskGet, deskPost } from './support/desk.js';
@@ -57,7 +57,7 @@ describe('cm role', () => {
     // Like an advisor, a CM gets no workspace-wide calls or accounts, only their own progress.
     expect(bootstrap.body.calls).toEqual([]);
     expect(bootstrap.body.users).toEqual([]);
-    expect((await deskGet(ctx, '?action=my-progress', cm)).body.progress.count).toBe(1);
+    expect((await deskGet(ctx, '?action=my-progress', cm)).body.sold).toBe(1);
     expect((await deskGet(ctx, '?action=audit', cm)).status).toBe(403);
     expect((await post({ action: 'user', username: 'x.y', label: 'X', password: PASSWORD, role: 'advisor' }, cm)).status).toBe(403);
   });
@@ -70,13 +70,16 @@ describe('cm role', () => {
       VALUES (${month}, 2, 45, 'all_month', 1, '', now()) ON CONFLICT (month) DO UPDATE SET mode = 'all_month', threshold = 2, rate_dzd = 45`);
     for (const [id, tag] of [[cmId, 'CM'], [advisorId, 'AD']] as const) {
       for (let i = 0; i < 2; i++) {
-        await insertCall(ctx.db, { user_id: id, created_at: new Date(), outcome: 'duo', offered_total: 3000, extra: 1200, order_ref: `${tag}${i}` });
+        const call = await insertCall(ctx.db, { user_id: id, created_at: new Date(), outcome: 'duo', offered_total: 3000, extra: 1200, order_ref: `${tag}${i}` });
+        // The prime counts delivered upsells.
+        await ctx.db.update(tcCallMeta).set({ order_check: 'verified', order_state_group: 'delivered', order_state_name: 'Livrée', order_state_at: new Date(), delivered_at: new Date() }).where(eq(tcCallMeta.call_id, call));
       }
     }
     const { body } = await deskGet(ctx, '?action=contributions&month=' + month, admin);
     const line = (id: string) => body.people.find((p: { id: string }) => p.id === id).monthly;
     expect(line(cmId).upsells).toBeGreaterThan(0);
     expect(line(cmId).upsells).toBe(line(advisorId).upsells);
+    expect(line(cmId).delivered).toBe(2);
     expect(line(cmId).bonus).toMatchObject({ count: 2, reached: true, estimatedDzd: 90 });
     expect(line(cmId).bonus).toEqual(line(advisorId).bonus);
   });

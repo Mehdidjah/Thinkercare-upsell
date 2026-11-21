@@ -12,6 +12,8 @@ export type EcoOrder = {
   stateGroup: OrderStateGroup;
   confirmationStateName: string | null;
   updatedAt: string | null;
+  /** When the order was delivered (EcoManager `delivered_at`): still set once « Encaissée », null if never delivered. */
+  deliveredAt: string | null;
 };
 
 export type OrderLookup =
@@ -98,6 +100,7 @@ export class EcoManagerClient {
       stateGroup: orderStateGroup({ id: stateId, name: stateName }),
       confirmationStateName: text(o.confirmation_state_name),
       updatedAt: algiersIso(o.updated_at),
+      deliveredAt: algiersIso(o.delivered_at),
     };
   }
 

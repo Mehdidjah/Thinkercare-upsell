@@ -6,6 +6,7 @@ import { DeskExceptionFilter } from '../common/desk-exception.filter.js';
 import { DeskError, sendJson } from '../common/http.js';
 import { ENV, type Env } from '../config/env.js';
 import { type Db, tcCallMeta } from '../db/schema.js';
+import { deliveredAtFor } from './delivery.js';
 import { OrdersService } from './orders.service.js';
 import { verifySignature } from './signature.js';
 
@@ -51,13 +52,15 @@ export class EcoManagerWebhookController {
     if (order && brand) {
       this.orders.clientFor(brand)?.remember(order);
       const now = new Date();
+      const stateAt = order.updatedAt ? new Date(order.updatedAt) : now;
       const updated = await this.db
         .update(tcCallMeta)
         .set({
           order_check: 'verified',
           order_state_group: order.stateGroup,
           order_state_name: order.stateName,
-          order_state_at: order.updatedAt ? new Date(order.updatedAt) : now,
+          order_state_at: stateAt,
+          delivered_at: deliveredAtFor(order, stateAt),
           order_synced_at: now,
         })
         .where(

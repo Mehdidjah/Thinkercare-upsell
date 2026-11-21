@@ -2,9 +2,11 @@ import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } f
 import { InjectDrizzle } from '@nestjs/drizzle';
 import { type Brand, FINAL_ORDER_STATES, parseOrderReference } from '@touche/domain';
 import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 import type { Pool, PoolClient } from 'pg';
 import { ENV, type Env } from '../config/env.js';
 import { type Db, tcCallMeta, tcCalls } from '../db/schema.js';
+import { deliveredAtFor } from './delivery.js';
 import { OrdersService } from './orders.service.js';
 
 /** One catch-up at a time across every API instance (Postgres advisory lock key). */
@@ -66,14 +68,18 @@ export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
     return activeOf(this.orders.brands());
   }
 
-  /** The calls still waiting for an order state: not checked, « à vérifier », or a non-final state older than a day. */
+  /** The calls still waiting for an order state: not checked, « à vérifier », a non-final state older than a day, or a
+   *  delivered order without its delivery date (backfill of the calls delivered before migration 0009). The backfill
+   *  waits an hour after a run that EcoManager answered with an error, so that order is not asked on every run. */
   private due() {
     const finals = sql.join(FINAL_ORDER_STATES.map((name) => sql`${name}`), sql`, `);
     return sql`${tcCallMeta.order_ref} <> '' AND ${this.active()} AND (
       ${tcCallMeta.order_check} IN ('', 'unverified')
       OR (${tcCallMeta.order_check} = 'verified'
         AND (${tcCallMeta.order_state_name} IS NULL OR ${tcCallMeta.order_state_name} NOT IN (${finals}))
-        AND (${tcCallMeta.order_synced_at} IS NULL OR ${tcCallMeta.order_synced_at} < now() - interval '24 hours')))`;
+        AND (${tcCallMeta.order_synced_at} IS NULL OR ${tcCallMeta.order_synced_at} < now() - interval '24 hours'))
+      OR (${tcCallMeta.order_state_group} = 'delivered' AND ${tcCallMeta.delivered_at} IS NULL
+        AND (${tcCallMeta.order_synced_at} IS NULL OR ${tcCallMeta.order_synced_at} < now() - interval '1 hour')))`;
   }
 
   /** Checks up to `limit` references (one EcoManager request per order, shared by every call on it). */
@@ -115,12 +121,14 @@ export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
           const parsed = parseOrderReference(ref, this.orders.prefixes[brand]);
           if (!parsed) {
             updated += await this.mark(unchecked, { order_check: 'unrecognized', order_synced_at: new Date() });
+            await this.settleDelivered(all);
             checked++;
             continue;
           }
           const result = await client.lookup(parsed.reference, 'background');
           if (result.status === 'unavailable') {
             // EcoManager down or out of quota: stop this store and resume later. One order answering an error: move on.
+            // EcoManager did not answer, so a delivered call keeps no date yet: it is asked again later (see `due`).
             if (result.reason !== 'server') {
               stopped.add(brand);
               continue;
@@ -128,6 +136,8 @@ export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
             await this.mark(all, { order_synced_at: new Date() });
             continue;
           }
+          // The delivery date EcoManager gave, kept even when its state is older than the stored one.
+          let deliveredAt: string | null = null;
           if (result.status === 'not-found') {
             updated += await this.mark(unchecked, { order_check: 'not-found', order_synced_at: new Date() });
             // A call verified earlier keeps its last known state; it is checked again in a day, not on every run.
@@ -135,16 +145,20 @@ export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
           } else {
             const { order } = result;
             const newer = order.updatedAt ? or(isNull(tcCallMeta.order_state_at), lte(tcCallMeta.order_state_at, new Date(order.updatedAt))) : undefined;
+            const stateAt = order.updatedAt ? new Date(order.updatedAt) : new Date();
             await this.mark(all, { order_synced_at: new Date() });
             updated += await this.mark(and(all, newer), {
               ecomanager_order_id: String(order.id),
               order_check: 'verified',
               order_state_group: order.stateGroup,
               order_state_name: order.stateName,
-              order_state_at: order.updatedAt ? new Date(order.updatedAt) : new Date(),
+              order_state_at: stateAt,
+              delivered_at: deliveredAtFor(order, stateAt),
               order_synced_at: new Date(),
             });
+            deliveredAt = order.deliveredAt;
           }
+          await this.settleDelivered(all, deliveredAt);
           checked++;
         }
       } finally {
@@ -171,7 +185,18 @@ export class OrderSyncService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async mark(where: ReturnType<typeof and>, values: Partial<typeof tcCallMeta.$inferInsert>): Promise<number> {
+  /** Backfill end, once EcoManager answered for the order (found without a date, kept a newer stored state, or no
+   *  longer finds it) or its reference no longer reads: a call still delivered without a delivery date takes
+   *  `deliveredAt` (EcoManager's date) when given, else its state's date, the date the prime already counts it on. It is
+   *  then never due again. Never after an error: EcoManager may still give the real date. */
+  private async settleDelivered(where: ReturnType<typeof and>, deliveredAt: string | null = null): Promise<void> {
+    const given = deliveredAt ? new Date(deliveredAt).toISOString() : null;
+    await this.mark(and(where, eq(tcCallMeta.order_state_group, 'delivered'), isNull(tcCallMeta.delivered_at)), {
+      delivered_at: sql`COALESCE(${given}::timestamptz, ${tcCallMeta.order_state_at}, now())`,
+    });
+  }
+
+  private async mark(where: ReturnType<typeof and>, values: PgUpdateSetSource<typeof tcCallMeta>): Promise<number> {
     const rows = await this.db.update(tcCallMeta).set(values).where(where).returning({ id: tcCallMeta.call_id });
     return rows.length;
   }

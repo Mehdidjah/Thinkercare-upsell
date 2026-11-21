@@ -1,0 +1,1 @@
+ALTER TABLE "tc_call_meta" ADD COLUMN "delivered_at" timestamp with time zone;
