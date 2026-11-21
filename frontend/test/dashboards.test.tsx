@@ -226,7 +226,8 @@ test('the « Marque » filter: every call without a brand is Touché', () => {
 
 test('the brand filter shows its three options and is in the reset, the chips, the signature, the journal and the CSV', () => {
   const html = renderToStaticMarkup(<Analytics user={admin} users={[]} products={[]} resume={() => {}} />);
-  expect(html).toMatch(/Marque<select><option value="" selected="">Toutes<\/option><option value="touche">Touché<\/option><option value="belnco">BEL\.NCO<\/option>/);
+  // A visible switch since 2026-11-21 (was a list in the filters): « Toutes les marques », Touché, BEL.NCO.
+  expect(html).toMatch(/role="group" aria-label="Marque"><button type="button" class="seg__item" aria-pressed="true">Toutes les marques<\/button><button type="button" class="seg__item" aria-pressed="false">Touché<\/button><button type="button" class="seg__item" aria-pressed="false">BEL\.NCO<\/button>/);
   const src = ui('Analytics.tsx');
   expect(src).toMatch(/const filterSig=\[[^\]]*\bbrand\b/);
   expect(src).toMatch(/function clear\(\)\{[^}]*setBrand\(''\)/);
@@ -247,7 +248,7 @@ test('the « Marque » filter narrows the calls and the product lists, resets th
   expect(src).toContain('const brandProducts=products.filter(p=>brandMatch(p,brand));');
   expect(src).toContain('{brandProducts.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}');
   expect(src).toContain("{brandProducts.filter(p=>p.category!=='Pack').map(p=><option key={p.id} value={p.id}>{p.name}</option>)}");
-  expect(src).toContain('<label className="field">Marque<select value={brand} onChange={e=>pickBrand(e.target.value)}>');
+  expect(src).toContain('aria-pressed={brand===v} onClick={()=>pickBrand(v)}');
   expect(src).toContain("function pickBrand(next:string){setBrand(next);const other=(id:string)=>!!id&&!brandMatch(products.find(p=>p.id===id)??{},next);if(other(base))setBase('');if(other(addon))setAddon('');}");
   // Every brand's products are listed under « Toutes ».
   const products = [{ id: 'antiacne', name: 'Gel anti-acné' }, { id: 'bel-retinol', name: 'Retinol Complex Serum', brand: 'belnco' }].map(p => ({ price: 1000, category: 'Soin ciblé', enabled: true, ...p })) as never;

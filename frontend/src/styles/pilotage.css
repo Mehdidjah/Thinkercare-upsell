@@ -41,6 +41,8 @@
 
   /* Panels and two-column rows */
   .pilot-panel { min-inline-size: 0; }
+  .pilot-brand { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+  .pilot-brand__label { font-size: var(--text-label); font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); }
   .pilot-panel > h3 { font-size: var(--text-body); }
   .pilot-delivery > h3 { margin-block-start: var(--space-6); }
   .pilot-two { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--space-6); align-items: start; }
